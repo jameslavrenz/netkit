@@ -55,7 +55,7 @@ make run
 ### Manual Compilation
 
 ```bash
-clang++ -std=c++17 -g -o main main.cpp test.cpp arena.cpp tensor_factory.cpp tensor_access.cpp ops.cpp conv2d.cpp
+clang++ -std=c++17 -g -Iinclude -o main src/main.cpp src/test.cpp src/arena.cpp src/tensor_factory.cpp src/tensor_access.cpp src/ops.cpp src/conv2d.cpp src/mlp.cpp src/cnn.cpp src/inference.cpp
 ```
 
 ## Usage Example
@@ -74,8 +74,8 @@ unsigned char buffer[2048];
 Arena arena;
 arena.init(buffer, 2048);
 
-// Create a 2-layer MLP network
-MLPNetwork mlp(2);
+// Create a 2-layer MLP network (internal state allocated from arena)
+MLPNetwork mlp(2, arena);
 
 // Setup Layer 1: 2 inputs -> 3 hidden units with ReLU
 Tensor W1 = Create2D(arena, 2, 3);
@@ -155,8 +155,8 @@ unsigned char buffer[4096];
 Arena arena;
 arena.init(buffer, 4096);
 
-// Create a 2-layer CNN
-CNNNetwork cnn(2);
+// Create a 2-layer CNN (internal state allocated from arena)
+CNNNetwork cnn(2, arena);
 
 // Layer 1: 3x3 kernel, 1 input channel, 16 output channels with ReLU
 float weights1[9 * 16] = {...};  // 3x3x1x16 weights
@@ -267,22 +267,46 @@ tinyrt/
 └── README.md               # This file
 ```
 
+## Memory Management
+
+TinyRT uses a bump-pointer **arena allocator** instead of `new`/`delete` or `malloc`/`free`. All tensor data and network-internal state (layer arrays, intermediate output buffers) are allocated from a single pre-sized buffer you provide.
+
+```cpp
+unsigned char buffer[4096];
+Arena arena;
+arena.init(buffer, 4096);
+
+// All Create* calls and network constructors draw from this arena
+MLPNetwork mlp(2, arena);
+Tensor input = Create2D(arena, 1, 2);
+```
+
+Key points:
+- **`Arena::init(buffer, size)`** — Bind the arena to a fixed memory region (stack buffer, static RAM, etc.)
+- **`Arena::alloc(size)`** — Bump-allocate bytes; used internally by tensors and network abstractions
+- **`Arena::reset()`** — Reset the bump pointer to reuse the buffer across inference runs
+- **No destructors** — `MLPNetwork` and `CNNNetwork` do not free memory; the arena owns everything
+
+Size your buffer to hold weights, biases, intermediate activations, and the network object's internal arrays. If the arena runs out of space, allocations will overrun the buffer — there is no automatic growth.
+
 ## Layer Abstractions
 
 ### MLPNetwork
 Simplifies building stacked fully connected layers:
-- **`InitLayer(idx, weights, bias, activation, alpha)`** - Configure a dense layer
-- **`forward(input, output, arena)`** - Run forward pass through all layers
-- **`GetLayer(idx)`** - Access individual layer configuration
+- **`MLPNetwork(num_layers, arena)`** — Construct network; layer and intermediate tensor arrays are arena-allocated (no heap)
+- **`InitLayer(idx, weights, bias, activation, alpha)`** — Configure a dense layer
+- **`forward(input, output, arena)`** — Run forward pass through all layers; intermediate tensors allocated from arena
+- **`GetLayer(idx)`** — Access individual layer configuration
 
 Supported activations: `None`, `ReLU`, `Sigmoid`, `Tanh`, `LeakyReLU`, `ReLU6`, `Softmax`
 
 ### CNNNetwork
 Simplifies building stacked convolutional layers:
-- **`InitLayer(idx, kernel_size, stride, in_channels, out_channels, weights, bias, activation, alpha)`** - Configure a conv layer
-- **`forward(input, arena)`** - Run forward pass through all layers (returns output tensor reference)
-- **`GetLayer(idx)`** - Access individual layer configuration
-- **`GetOutput()`** - Get the final output tensor
+- **`CNNNetwork(num_layers, arena)`** — Construct network; layer and intermediate tensor arrays are arena-allocated (no heap)
+- **`InitLayer(idx, kernel_size, stride, in_channels, out_channels, weights, bias, activation, alpha)`** — Configure a conv layer
+- **`forward(input, arena)`** — Run forward pass through all layers (returns output tensor reference); intermediate tensors allocated from arena
+- **`GetLayer(idx)`** — Access individual layer configuration
+- **`GetOutput()`** — Get the final output tensor
 
 Automatically calculates output dimensions and manages intermediate tensors.
 
@@ -307,7 +331,7 @@ Automatically calculates output dimensions and manages intermediate tensors.
 ## Design Principles
 
 - **Lightweight** - Minimal dependencies, suitable for embedded environments
-- **Memory-Conscious** - Custom arena allocator for predictable memory usage
+- **Memory-Conscious** - Arena allocator throughout; no dynamic heap allocation in layer abstractions
 - **Single-Threaded** - No parallelization overhead (suitable for MCUs)
 - **Inference-Only** - Optimized for deployment, not training
 - **Type-Safe** - Modern C++ with strong typing
@@ -346,6 +370,7 @@ Tests include:
 - NHWC format for convolutional layers (optimized for MCU memory patterns)
 - In-place operations where possible to reduce memory allocation
 - Linear indexing for fast tensor access
+- Call `arena.reset()` between inference batches to reuse the same buffer without freeing individual allocations
 
 ## License
 
