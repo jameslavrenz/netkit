@@ -5,9 +5,173 @@
 #include "tensor_access.hpp"
 #include "ops.hpp"
 #include "conv2d.hpp"
+#include "mlp.hpp"
+#include "cnn.hpp"
 
 using namespace TensorFactory;
 using namespace Ops;
+
+void test_mlp_abstraction(){
+
+    std::cout << "\n============================\n";
+    std::cout << " MLP ABSTRACTION TEST START\n";
+    std::cout << "============================\n\n";
+
+    unsigned char buffer[2048];
+    Arena arena;
+    arena.init(buffer, 2048);
+
+    // Create a 2-layer MLP network
+    // Layer 1: 2 -> 2 with ReLU
+    // Layer 2: 2 -> 2 with None (linear)
+
+    MLPNetwork mlp(2);
+
+    // =====================================================
+    // Setup Layer 1
+    // =====================================================
+    std::cout << "[1] Setting up Layer 1 (2 -> 2 with ReLU)\n";
+
+    Tensor W1 = Create2D(arena, 2, 2);
+    Fill(W1, (float[]){
+        1, 1,
+        1, 1
+    });
+
+    Tensor B1 = Create2D(arena, 1, 2);
+    Fill(B1, (float[]){0, 0});
+
+    mlp.InitLayer(0, W1, B1, ActivationType::ReLU);
+
+    // =====================================================
+    // Setup Layer 2
+    // =====================================================
+    std::cout << "[2] Setting up Layer 2 (2 -> 2 linear)\n";
+
+    Tensor W2 = Create2D(arena, 2, 2);
+    Fill(W2, (float[]){
+        1, 0,
+        0, 1
+    });
+
+    Tensor B2 = Create2D(arena, 1, 2);
+    Fill(B2, (float[]){0, 0});
+
+    mlp.InitLayer(1, W2, B2, ActivationType::None);
+
+    // =====================================================
+    // Forward pass
+    // =====================================================
+    std::cout << "\n[3] Forward pass\n";
+
+    Tensor input = Create2D(arena, 1, 2);
+    Fill(input, (float[]){1, 2});
+
+    std::cout << "Input:\n";
+    Print(input);
+
+    Tensor output = Create2D(arena, 1, 2);
+    mlp.forward(input, output, arena);
+
+    std::cout << "\nFinal Output:\n";
+    Print(output);
+
+    std::cout << "\n============================\n";
+    std::cout << " MLP ABSTRACTION TEST COMPLETE\n";
+    std::cout << "============================\n";
+}
+
+void test_cnn_abstraction(){
+
+    std::cout << "\n============================\n";
+    std::cout << " CNN ABSTRACTION TEST START\n";
+    std::cout << "============================\n\n";
+
+    unsigned char buffer[4096];
+    Arena arena;
+    arena.init(buffer, 4096);
+
+    // Create a 2-layer CNN
+    // Layer 1: 1x1 kernel, 2 input channels, 1 output channel (with ReLU)
+    // Layer 2: 1x1 kernel, 1 input channel, 2 output channels (with None)
+
+    CNNNetwork cnn(2);
+
+    // =====================================================
+    // Setup Layer 1
+    // =====================================================
+    std::cout << "[1] Setting up Layer 1 (1x1 conv, 2->1 channels, ReLU)\n";
+
+    // For 1x1 kernel with 2 input channels and 1 output channel:
+    // weights layout: [out][kh][kw][in] = [1][1][1][2]
+    float weights1[] = {1.0f, 2.0f};  // weight for output channel 0: ic0=1, ic1=2
+    float bias1[] = {0.0f};
+
+    cnn.InitLayer(0, 
+                  1,           // kernel_size
+                  1,           // stride
+                  2,           // in_channels
+                  1,           // out_channels
+                  weights1, 
+                  bias1,
+                  ConvActivationType::ReLU);
+
+    // =====================================================
+    // Setup Layer 2
+    // =====================================================
+    std::cout << "[2] Setting up Layer 2 (1x1 conv, 1->2 channels, None)\n";
+
+    // For 1x1 kernel with 1 input channel and 2 output channels:
+    // weights layout: [out][kh][kw][in] = [2][1][1][1]
+    float weights2[] = {1.0f, 2.0f};  // oc0=1, oc1=2
+    float bias2[] = {0.0f, 0.0f};
+
+    cnn.InitLayer(1,
+                  1,           // kernel_size
+                  1,           // stride
+                  1,           // in_channels
+                  2,           // out_channels
+                  weights2,
+                  bias2,
+                  ConvActivationType::None);
+
+    // =====================================================
+    // Create input: 2x2 spatial, 2 channels (NHWC layout)
+    // =====================================================
+    std::cout << "\n[3] Creating input tensor (2x2 spatial, 2 channels)\n";
+
+    float input_data[] = {
+        1.0f, 10.0f,    // Pixel(0,0): ch0=1, ch1=10
+        2.0f, 20.0f,    // Pixel(0,1): ch0=2, ch1=20
+        
+        3.0f, 30.0f,    // Pixel(1,0): ch0=3, ch1=30
+        4.0f, 40.0f     // Pixel(1,1): ch0=4, ch1=40
+    };
+
+    Tensor input;
+    input.data = input_data;
+    input.rank = 3;
+    input.shape[0] = 2;  // H
+    input.shape[1] = 2;  // W
+    input.shape[2] = 2;  // C
+
+    std::cout << "Input tensor shape: [" << input.shape[0] << ", " << input.shape[1] << ", " << input.shape[2] << "]\n";
+
+    // =====================================================
+    // Forward pass
+    // =====================================================
+    std::cout << "\n[4] Forward pass\n";
+
+    Tensor& output = cnn.forward(input, arena);
+
+    std::cout << "Output tensor shape: [" << output.shape[0] << ", " << output.shape[1] << ", " << output.shape[2] << "]\n";
+    std::cout << "Output values:\n";
+    Print(output);
+
+    std::cout << "\n============================\n";
+    std::cout << " CNN ABSTRACTION TEST COMPLETE\n";
+    std::cout << "============================\n";
+}
 
 void test_mlp(){
 

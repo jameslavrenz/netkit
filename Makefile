@@ -1,7 +1,7 @@
 CXX = clang++
 CXXFLAGS = -fcolor-diagnostics -fansi-escape-codes -g -std=c++11 -Iinclude
 TARGET = main
-SOURCES = src/main.cpp src/test.cpp src/arena.cpp src/tensor_factory.cpp src/tensor_access.cpp src/ops.cpp src/conv2d.cpp src/inference.cpp
+SOURCES = src/main.cpp src/test.cpp src/arena.cpp src/tensor_factory.cpp src/tensor_access.cpp src/ops.cpp src/conv2d.cpp src/inference.cpp src/mlp.cpp src/cnn.cpp
 OBJECTS = $(SOURCES:.cpp=.o)
 
 all: $(TARGET)
