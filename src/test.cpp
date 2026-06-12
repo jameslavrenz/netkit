@@ -25,7 +25,7 @@ void test_mlp_abstraction(){
     // Layer 1: 2 -> 2 with ReLU
     // Layer 2: 2 -> 2 with None (linear)
 
-    MLPNetwork mlp(2);
+    MLPNetwork mlp(2, arena);
 
     // =====================================================
     // Setup Layer 1
@@ -95,7 +95,7 @@ void test_cnn_abstraction(){
     // Layer 1: 1x1 kernel, 2 input channels, 1 output channel (with ReLU)
     // Layer 2: 1x1 kernel, 1 input channel, 2 output channels (with None)
 
-    CNNNetwork cnn(2);
+    CNNNetwork cnn(2, arena);
 
     // =====================================================
     // Setup Layer 1

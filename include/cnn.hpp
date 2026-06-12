@@ -30,10 +30,13 @@ private:
     Conv2DLayer* layers;
     uint32_t num_layers;
     Tensor* intermediate_outputs;  // Cache for intermediate results during forward pass
+    Arena& arena;
 
 public:
-    CNNNetwork(uint32_t num_layers);
-    ~CNNNetwork();
+    // Constructor allocates from Arena - MCU-safe, no heap fragmentation
+    CNNNetwork(uint32_t num_layers, Arena& arena);
+    
+    // No destructor needed - Arena manages all memory
 
     // Initialize a Conv2D layer at the given index
     void InitLayer(uint32_t layer_idx, 

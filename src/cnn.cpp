@@ -2,7 +2,6 @@
 #include "ops.hpp"
 #include "tensor_factory.hpp"
 #include "tensor_access.hpp"
-#include <cstring>
 #include <cmath>
 
 using namespace Ops;
@@ -54,22 +53,16 @@ static uint32_t CalcConvOutputDim(uint32_t input_dim, int kernel_size, int strid
     return (input_dim - kernel_size) / stride + 1;
 }
 
-CNNNetwork::CNNNetwork(uint32_t num_layers)
-    : num_layers(num_layers)
+CNNNetwork::CNNNetwork(uint32_t num_layers, Arena& arena)
+    : num_layers(num_layers), arena(arena)
 {
-    layers = new Conv2DLayer[num_layers];
-    intermediate_outputs = new Tensor[num_layers];
-    
-    // Zero-initialize
-    std::memset(layers, 0, sizeof(Conv2DLayer) * num_layers);
-    std::memset(intermediate_outputs, 0, sizeof(Tensor) * num_layers);
+    // Allocate from Arena - MCU-safe, no heap fragmentation
+    layers = (Conv2DLayer*)arena.alloc(sizeof(Conv2DLayer) * num_layers);
+    intermediate_outputs = (Tensor*)arena.alloc(sizeof(Tensor) * num_layers);
 }
 
-CNNNetwork::~CNNNetwork()
-{
-    delete[] layers;
-    delete[] intermediate_outputs;
-}
+// No destructor - Arena manages all memory automatically
+
 
 void CNNNetwork::InitLayer(uint32_t layer_idx,
                             int kernel_size,

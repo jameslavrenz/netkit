@@ -1,7 +1,6 @@
 #include "mlp.hpp"
 #include "ops.hpp"
 #include "tensor_factory.hpp"
-#include <cstring>
 
 using namespace Ops;
 using namespace TensorFactory;
@@ -49,22 +48,16 @@ void MLPLayer::forward(const Tensor& input, Tensor& output)
 // MLPNetwork Implementation
 // ====================================================
 
-MLPNetwork::MLPNetwork(uint32_t num_layers)
-    : num_layers(num_layers)
+MLPNetwork::MLPNetwork(uint32_t num_layers, Arena& arena)
+    : num_layers(num_layers), arena(arena)
 {
-    layers = new MLPLayer[num_layers];
-    intermediate_outputs = new Tensor[num_layers];
-    
-    // Zero-initialize
-    std::memset(layers, 0, sizeof(MLPLayer) * num_layers);
-    std::memset(intermediate_outputs, 0, sizeof(Tensor) * num_layers);
+    // Allocate from Arena - MCU-safe, no heap fragmentation
+    layers = (MLPLayer*)arena.alloc(sizeof(MLPLayer) * num_layers);
+    intermediate_outputs = (Tensor*)arena.alloc(sizeof(Tensor) * num_layers);
 }
 
-MLPNetwork::~MLPNetwork()
-{
-    delete[] layers;
-    delete[] intermediate_outputs;
-}
+// No destructor - Arena manages all memory automatically
+
 
 void MLPNetwork::InitLayer(uint32_t layer_idx, const Tensor& weights, const Tensor& bias,
                             ActivationType activation, float leaky_alpha)

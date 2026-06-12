@@ -30,10 +30,13 @@ private:
     MLPLayer* layers;
     uint32_t num_layers;
     Tensor* intermediate_outputs;  // Cache for intermediate results during forward pass
+    Arena& arena;
 
 public:
-    MLPNetwork(uint32_t num_layers);
-    ~MLPNetwork();
+    // Constructor allocates from Arena - MCU-safe, no heap fragmentation
+    MLPNetwork(uint32_t num_layers, Arena& arena);
+    
+    // No destructor needed - Arena manages all memory
 
     // Initialize a layer at the given index
     void InitLayer(uint32_t layer_idx, const Tensor& weights, const Tensor& bias, 
