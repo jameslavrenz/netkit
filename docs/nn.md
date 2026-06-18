@@ -369,11 +369,13 @@ Engineering note:
 For each layer:
 
 1. Compute:
+
    $$
    z^{(l)} = W^{(l)} a^{(l-1)} + b^{(l)}
    $$
 
 2. Apply activation:
+
    $$
    a^{(l)} = \sigma(z^{(l)})
    $$
@@ -383,16 +385,19 @@ For each layer:
 ### Backward pass:
 
 1. Compute output error:
+
    $$
    \delta^{(L)} = \nabla_a \mathcal{L} \odot \sigma'(z^{(L)})
    $$
 
 2. For each layer going backward:
+
    $$
    \delta^{(l)} = (W^{(l+1)})^T \delta^{(l+1)} \odot \sigma'(z^{(l)})
    $$
 
 3. Gradients:
+
    $$
    \frac{\partial \mathcal{L}}{\partial W^{(l)}} = \delta^{(l)} (a^{(l-1)})^T
    $$
