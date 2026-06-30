@@ -49,7 +49,7 @@ void MLPLayer::forward(const Tensor& input, Tensor& output)
 // ====================================================
 
 MLPNetwork::MLPNetwork(uint32_t num_layers, Arena& arena)
-    : num_layers(num_layers), arena(arena)
+    : layers(nullptr), num_layers(num_layers), intermediate_outputs(nullptr), arena(arena)
 {
     layers = static_cast<MLPLayer*>(arena.alloc(sizeof(MLPLayer) * num_layers));
     intermediate_outputs = static_cast<Tensor*>(arena.alloc(sizeof(Tensor) * num_layers));
@@ -61,7 +61,7 @@ MLPNetwork::MLPNetwork(uint32_t num_layers, Arena& arena)
 void MLPNetwork::InitLayer(uint32_t layer_idx, const Tensor& weights, const Tensor& bias,
                             ActivationType activation, float leaky_alpha)
 {
-    if (layer_idx >= num_layers)
+    if (!layers || layer_idx >= num_layers)
         return;
 
     layers[layer_idx].weights = weights;
@@ -72,25 +72,24 @@ void MLPNetwork::InitLayer(uint32_t layer_idx, const Tensor& weights, const Tens
 
 void MLPNetwork::forward(const Tensor& input, Tensor& output, Arena& arena)
 {
-    if (num_layers == 0)
+    if (!IsValid() || num_layers == 0)
         return;
 
     Tensor current_input = input;
 
     for (uint32_t i = 0; i < num_layers; i++)
     {
-        // Create intermediate output tensor if needed (except for last layer)
         if (i < num_layers - 1)
         {
-            // Output shape: (batch_size, output_dim)
-            // output_dim is determined by weights.shape[1]
             intermediate_outputs[i] = Create2D(arena, current_input.shape[0], layers[i].weights.shape[1]);
+            if (!intermediate_outputs[i].data)
+                return;
+
             layers[i].forward(current_input, intermediate_outputs[i]);
             current_input = intermediate_outputs[i];
         }
         else
         {
-            // Last layer writes directly to output
             layers[i].forward(current_input, output);
         }
     }

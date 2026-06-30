@@ -1,62 +1,67 @@
 [
   {
-    "directory": "/Users/jimlavrenz/workspace/tinyrt",
-    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/tinyrt/include -c src/main.cpp",
-    "file": "/Users/jimlavrenz/workspace/tinyrt/src/main.cpp"
+    "directory": "/Users/jimlavrenz/workspace/netkit",
+    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -c src/main.cpp",
+    "file": "/Users/jimlavrenz/workspace/netkit/src/main.cpp"
   },
   {
-    "directory": "/Users/jimlavrenz/workspace/tinyrt",
-    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/tinyrt/include -c src/test.cpp",
-    "file": "/Users/jimlavrenz/workspace/tinyrt/src/test.cpp"
+    "directory": "/Users/jimlavrenz/workspace/netkit",
+    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -c src/test.cpp",
+    "file": "/Users/jimlavrenz/workspace/netkit/src/test.cpp"
   },
   {
-    "directory": "/Users/jimlavrenz/workspace/tinyrt",
-    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/tinyrt/include -c src/arena.cpp",
-    "file": "/Users/jimlavrenz/workspace/tinyrt/src/arena.cpp"
+    "directory": "/Users/jimlavrenz/workspace/netkit",
+    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -c src/arena.cpp",
+    "file": "/Users/jimlavrenz/workspace/netkit/src/arena.cpp"
   },
   {
-    "directory": "/Users/jimlavrenz/workspace/tinyrt",
-    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/tinyrt/include -c src/tensor_factory.cpp",
-    "file": "/Users/jimlavrenz/workspace/tinyrt/src/tensor_factory.cpp"
+    "directory": "/Users/jimlavrenz/workspace/netkit",
+    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -c src/tensor_factory.cpp",
+    "file": "/Users/jimlavrenz/workspace/netkit/src/tensor_factory.cpp"
   },
   {
-    "directory": "/Users/jimlavrenz/workspace/tinyrt",
-    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/tinyrt/include -c src/tensor_access.cpp",
-    "file": "/Users/jimlavrenz/workspace/tinyrt/src/tensor_access.cpp"
+    "directory": "/Users/jimlavrenz/workspace/netkit",
+    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -c src/tensor_access.cpp",
+    "file": "/Users/jimlavrenz/workspace/netkit/src/tensor_access.cpp"
   },
   {
-    "directory": "/Users/jimlavrenz/workspace/tinyrt",
-    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/tinyrt/include -c src/ops.cpp",
-    "file": "/Users/jimlavrenz/workspace/tinyrt/src/ops.cpp"
+    "directory": "/Users/jimlavrenz/workspace/netkit",
+    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -c src/ops.cpp",
+    "file": "/Users/jimlavrenz/workspace/netkit/src/ops.cpp"
   },
   {
-    "directory": "/Users/jimlavrenz/workspace/tinyrt",
-    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/tinyrt/include -c src/conv2d.cpp",
-    "file": "/Users/jimlavrenz/workspace/tinyrt/src/conv2d.cpp"
+    "directory": "/Users/jimlavrenz/workspace/netkit",
+    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -c src/conv2d.cpp",
+    "file": "/Users/jimlavrenz/workspace/netkit/src/conv2d.cpp"
   },
   {
-    "directory": "/Users/jimlavrenz/workspace/tinyrt",
-    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/tinyrt/include -c src/inference.cpp",
-    "file": "/Users/jimlavrenz/workspace/tinyrt/src/inference.cpp"
+    "directory": "/Users/jimlavrenz/workspace/netkit",
+    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -c src/inference.cpp",
+    "file": "/Users/jimlavrenz/workspace/netkit/src/inference.cpp"
   },
   {
-    "directory": "/Users/jimlavrenz/workspace/tinyrt",
-    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/tinyrt/include -c src/mlp.cpp",
-    "file": "/Users/jimlavrenz/workspace/tinyrt/src/mlp.cpp"
+    "directory": "/Users/jimlavrenz/workspace/netkit",
+    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -c src/mlp.cpp",
+    "file": "/Users/jimlavrenz/workspace/netkit/src/mlp.cpp"
   },
   {
-    "directory": "/Users/jimlavrenz/workspace/tinyrt",
-    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/tinyrt/include -c src/cnn.cpp",
-    "file": "/Users/jimlavrenz/workspace/tinyrt/src/cnn.cpp"
+    "directory": "/Users/jimlavrenz/workspace/netkit",
+    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -c src/cnn.cpp",
+    "file": "/Users/jimlavrenz/workspace/netkit/src/cnn.cpp"
   },
   {
-    "directory": "/Users/jimlavrenz/workspace/tinyrt",
-    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/tinyrt/include -c src/json_parser.cpp",
-    "file": "/Users/jimlavrenz/workspace/tinyrt/src/json_parser.cpp"
+    "directory": "/Users/jimlavrenz/workspace/netkit",
+    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -c src/json_parser.cpp",
+    "file": "/Users/jimlavrenz/workspace/netkit/src/json_parser.cpp"
   },
   {
-    "directory": "/Users/jimlavrenz/workspace/tinyrt",
-    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/tinyrt/include -c src/model_loader.cpp",
-    "file": "/Users/jimlavrenz/workspace/tinyrt/src/model_loader.cpp"
+    "directory": "/Users/jimlavrenz/workspace/netkit",
+    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -c src/model_loader.cpp",
+    "file": "/Users/jimlavrenz/workspace/netkit/src/model_loader.cpp"
+  },
+  {
+    "directory": "/Users/jimlavrenz/workspace/netkit",
+    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -c src/vectors_loader.cpp",
+    "file": "/Users/jimlavrenz/workspace/netkit/src/vectors_loader.cpp"
   }
 ]

@@ -1,0 +1,20 @@
+{
+  "model": "mlp_hand.json",
+  "cases": [
+    {
+      "name": "positive features",
+      "input": [1, 2, 3],
+      "expected": [8, 5]
+    },
+    {
+      "name": "zero input (bias only)",
+      "input": [0, 0, 0],
+      "expected": [1, -1]
+    },
+    {
+      "name": "relu zeros negative hidden unit",
+      "input": [-1, 2, 1],
+      "expected": [7, 3]
+    }
+  ]
+}

@@ -33,10 +33,12 @@ private:
     Arena& arena;
 
 public:
-    // Constructor allocates from Arena - MCU-safe, no heap fragmentation
+    // Constructor allocates from Arena — no heap fragmentation
     CNNNetwork(uint32_t num_layers, Arena& arena);
     
     // No destructor needed - Arena manages all memory
+
+    bool IsValid() const { return layers != nullptr && intermediate_outputs != nullptr; }
 
     // Initialize a Conv2D layer at the given index
     void InitLayer(uint32_t layer_idx, 

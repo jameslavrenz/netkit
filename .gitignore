@@ -1,5 +1,5 @@
 # Executables
-main
+netkit
 
 # Object files
 *.o
@@ -8,7 +8,7 @@ main
 .vscode/
 
 # Debug symbols
-main.dSYM/
+netkit.dSYM/
 
 # macOS
 .DS_Store

@@ -1,0 +1,10 @@
+{
+  "model": "test_mlp.json",
+  "cases": [
+    {
+      "name": "2-layer forward",
+      "input": [1, 2],
+      "expected": [3, 3]
+    }
+  ]
+}

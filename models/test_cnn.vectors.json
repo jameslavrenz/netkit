@@ -1,0 +1,10 @@
+{
+  "model": "test_cnn.json",
+  "cases": [
+    {
+      "name": "channel stacking",
+      "input": [1, 10, 2, 20, 3, 30, 4, 40],
+      "expected": [21, 42, 42, 84, 63, 126, 84, 168]
+    }
+  ]
+}

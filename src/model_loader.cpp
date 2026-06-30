@@ -603,6 +603,8 @@ namespace ModelLoader
             return Fail(LoadStatus::ArenaOverflow, "Arena out of memory while creating MLPNetwork", NetworkKind::MLP);
 
         network = new (network_mem) MLPNetwork(num_layers, arena);
+        if (!network->IsValid())
+            return Fail(LoadStatus::ArenaOverflow, "Arena out of memory while allocating MLP layers", NetworkKind::MLP);
 
         std::size_t weight_offset = 0;
         in_features = input_shape[1];
@@ -731,6 +733,8 @@ namespace ModelLoader
             return Fail(LoadStatus::ArenaOverflow, "Arena out of memory while creating CNNNetwork", NetworkKind::CNN);
 
         network = new (network_mem) CNNNetwork(num_layers, arena);
+        if (!network->IsValid())
+            return Fail(LoadStatus::ArenaOverflow, "Arena out of memory while allocating CNN layers", NetworkKind::CNN);
 
         std::size_t weight_offset = 0;
         in_channels = input_shape[2];

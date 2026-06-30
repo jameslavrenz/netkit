@@ -55,7 +55,7 @@ static uint32_t CalcConvOutputDim(uint32_t input_dim, int kernel_size, int strid
 }
 
 CNNNetwork::CNNNetwork(uint32_t num_layers, Arena& arena)
-    : num_layers(num_layers), arena(arena)
+    : layers(nullptr), num_layers(num_layers), intermediate_outputs(nullptr), arena(arena)
 {
     layers = static_cast<Conv2DLayer*>(arena.alloc(sizeof(Conv2DLayer) * num_layers));
     intermediate_outputs = static_cast<Tensor*>(arena.alloc(sizeof(Tensor) * num_layers));
@@ -74,7 +74,7 @@ void CNNNetwork::InitLayer(uint32_t layer_idx,
                             ConvActivationType activation,
                             float leaky_alpha)
 {
-    if (layer_idx >= num_layers)
+    if (!layers || layer_idx >= num_layers)
         return;
 
     layers[layer_idx].conv.kernel_size = kernel_size;
@@ -89,14 +89,15 @@ void CNNNetwork::InitLayer(uint32_t layer_idx,
 
 Tensor& CNNNetwork::forward(const Tensor& input, Arena& arena)
 {
-    if (num_layers == 0)
-        return intermediate_outputs[0];
+    static Tensor empty{};
+
+    if (!IsValid() || num_layers == 0)
+        return empty;
 
     Tensor current_input = input;
 
     for (uint32_t i = 0; i < num_layers; i++)
     {
-        // Calculate output dimensions for this layer
         uint32_t out_h = CalcConvOutputDim(current_input.shape[0], 
                                             layers[i].conv.kernel_size, 
                                             layers[i].conv.stride);
@@ -107,11 +108,10 @@ Tensor& CNNNetwork::forward(const Tensor& input, Arena& arena)
 
         const std::array<uint32_t, 3> shape = {out_h, out_w, out_c};
         intermediate_outputs[i] = CreateND(arena, 3, shape);
+        if (!intermediate_outputs[i].data)
+            return intermediate_outputs[i];
 
-        // Forward pass through this layer
         layers[i].forward(current_input, intermediate_outputs[i]);
-
-        // Update current input for next layer
         current_input = intermediate_outputs[i];
     }
 

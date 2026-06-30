@@ -1,6 +1,8 @@
-# TinyRT - Neural Network Inference Engine
+# netkit — Neural Network Kit
 
-TinyRT is a lightweight, high-performance inference engine written in modern C++ (C++26) designed for neural network inference on microcontroller units (MCUs) and microprocessor units (MPUs). It provides an optimized runtime for deploying trained neural network models directly on resource-constrained embedded devices.
+netkit is a C++26 neural network kit for on-device inference on MCUs and MPUs. It is developed and validated on the desktop, then deployed to embedded targets. Companion to [memkit](https://github.com/jameslavrenz/memkit) for memory management.
+
+Models are loaded from JSON architecture files and companion float32 `.bin` weight files during host-side development and testing.
 
 ## Features
 
@@ -12,10 +14,11 @@ TinyRT is a lightweight, high-performance inference engine written in modern C++
   - ReLU, LeakyReLU, ReLU6
   - Sigmoid, Tanh
   - Softmax
-- **Memory-Efficient Arena Allocator** - Custom memory management for embedded environments
+- **Memory-Efficient Arena Allocator** - Custom bump-pointer memory management
 - **N-Dimensional Tensor Support** - Flexible tensor operations for various model architectures
-- **NHWC Layout** - Optimized for common embedded tensor memory layout
+- **NHWC Layout** - Common channel-last tensor layout for conv layers
 - **Model Loader** - JSON architecture files with companion float32 `.bin` weight files
+- **Vectors Test Runner** - Declarative input/expected test cases in `*.vectors.json`
 
 ## Architecture
 
@@ -31,7 +34,8 @@ TinyRT is a lightweight, high-performance inference engine written in modern C++
 - **cnn.hpp/cpp** - CNN network abstraction for layered convolutional networks
 - **json_parser.hpp/cpp** - Minimal JSON parser for model architecture files
 - **model_loader.hpp/cpp** - Load networks from JSON + `.bin` weight files
-- **test.hpp/cpp** - Comprehensive test suite for validation
+- **vectors_loader.hpp/cpp** - Generic test runner driven by `*.vectors.json` files
+- **test.hpp/cpp** - Test suite orchestration and summary reporting
 
 ## Building
 
@@ -58,7 +62,7 @@ make run
 ### Manual Compilation
 
 ```bash
-clang++ -std=c++26 -g -Iinclude -o main src/main.cpp src/test.cpp src/arena.cpp src/tensor_factory.cpp src/tensor_access.cpp src/ops.cpp src/conv2d.cpp src/mlp.cpp src/cnn.cpp src/inference.cpp src/json_parser.cpp src/model_loader.cpp
+clang++ -std=c++26 -g -Iinclude -o netkit src/main.cpp src/test.cpp src/arena.cpp src/tensor_factory.cpp src/tensor_access.cpp src/ops.cpp src/conv2d.cpp src/mlp.cpp src/cnn.cpp src/inference.cpp src/json_parser.cpp src/model_loader.cpp src/vectors_loader.cpp
 ```
 
 ## Usage Example
@@ -239,12 +243,19 @@ conv.bias = bias;
 conv.forward(input, output);
 ```
 
+### Model File Bundles
+
+Each model is a set of files sharing the same base name:
+
+| File | Purpose |
+|------|---------|
+| `model.json` | Network architecture (layers, activations, input shape) |
+| `model.bin` | Raw float32 weights in layer order (weights then bias per layer) |
+| `model.vectors.json` | Test inputs and expected outputs for regression tests |
+
+**Workflow**: edit architecture in JSON, export weights to `.bin`, add regression cases to `.vectors.json`, run `make run`.
+
 ### Loading a Model from JSON + Weights
-
-Models are defined by a pair of files with the same base name:
-
-- `model.json` — network architecture
-- `model.bin` — raw float32 weights in layer order (weights then bias per layer)
 
 **MLP example** (`models/test_mlp.json`):
 
@@ -311,10 +322,29 @@ Use `ModelLoader::LoadCNN()` for convolutional models, or `ModelLoader::Load()` 
 
 Supported activations in JSON: `none`, `relu`, `sigmoid`, `tanh`, `leaky_relu`, `relu6`, `softmax`. Optional `"alpha"` field for `leaky_relu`.
 
+### Vectors Test Files
+
+Test cases live beside the model in `*.vectors.json`. Each file references its model and lists input/expected pairs:
+
+```json
+{
+  "model": "test_mlp.json",
+  "cases": [
+    {
+      "name": "2-layer forward",
+      "input": [1, 2],
+      "expected": [3, 3]
+    }
+  ]
+}
+```
+
+`VectorsLoader::RunVectorsFile()` resolves paths, loads the model, runs each case, and prints `PASS`/`FAIL`. `run_all_tests()` in `test.cpp` drives all vector files and returns a pass/fail summary; `main()` exits with code 1 on any failure.
+
 ## Project Structure
 
 ```
-tinyrt/
+netkit/
 ├── include/
 │   ├── arena.hpp           # Memory management
 │   ├── tensor.hpp          # Tensor definitions
@@ -326,15 +356,27 @@ tinyrt/
 │   ├── cnn.hpp             # CNN network abstraction
 │   ├── json_parser.hpp     # Minimal JSON parser
 │   ├── model_loader.hpp    # JSON + .bin model loader
+│   ├── vectors_loader.hpp  # Vectors-driven test runner
 │   ├── inference.hpp       # Inference utilities
 │   └── test.hpp            # Test suite
 ├── models/
 │   ├── test_mlp.json                  # 2-layer MLP test model
 │   ├── test_mlp.bin
+│   ├── test_mlp.vectors.json          # MLP regression cases
+│   ├── mlp_hand.json                  # Hand-designed 3→4→2 MLP
+│   ├── mlp_hand.bin
+│   ├── mlp_hand.vectors.json
 │   ├── test_cnn.json                  # 2-layer CNN test model
 │   ├── test_cnn.bin
+│   ├── test_cnn.vectors.json          # CNN regression cases
 │   ├── cnn_4x4_single.json            # Single-layer 3x3 conv on 4x4 input
-│   └── cnn_4x4_single.bin
+│   ├── cnn_4x4_single.bin
+│   ├── cnn_4x4_single.vectors.json    # Spatial conv regression cases
+│   ├── cnn_hand.json                  # Hand-designed 2-channel spatial CNN
+│   ├── cnn_hand.bin
+│   └── cnn_hand.vectors.json
+├── tools/
+│   └── write_hand_models.py           # Regenerate mlp_hand.bin / cnn_hand.bin
 ├── src/
 │   ├── main.cpp            # Entry point
 │   ├── arena.cpp           # Memory management implementation
@@ -346,6 +388,7 @@ tinyrt/
 │   ├── cnn.cpp             # CNN network implementation
 │   ├── json_parser.cpp     # JSON parser implementation
 │   ├── model_loader.cpp    # Model loader implementation
+│   ├── vectors_loader.cpp  # Vectors test runner implementation
 │   ├── inference.cpp       # Inference utilities implementation
 │   └── test.cpp            # Test suite implementation
 ├── Makefile                # Build configuration
@@ -355,7 +398,7 @@ tinyrt/
 
 ## Memory Management
 
-TinyRT uses a bump-pointer **arena allocator** instead of `new`/`delete` or `malloc`/`free`. All tensor data and network-internal state (layer arrays, intermediate output buffers) are allocated from a single pre-sized buffer you provide.
+netkit uses a bump-pointer **arena allocator** instead of `new`/`delete` or `malloc`/`free`. All tensor data and network-internal state (layer arrays, intermediate output buffers) are allocated from a single pre-sized buffer you provide.
 
 ```cpp
 unsigned char buffer[4096];
@@ -368,12 +411,14 @@ Tensor input = Create2D(arena, 1, 2);
 ```
 
 Key points:
-- **`Arena::init(buffer, size)`** — Bind the arena to a fixed memory region (stack buffer, static RAM, etc.)
-- **`Arena::alloc(size)`** — Bump-allocate bytes; used internally by tensors and network abstractions
+- **`Arena::kDefaultCapacity`** — 64 KiB default buffer used by the test runner
+- **`Arena::init(buffer, size)`** — Bind the arena to a fixed memory region (stack buffer, static storage, etc.)
+- **`Arena::alloc(size)`** — Bump-allocate bytes; returns `nullptr` if the arena is full
+- **`Arena::remaining()`** — Bytes still available in the arena
 - **`Arena::reset()`** — Reset the bump pointer to reuse the buffer across inference runs
 - **No destructors** — `MLPNetwork` and `CNNNetwork` do not free memory; the arena owns everything
 
-Size your buffer to hold weights, biases, intermediate activations, and the network object's internal arrays. If the arena runs out of space, allocations will overrun the buffer — there is no automatic growth.
+Size your buffer to hold weights, biases, intermediate activations, and the network object's internal arrays. When `alloc()` returns `nullptr`, treat it as an out-of-memory condition — there is no automatic growth.
 
 ## Layer Abstractions
 
@@ -424,10 +469,10 @@ Load a trained network from disk:
 
 ## Design Principles
 
-- **Lightweight** - Minimal dependencies, suitable for embedded environments
+- **Lightweight** - Minimal dependencies, standard C++ only
 - **Memory-Conscious** - Arena allocator throughout; no dynamic heap allocation in layer abstractions
-- **Single-Threaded** - No parallelization overhead (suitable for MCUs)
-- **Inference-Only** - Optimized for deployment, not training
+- **Single-Threaded** - Straightforward sequential execution
+- **Inference-Only** - Forward pass only, not training
 - **Type-Safe** - Modern C++26 with strong typing (`std::array`, `std::span`)
 
 ## Roadmap
@@ -441,29 +486,32 @@ Load a trained network from disk:
 - On-device fine-tuning capabilities
 - Transformer architecture support
 - Automatic differentiation (autodiff) for training
-- Optimized kernels for specific MCU/MPU architectures
 - Model serialization/deserialization
 
 ## Testing
 
-Run the comprehensive test suite:
+Run the full test suite:
 
 ```bash
 make run
 ```
 
-Tests load architecture and weights from `models/*.json` + companion `.bin` files (no hardcoded network data in source). Coverage includes:
+Tests are data-driven: each `models/*.vectors.json` file references a model (`*.json` + `*.bin`) and defines named cases with flat `input`/`expected` arrays. No network architecture or weights are hardcoded in source.
 
-- MLP 2-layer forward pass (`test_mlp.json`)
-- CNN 2-layer forward pass — channel stacking (`test_cnn.json`)
-- CNN single-layer 3×3 conv on 4×4 input (`cnn_4x4_single.json`)
-- Multi-channel to single-channel convolution
-- Multi-channel to multi-channel convolution
+Current coverage:
+
+- MLP 2-layer forward pass (`test_mlp.vectors.json`)
+- MLP 3→4→2 hand-designed weights (`mlp_hand.vectors.json`)
+- CNN 2-layer forward pass — channel stacking (`test_cnn.vectors.json`)
+- CNN single-layer 3×3 conv on 4×4 input (`cnn_4x4_single.vectors.json`)
+- CNN 2-channel 3×3 spatial conv + 1×1 mix (`cnn_hand.vectors.json`)
+
+To add a test: create or extend a `.vectors.json` file, add a case, and register the file in `run_all_tests()` in `src/test.cpp`.
 
 ## Performance Considerations
 
 - Tensors use row-major (C-style) layout
-- NHWC format for convolutional layers (optimized for MCU memory patterns)
+- NHWC format for convolutional layers
 - In-place operations where possible to reduce memory allocation
 - Linear indexing for fast tensor access
 - Call `arena.reset()` between inference batches to reuse the same buffer without freeing individual allocations

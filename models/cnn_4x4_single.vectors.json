@@ -1,0 +1,10 @@
+{
+  "model": "cnn_4x4_single.json",
+  "cases": [
+    {
+      "name": "3x3 single-layer spatial conv",
+      "input": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+      "expected": [4, 4, 4, 4]
+    }
+  ]
+}
