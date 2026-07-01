@@ -35,7 +35,7 @@ Each case:
 
 Console output shows the predicted digit, winner probability, and any runner-up classes above `0.01` — not all ten neurons (most are `0.0000` after softmax).
 
-The MNIST suite uses a **2 MiB** dedicated arena (weights alone need ~400 KiB).
+The MNIST suite uses a **2 MiB** dedicated arena in `src/test_mnist.cpp` (not 64 KiB). Weights alone need ~400 KiB; load also reserves two ping-pong activation buffers (2 × largest hidden tensor). Arena size is **not** in `mnist_mlp.json` — the test harness picks a safe static buffer. See [ARENA.md](ARENA.md).
 
 ## Regenerate model and cases
 

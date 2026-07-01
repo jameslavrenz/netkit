@@ -109,6 +109,34 @@ namespace TensorFactory
         return t;
     }
 
+    Tensor ViewND(float* data, uint32_t rank, std::span<const uint32_t> shape)
+    {
+        Tensor t{};
+
+        t.data = data;
+        t.type = DataType::Float32;
+        t.rank = rank;
+
+        uint32_t num_elements = 1;
+        for (uint32_t i = 0; i < rank; ++i)
+        {
+            t.shape[i] = shape[i];
+            num_elements *= shape[i];
+        }
+
+        uint32_t stride_val = 1;
+        for (int i = static_cast<int>(rank) - 1; i >= 0; --i)
+        {
+            t.stride[i] = stride_val;
+            stride_val *= t.shape[i];
+        }
+
+        t.num_elements = num_elements;
+        t.bytes = num_elements * sizeof(float);
+
+        return t;
+    }
+
     void Fill(Tensor& t, std::initializer_list<float> values)
     {
         float* p = static_cast<float*>(t.data);

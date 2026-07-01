@@ -49,14 +49,36 @@ void MLPLayer::forward(const Tensor& input, Tensor& output)
 // ====================================================
 
 MLPNetwork::MLPNetwork(uint32_t num_layers, Arena& arena)
-    : layers(nullptr), num_layers(num_layers), intermediate_outputs(nullptr), arena(arena)
+    : layers(nullptr), num_layers(num_layers)
 {
     layers = static_cast<MLPLayer*>(arena.alloc(sizeof(MLPLayer) * num_layers, alignof(MLPLayer)));
-    intermediate_outputs = static_cast<Tensor*>(arena.alloc(sizeof(Tensor) * num_layers, alignof(Tensor)));
 }
 
-// No destructor - Arena manages all memory automatically
+bool MLPNetwork::InitActivationBuffers(Arena& arena, uint32_t batch_rows)
+{
+    ping_a = nullptr;
+    ping_b = nullptr;
+    max_activation_elements = 0;
 
+    if (num_layers <= 1 || !layers)
+        return layers != nullptr;
+
+    for (uint32_t i = 0; i < num_layers - 1; ++i)
+    {
+        const uint32_t cols = layers[i].weights.shape[1];
+        const uint32_t elements = batch_rows * cols;
+        if (elements > max_activation_elements)
+            max_activation_elements = elements;
+    }
+
+    if (max_activation_elements == 0)
+        return false;
+
+    const std::size_t bytes = static_cast<std::size_t>(max_activation_elements) * sizeof(float);
+    ping_a = static_cast<float*>(arena.alloc(bytes, alignof(float)));
+    ping_b = static_cast<float*>(arena.alloc(bytes, alignof(float)));
+    return ping_a != nullptr && ping_b != nullptr;
+}
 
 void MLPNetwork::InitLayer(uint32_t layer_idx, const Tensor& weights, const Tensor& bias,
                             ActivationType activation, float leaky_alpha)
@@ -70,27 +92,36 @@ void MLPNetwork::InitLayer(uint32_t layer_idx, const Tensor& weights, const Tens
     layers[layer_idx].leaky_alpha = leaky_alpha;
 }
 
-void MLPNetwork::forward(const Tensor& input, Tensor& output, Arena& arena)
+void MLPNetwork::forward(const Tensor& input, Tensor& output, Arena& /*arena*/)
 {
-    if (!IsValid() || num_layers == 0)
+    if (!IsValid() || !HasActivationBuffers() || num_layers == 0)
         return;
 
-    Tensor current_input = input;
-
-    for (uint32_t i = 0; i < num_layers; i++)
+    if (num_layers == 1)
     {
-        if (i < num_layers - 1)
-        {
-            intermediate_outputs[i] = Create2D(arena, current_input.shape[0], layers[i].weights.shape[1]);
-            if (!intermediate_outputs[i].data)
-                return;
+        layers[0].forward(input, output);
+        return;
+    }
 
-            layers[i].forward(current_input, intermediate_outputs[i]);
-            current_input = intermediate_outputs[i];
-        }
-        else
+    Tensor current_input = input;
+    float* write_buffer = ping_a;
+
+    for (uint32_t i = 0; i < num_layers; ++i)
+    {
+        if (i == num_layers - 1)
         {
             layers[i].forward(current_input, output);
+            return;
         }
+
+        const uint32_t rows = current_input.shape[0];
+        const uint32_t cols = layers[i].weights.shape[1];
+        Tensor layer_output = View2D(write_buffer, rows, cols);
+        if (layer_output.num_elements > max_activation_elements)
+            return;
+
+        layers[i].forward(current_input, layer_output);
+        current_input = layer_output;
+        write_buffer = (write_buffer == ping_a) ? ping_b : ping_a;
     }
 }

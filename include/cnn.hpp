@@ -53,13 +53,25 @@ class CNNNetwork
 private:
     CnnBlock* blocks;
     uint32_t num_layers;
-    Tensor* intermediate_outputs;
-    Arena& arena;
+    float* ping_a{};
+    float* ping_b{};
+    uint32_t max_activation_elements{};
+    Tensor output_cache_{};
 
 public:
     CNNNetwork(uint32_t num_layers, Arena& arena);
 
-    bool IsValid() const { return blocks != nullptr && intermediate_outputs != nullptr; }
+    bool IsValid() const { return blocks != nullptr; }
+
+    bool HasActivationBuffers() const
+    {
+        if (num_layers == 0)
+            return false;
+        return ping_a != nullptr && ping_b != nullptr;
+    }
+
+    // Preallocate two ping-pong activation buffers sized to the largest layer output.
+    bool InitActivationBuffers(Arena& arena, uint32_t in_h, uint32_t in_w, uint32_t in_c);
 
     void InitConvLayer(uint32_t layer_idx,
                        int kernel_size,
@@ -100,5 +112,5 @@ public:
 
     CnnBlock& GetBlock(uint32_t idx) { return blocks[idx]; }
 
-    Tensor& GetOutput() { return intermediate_outputs[num_layers - 1]; }
+    Tensor& GetOutput() { return output_cache_; }
 };

@@ -161,6 +161,8 @@ Returns `NULL` when the arena is uninitialized, arguments are invalid (`size == 
 
 **Backing memory** passed to `nk_arena_init` should be declared `alignas(max_align_t)`.
 
+**Sizing:** pass whatever `size` your model needs — there is no arena field in model JSON. Default examples use `NK_ARENA_DEFAULT_CAPACITY` (64 KiB). MNIST needs multi-MiB buffers. Use `nk_inspect_model()` and read `arena_bytes_after_forward` in `nk_inspect_info_t`, then allocate static storage with headroom. See [ARENA.md](ARENA.md).
+
 Model load / run APIs allocate internally with the correct alignment; you only need `nk_arena_alloc` when building custom integrations on top of the C API.
 
 ## Tensor, ops, conv, MLP, CNN

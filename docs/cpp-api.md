@@ -81,6 +81,7 @@ namespace TensorFactory {
     Tensor Create2D(Arena& arena, uint32_t rows, uint32_t cols);
     Tensor CreateND(Arena& arena, uint32_t rank, std::span<const uint32_t> shape);
     Tensor View2D(float* data, uint32_t rows, uint32_t cols);
+    Tensor ViewND(float* data, uint32_t rank, std::span<const uint32_t> shape);
     void Fill(Tensor& t, std::initializer_list<float> values);
     void Print(const Tensor& t);
     void PrintLabeled(const char* label, const Tensor& t);
@@ -145,10 +146,14 @@ class MLPNetwork {
 public:
     MLPNetwork(uint32_t num_layers, Arena& arena);
     bool IsValid() const;
+    bool HasActivationBuffers() const;
+
+    bool InitActivationBuffers(Arena& arena, uint32_t batch_rows);  // called by LoadMLP
 
     void InitLayer(uint32_t layer_idx, const Tensor& weights, const Tensor& bias,
                    ActivationType activation, float leaky_alpha = 0.01f);
 
+    // Hidden layers use ping-pong buffers allocated at load; final layer writes to output
     void forward(const Tensor& input, Tensor& output, Arena& arena);
     MLPLayer& GetLayer(uint32_t idx);
 };
@@ -169,6 +174,9 @@ class CNNNetwork {
 public:
     CNNNetwork(uint32_t num_layers, Arena& arena);
     bool IsValid() const;
+    bool HasActivationBuffers() const;
+
+    bool InitActivationBuffers(Arena& arena, uint32_t in_h, uint32_t in_w, uint32_t in_c);  // LoadCNN
 
     void InitConvLayer(uint32_t layer_idx, ...);   // conv2d + activation
     void InitPoolLayer(uint32_t layer_idx, int pool_size, int stride);
@@ -178,6 +186,7 @@ public:
 
     void InitLayer(...);  // alias for InitConvLayer (pure conv stacks)
 
+    // All blocks ping-pong between two load-time buffers; result in GetOutput()
     Tensor& forward(const Tensor& input, Arena& arena);
     CnnBlock& GetBlock(uint32_t idx);
     Tensor& GetOutput();

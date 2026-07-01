@@ -189,6 +189,22 @@ This writes `models/mlp_hand.bin` and `models/cnn_hand.bin`. Use `./netkit inspe
 
 Loaders try the path as given, then `../<path>` relative to the current working directory. This allows running the CLI or examples from subdirectories during development.
 
+## Arena memory (not in JSON)
+
+Model JSON does **not** include an arena size or memory budget. Loaders derive memory needs from:
+
+- Weight count (layers × dimensions → `.bin` size)
+- Input shape in JSON (batch / spatial dims)
+- Two **ping-pong activation buffers** sized to the largest intermediate tensor (allocated at load)
+
+Your application chooses a byte buffer and passes it to `Arena::init(memory, size)` or `nk_arena_init()`. Use `./netkit inspect <model.json> --full` or `nk_inspect_model()` to measure high-water, then allocate static storage with margin. Full guide: [ARENA.md](ARENA.md).
+
+| Typical model | Suggested starting buffer |
+|---------------|---------------------------|
+| Hand test MLP/CNN | 64 KiB (`Arena::kDefaultCapacity`) |
+| MNIST MLP | ~2 MiB (see [MNIST.md](MNIST.md)) |
+| MNIST CNN | ~4 MiB (see [MNIST_CNN.md](MNIST_CNN.md)) |
+
 ## Inspecting a model
 
 ```bash
@@ -196,6 +212,6 @@ Loaders try the path as given, then `../<path>` relative to the current working 
 ./netkit inspect models/test_mlp.json --full
 ```
 
-Default mode prints a boxed network summary. `--full` adds weight file summary and arena high-water marks after load and a zero-input forward pass — use that to size embedded memory buffers.
+Default mode prints a boxed network summary. `--full` adds weight file summary and arena high-water marks after load and a zero-input forward pass — use that to size embedded memory buffers. The CLI uses a 64 KiB arena; MNIST models may overflow `--full` on the CLI even though they run fine in the test suite with larger buffers.
 
 See also [VECTORS_TESTS.md](VECTORS_TESTS.md) for adding regression cases.

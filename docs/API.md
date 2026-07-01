@@ -110,7 +110,11 @@ Build the library with `make lib`.
 
 Full guide: [ARENA.md](ARENA.md). Data type constraints: [DATATYPES.md](DATATYPES.md).
 
-Both APIs require a caller-provided buffer for the arena. Default size is 64 KiB (`Arena::kDefaultCapacity` / `NK_ARENA_DEFAULT_CAPACITY`).
+Both APIs require a **caller-provided buffer** for the arena. You pass the buffer and its size to `Arena::init()` / `nk_arena_init()`. The size is **not** in model JSON — it depends on weights plus two ping-pong activation buffers allocated at load (see [ARENA.md](ARENA.md)).
+
+**Default constant:** 64 KiB (`Arena::kDefaultCapacity` / `NK_ARENA_DEFAULT_CAPACITY`) is used in examples, CLI, and hand tests. MNIST models need multi-MiB buffers; the test suite uses 2 MiB (MLP) and 4 MiB (CNN).
+
+**Sizing workflow:** `./netkit inspect <model.json> --full` or `nk_inspect_model()` → read `arena_bytes_after_forward` → allocate static storage with headroom.
 
 **Backing buffer:** declare with `alignas(max_align_t)` / `alignas(std::max_align_t)` so the arena base address satisfies the platform’s strictest alignment.
 

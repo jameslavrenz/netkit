@@ -22,6 +22,11 @@ namespace
         float* out = tensor_data_f32(output);
         std::memcpy(out, in, static_cast<std::size_t>(input.num_elements) * sizeof(float));
     }
+
+    uint32_t MaxU32(uint32_t a, uint32_t b)
+    {
+        return a > b ? a : b;
+    }
 }
 
 void Conv2DLayer::forward(const Tensor& input, Tensor& output)
@@ -89,10 +94,77 @@ void MaxPool2DLayer::forward(const Tensor& input, Tensor& output)
 }
 
 CNNNetwork::CNNNetwork(uint32_t num_layers, Arena& arena)
-    : blocks(nullptr), num_layers(num_layers), intermediate_outputs(nullptr), arena(arena)
+    : blocks(nullptr), num_layers(num_layers)
 {
     blocks = static_cast<CnnBlock*>(arena.alloc(sizeof(CnnBlock) * num_layers, alignof(CnnBlock)));
-    intermediate_outputs = static_cast<Tensor*>(arena.alloc(sizeof(Tensor) * num_layers, alignof(Tensor)));
+}
+
+bool CNNNetwork::InitActivationBuffers(Arena& arena, uint32_t in_h, uint32_t in_w, uint32_t in_c)
+{
+    ping_a = nullptr;
+    ping_b = nullptr;
+    max_activation_elements = 0;
+    output_cache_ = {};
+
+    if (!blocks || num_layers == 0)
+        return blocks != nullptr;
+
+    uint32_t h = in_h;
+    uint32_t w = in_w;
+    uint32_t channels = in_c;
+
+    for (uint32_t i = 0; i < num_layers; ++i)
+    {
+        switch (blocks[i].type)
+        {
+            case CnnBlockType::Conv2D:
+            {
+                const uint32_t out_h =
+                    CalcOutputDim(h, blocks[i].conv.conv.kernel_size, blocks[i].conv.conv.stride);
+                const uint32_t out_w =
+                    CalcOutputDim(w, blocks[i].conv.conv.kernel_size, blocks[i].conv.conv.stride);
+                const uint32_t out_c = static_cast<uint32_t>(blocks[i].conv.conv.out_channels);
+                max_activation_elements = MaxU32(max_activation_elements, out_h * out_w * out_c);
+                h = out_h;
+                w = out_w;
+                channels = out_c;
+                break;
+            }
+            case CnnBlockType::MaxPool2D:
+            {
+                const uint32_t out_h = CalcOutputDim(h, blocks[i].pool.pool_size, blocks[i].pool.stride);
+                const uint32_t out_w = CalcOutputDim(w, blocks[i].pool.pool_size, blocks[i].pool.stride);
+                max_activation_elements = MaxU32(max_activation_elements, out_h * out_w * channels);
+                h = out_h;
+                w = out_w;
+                break;
+            }
+            case CnnBlockType::Flatten:
+            {
+                const uint32_t features = h * w * channels;
+                max_activation_elements = MaxU32(max_activation_elements, features);
+                h = 1;
+                w = features;
+                channels = 1;
+                break;
+            }
+            case CnnBlockType::Dense:
+            {
+                const uint32_t out_features = blocks[i].dense.weights.shape[1];
+                max_activation_elements = MaxU32(max_activation_elements, out_features);
+                w = out_features;
+                break;
+            }
+        }
+    }
+
+    if (max_activation_elements == 0)
+        return false;
+
+    const std::size_t bytes = static_cast<std::size_t>(max_activation_elements) * sizeof(float);
+    ping_a = static_cast<float*>(arena.alloc(bytes, alignof(float)));
+    ping_b = static_cast<float*>(arena.alloc(bytes, alignof(float)));
+    return ping_a != nullptr && ping_b != nullptr;
 }
 
 void CNNNetwork::InitConvLayer(uint32_t layer_idx,
@@ -153,17 +225,21 @@ void CNNNetwork::InitDenseLayer(uint32_t layer_idx,
     blocks[layer_idx].dense.leaky_alpha = leaky_alpha;
 }
 
-Tensor& CNNNetwork::forward(const Tensor& input, Arena& arena)
+Tensor& CNNNetwork::forward(const Tensor& input, Arena& /*arena*/)
 {
     static Tensor empty{};
 
-    if (!IsValid() || num_layers == 0)
+    if (!IsValid() || !HasActivationBuffers() || num_layers == 0)
         return empty;
 
+    output_cache_ = {};
     Tensor current_input = input;
+    float* write_buffer = ping_a;
 
     for (uint32_t i = 0; i < num_layers; ++i)
     {
+        Tensor layer_output{};
+
         switch (blocks[i].type)
         {
             case CnnBlockType::Conv2D:
@@ -173,14 +249,8 @@ Tensor& CNNNetwork::forward(const Tensor& input, Arena& arena)
                 const uint32_t out_w =
                     CalcOutputDim(current_input.shape[1], blocks[i].conv.conv.kernel_size, blocks[i].conv.conv.stride);
                 const uint32_t out_c = static_cast<uint32_t>(blocks[i].conv.conv.out_channels);
-
                 const std::array<uint32_t, 3> shape = {out_h, out_w, out_c};
-                intermediate_outputs[i] = CreateND(arena, 3, shape);
-                if (!intermediate_outputs[i].data)
-                    return intermediate_outputs[i];
-
-                blocks[i].conv.forward(current_input, intermediate_outputs[i]);
-                current_input = intermediate_outputs[i];
+                layer_output = ViewND(write_buffer, 3, shape);
                 break;
             }
             case CnnBlockType::MaxPool2D:
@@ -190,40 +260,47 @@ Tensor& CNNNetwork::forward(const Tensor& input, Arena& arena)
                 const uint32_t out_w =
                     CalcOutputDim(current_input.shape[1], blocks[i].pool.pool_size, blocks[i].pool.stride);
                 const uint32_t out_c = current_input.shape[2];
-
                 const std::array<uint32_t, 3> shape = {out_h, out_w, out_c};
-                intermediate_outputs[i] = CreateND(arena, 3, shape);
-                if (!intermediate_outputs[i].data)
-                    return intermediate_outputs[i];
-
-                blocks[i].pool.forward(current_input, intermediate_outputs[i]);
-                current_input = intermediate_outputs[i];
+                layer_output = ViewND(write_buffer, 3, shape);
                 break;
             }
             case CnnBlockType::Flatten:
             {
                 const uint32_t features = current_input.num_elements;
-                intermediate_outputs[i] = Create2D(arena, 1, features);
-                if (!intermediate_outputs[i].data)
-                    return intermediate_outputs[i];
-
-                FlattenNhwc(current_input, intermediate_outputs[i]);
-                current_input = intermediate_outputs[i];
+                layer_output = View2D(write_buffer, 1, features);
                 break;
             }
             case CnnBlockType::Dense:
             {
                 const uint32_t out_features = blocks[i].dense.weights.shape[1];
-                intermediate_outputs[i] = Create2D(arena, 1, out_features);
-                if (!intermediate_outputs[i].data)
-                    return intermediate_outputs[i];
-
-                blocks[i].dense.forward(current_input, intermediate_outputs[i]);
-                current_input = intermediate_outputs[i];
+                layer_output = View2D(write_buffer, 1, out_features);
                 break;
             }
         }
+
+        if (!layer_output.data || layer_output.num_elements > max_activation_elements)
+            return empty;
+
+        switch (blocks[i].type)
+        {
+            case CnnBlockType::Conv2D:
+                blocks[i].conv.forward(current_input, layer_output);
+                break;
+            case CnnBlockType::MaxPool2D:
+                blocks[i].pool.forward(current_input, layer_output);
+                break;
+            case CnnBlockType::Flatten:
+                FlattenNhwc(current_input, layer_output);
+                break;
+            case CnnBlockType::Dense:
+                blocks[i].dense.forward(current_input, layer_output);
+                break;
+        }
+
+        current_input = layer_output;
+        output_cache_ = layer_output;
+        write_buffer = (write_buffer == ping_a) ? ping_b : ping_a;
     }
 
-    return intermediate_outputs[num_layers - 1];
+    return output_cache_;
 }

@@ -115,6 +115,8 @@ netkit/
 | `model.bin` | Raw float32 weights in layer order |
 | `model.vectors.json` | Regression test cases (optional) |
 
+Arena buffer size is **not** in JSON — you provide a caller-owned buffer sized for weights + ping-pong activations. See [docs/ARENA.md](docs/ARENA.md).
+
 Full schema, weight layout, and activations: [docs/MODEL_FORMAT.md](docs/MODEL_FORMAT.md).  
 Regression tests: [docs/TESTING.md](docs/TESTING.md) (hand vectors + MNIST).
 

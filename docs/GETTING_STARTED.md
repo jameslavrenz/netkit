@@ -71,6 +71,18 @@ See [CLI.md](CLI.md) for full command reference.
 
 Default mode prints a boxed network summary. `--full` adds weight file info and arena memory usage after load and forward pass.
 
+## Size the arena buffer
+
+Every inference path uses an arena — there is no heap fallback for weights or activations. The buffer size is **your choice**, not a field in `model.json`.
+
+1. Run `./netkit inspect models/your_model.json --full` (or `nk_inspect_model()` from C).
+2. Note **arena bytes after forward**.
+3. Declare a static buffer with headroom (often 1.5–2×), then `arena.init(buffer, sizeof(buffer))`.
+
+Hand models fit in **64 KiB** (`Arena::kDefaultCapacity`). MNIST needs **~2 MiB** (MLP) or **~4 MiB** (CNN) — see [ARENA.md](ARENA.md) and [TESTING.md](TESTING.md) for where each harness sets its size.
+
+At load time, netkit allocates weights plus **two ping-pong activation buffers** (largest layer output × 2). Forward passes reuse those buffers instead of allocating one tensor per layer.
+
 ## Use the C API (C23)
 
 Build and run the full example:

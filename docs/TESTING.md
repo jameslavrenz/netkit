@@ -33,6 +33,20 @@ Both `make test-cpp` and `make test-c` exercise the **same 36 inference cases** 
 | [MNIST.md](MNIST.md) | MNIST MLP bundle |
 | [MNIST_CNN.md](MNIST_CNN.md) | MNIST CNN bundle |
 
+## Arena buffers in tests
+
+All regression paths use an arena; only the **backing buffer size** varies:
+
+| Harness | Source | Arena size | Models |
+|---------|--------|------------|--------|
+| Hand vector tests | `src/vectors_loader.cpp` | **64 KiB** | `*.vectors.json` hand models |
+| MNIST MLP | `src/test_mnist.cpp` | **2 MiB** | `mnist_mlp.json` |
+| MNIST CNN | `src/test_mnist.cpp` | **4 MiB** | `mnist_cnn.json` |
+| C API smoke / unit tests | `tests/test_c_api.c` | **64 KiB** | hand models + parse/load smoke |
+| CLI `run` / `inspect` | `src/cli.cpp` | **64 KiB** | hand models (MNIST may overflow `--full`) |
+
+The test code does not read arena size from JSON — constants are chosen so weights + ping-pong activation buffers fit. See [ARENA.md](ARENA.md) for sizing your own firmware buffer.
+
 ## C++ API suite (`make test-cpp`)
 
 Entry: `./netkit test` → `run_all_tests()` in `src/test.cpp`.

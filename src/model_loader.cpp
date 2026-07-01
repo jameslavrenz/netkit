@@ -930,6 +930,13 @@ namespace ModelLoader
             in_features = out_features;
         }
 
+        if (!network->InitActivationBuffers(arena, input_shape[0]))
+            return Fail(LoadStatus::ArenaOverflow, "Arena out of memory while allocating MLP activation buffers",
+                        NetworkKind::MLP);
+
+        if (!network->HasActivationBuffers())
+            return Fail(LoadStatus::ArenaOverflow, "MLP activation buffers not ready", NetworkKind::MLP);
+
         return LoadResult{LoadStatus::Ok, NetworkKind::MLP, nullptr};
     }
 
@@ -1041,6 +1048,13 @@ namespace ModelLoader
                 }
             }
         }
+
+        if (!network->InitActivationBuffers(arena, input_shape[0], input_shape[1], input_shape[2]))
+            return Fail(LoadStatus::ArenaOverflow, "Arena out of memory while allocating CNN activation buffers",
+                        NetworkKind::CNN);
+
+        if (!network->HasActivationBuffers())
+            return Fail(LoadStatus::ArenaOverflow, "CNN activation buffers not ready", NetworkKind::CNN);
 
         return LoadResult{LoadStatus::Ok, NetworkKind::CNN, nullptr};
     }

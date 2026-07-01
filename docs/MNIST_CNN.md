@@ -42,6 +42,8 @@ Recorded in `models/mnist_cnn/training_meta.json`.
 
 Each case loads binary input/expected tensors, compares all 10 softmax outputs within tolerance, and checks argmax vs label. Console output shows predicted class, winner probability, and runner-ups above `0.01` (see [TESTING.md](TESTING.md)).
 
+The MNIST CNN suite uses a **4 MiB** dedicated arena in `src/test_mnist.cpp` (~900 KiB weights plus ping-pong activation buffers for conv feature maps). Arena size is not in JSON — see [ARENA.md](ARENA.md).
+
 ## Running
 
 MNIST CNN tests run automatically in `make test` / `./netkit test` — see [TESTING.md](TESTING.md).

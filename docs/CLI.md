@@ -138,6 +138,8 @@ The C API equivalent is `nk_arch_print()`.
 
 **`--full`:** Legacy diagnostic mode — compact architecture dump, weight file summary, and arena memory usage after load and a zero-input forward pass. Use this to size embedded arena buffers before deployment. The C API equivalent for arena sizing is `nk_inspect_model()`.
 
+The CLI uses a **64 KiB** internal arena (`Arena::kDefaultCapacity`). That is enough for hand test models. **MNIST models** need multi-MiB buffers — `inspect --full` on `mnist_mlp.json` / `mnist_cnn.json` may fail with arena overflow on the CLI even though `make test` passes (tests use 2 MiB / 4 MiB). Size your own firmware buffer from `nk_inspect_model()` with a large enough arena, or see [ARENA.md](ARENA.md).
+
 ## Path resolution
 
 If `<model.json>` is not found in the current directory, the CLI tries `../<model.json>`. Run from the repo root or ensure model paths are reachable.
