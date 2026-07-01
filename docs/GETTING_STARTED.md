@@ -2,6 +2,8 @@
 
 This guide gets you from clone to running inference on the desktop in a few minutes.
 
+**Related docs:** [CLI](CLI.md) · [Model format](MODEL_FORMAT.md) · [Vectors tests](VECTORS_TESTS.md) · [C API](c-api.md) · [C++ API](cpp-api.md)
+
 ## Requirements
 
 | Component | Standard | Compiler |
@@ -11,6 +13,8 @@ This guide gets you from clone to running inference on the desktop in a few minu
 | Build | Make | Any Unix-like environment |
 
 No external dependencies beyond the standard library.
+
+All inference tensors, weights (`.bin`), and math use **float32** (`float`). There is no float64 path in the engine.
 
 ## Build
 
@@ -25,23 +29,26 @@ This produces:
 - **`netkit`** — CLI tool for tests, one-off inference, and inspection
 - **`libnetkit.a`** — static library (C++ core + C API bridge)
 
-Optional C example:
+Optional usage demos:
 
 ```bash
-make example-c
+make example-cpp   # C++26: examples/infer_cpp
+make example-c     # C23:    examples/infer_c
 ```
 
 ## Run the test suite
 
 ```bash
-make run
-# or
-./netkit test
+make test        # C++ API tests, then C API tests
+make test-cpp    # C++26 only: ./netkit test
+make test-c      # C23 only:  ./tests/test_c_api
 ```
 
-You should see **8 passed, 0 failed** across MLP and CNN vector tests.
+Each suite validates the same eight vector models. The C API suite adds direct smoke tests for arena, tensor, ops, and model load/run.
 
 ## Run inference from the CLI
+
+See [CLI.md](CLI.md) for full command reference.
 
 ```bash
 # MLP: 2 inputs -> 2 outputs
@@ -61,11 +68,14 @@ Prints architecture, weight file info, and arena memory usage after load and for
 
 ## Use the C API (C23)
 
+Build and run the full example:
+
 ```bash
+make example-c
 ./examples/infer_c models/test_mlp.json 1 2
 ```
 
-Minimal code:
+Source: [`examples/infer_c.c`](../examples/infer_c.c). Minimal integration pattern:
 
 ```c
 #include "netkit.h"
@@ -95,6 +105,15 @@ See [c-api.md](c-api.md) for the full C reference.
 
 ## Use the C++ API (C++26)
 
+Build and run the full example:
+
+```bash
+make example-cpp
+./examples/infer_cpp models/test_mlp.json 1 2
+```
+
+Source: [`examples/infer_cpp.cpp`](../examples/infer_cpp.cpp). Minimal integration pattern:
+
 ```cpp
 #include "arena.hpp"
 #include "model_loader.hpp"
@@ -121,7 +140,7 @@ See [cpp-api.md](cpp-api.md) for the full C++ reference.
 
 ## Model file bundles
 
-Each model is three files sharing a base name:
+Each model is three files sharing a base name. See [MODEL_FORMAT.md](MODEL_FORMAT.md) for the full JSON schema, weight byte layout, and supported activations.
 
 | File | Purpose |
 |------|---------|
@@ -133,8 +152,9 @@ Example workflow:
 
 1. Edit `model.json`
 2. Export or generate `model.bin` (see `tools/write_hand_models.py` for hand models)
-3. Add cases to `model.vectors.json`
-4. Run `./netkit test`
+3. Add cases to `model.vectors.json` — see [VECTORS_TESTS.md](VECTORS_TESTS.md)
+4. Register the vectors file in `src/test.cpp` if it is a new bundle
+5. Run `make test`
 
 ## Project layout
 
@@ -142,7 +162,11 @@ Example workflow:
 netkit/
 ├── include/          Headers (C++ + netkit.h)
 ├── src/              C++26 implementation
-├── examples/         C23 usage example
+├── examples/
+│   ├── infer_cpp.cpp # C++26 usage demo
+│   └── infer_c.c     # C23 usage demo
+├── tests/
+│   └── test_c_api.c  # C23 API regression tests
 ├── models/           JSON + bin + vectors test bundles
 ├── tools/            Python helpers for weight generation
 └── docs/             Guides and API reference
@@ -151,5 +175,6 @@ netkit/
 ## Next steps
 
 - Read [API.md](API.md) for an overview of both APIs
-- Add a new test case in `models/*.vectors.json` and register it in `src/test.cpp`
+- Read [CLI.md](CLI.md) for `test`, `run`, and `inspect`
+- Add a regression case — [VECTORS_TESTS.md](VECTORS_TESTS.md)
 - Use `./netkit inspect` to size your arena before deploying to embedded targets

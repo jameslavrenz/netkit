@@ -71,7 +71,17 @@
   },
   {
     "directory": "/Users/jimlavrenz/workspace/netkit",
+    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -c examples/infer_cpp.cpp",
+    "file": "/Users/jimlavrenz/workspace/netkit/examples/infer_cpp.cpp"
+  },
+  {
+    "directory": "/Users/jimlavrenz/workspace/netkit",
     "command": "clang -std=c23 -I/Users/jimlavrenz/workspace/netkit/include -c examples/infer_c.c",
     "file": "/Users/jimlavrenz/workspace/netkit/examples/infer_c.c"
+  },
+  {
+    "directory": "/Users/jimlavrenz/workspace/netkit",
+    "command": "clang -std=c23 -I/Users/jimlavrenz/workspace/netkit/include -c tests/test_c_api.c",
+    "file": "/Users/jimlavrenz/workspace/netkit/tests/test_c_api.c"
   }
 ]

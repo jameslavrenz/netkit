@@ -22,17 +22,18 @@ jobs:
       - name: Build
         run: make
 
-      - name: Run regression tests
-        run: make run
+      - name: Run C++ and C API tests
+        run: make test
 
-      - name: Build C example
-        run: make example-c
+      - name: Build and run C++ example
+        run: |
+          make example-cpp
+          ./examples/infer_cpp models/test_mlp.json 1 2
 
-      - name: Run C example (MLP)
-        run: ./examples/infer_c models/test_mlp.json 1 2
-
-      - name: Run C example (CNN)
-        run: ./examples/infer_c models/cnn_4x4_single.json 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1
+      - name: Build and run C example
+        run: |
+          make example-c
+          ./examples/infer_c models/test_mlp.json 1 2
 
       - name: CLI smoke test
         run: |

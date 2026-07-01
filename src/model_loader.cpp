@@ -149,12 +149,12 @@ namespace ModelLoader
                 return true;
             }
 
-            double parsed = default_value;
+            float parsed = default_value;
             const char* p = value;
-            if (!Json::ParseNumber(p, layer_end, parsed))
+            if (!Json::ParseFloat(p, layer_end, parsed))
                 return false;
 
-            out = static_cast<float>(parsed);
+            out = parsed;
             return true;
         }
 

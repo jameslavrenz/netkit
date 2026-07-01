@@ -11,6 +11,10 @@ VectorsLoader::RunSummary run_all_tests()
     };
 
     std::cout << "\n============================\n";
+    std::cout << " C++ API TESTS\n";
+    std::cout << "============================\n";
+
+    std::cout << "\n============================\n";
     std::cout << " MLP TESTS\n";
     std::cout << "============================\n";
     merge(VectorsLoader::RunVectorsFile("models/test_mlp.vectors.json"));

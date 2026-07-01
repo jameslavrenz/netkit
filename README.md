@@ -9,18 +9,23 @@ Models are loaded from JSON architecture files and companion float32 `.bin` weig
 | Guide | Description |
 |-------|-------------|
 | **[Getting Started](docs/GETTING_STARTED.md)** | Build, test, and first inference in minutes |
-| **[API Overview](docs/API.md)** | C vs C++ APIs, CLI, linking |
+| **[API Overview](docs/API.md)** | C vs C++ APIs, linking, memory model |
+| **[CLI Reference](docs/CLI.md)** | `test`, `run`, and `inspect` commands |
+| **[Model File Format](docs/MODEL_FORMAT.md)** | JSON architecture + float32 `.bin` weights |
+| **[Vectors Tests](docs/VECTORS_TESTS.md)** | Declarative regression test files |
 | **[C API Reference](docs/c-api.md)** | `netkit.h` (C23) |
 | **[C++ API Reference](docs/cpp-api.md)** | Headers in `include/` (C++26) |
+| **[API Parity Policy](docs/API_PARITY.md)** | C ↔ C++ symbol map and contribution rules |
+| **[MLP Background](docs/nn.md)** | Optional theory (training/backprop); netkit is inference-only |
 
 ## Language standards
 
-| Code | Standard | Location |
-|------|----------|----------|
-| C++ engine | **C++26** | `src/*.cpp`, `include/*.hpp` |
-| C API | **C23** | `include/netkit.h`, `examples/infer_c.c` |
+| Code | Standard | Role |
+|------|----------|------|
+| C++ engine | **C++26** | All implementation, primary API, CLI, C++ tests |
+| C API | **C23** | `netkit.h` bridge + `tests/test_c_api.c` |
 
-The C API is a thin `extern "C"` bridge (`src/netkit_api.cpp`) over the C++ core. Link with `libnetkit.a`.
+Application code is C++26. C23 is limited to the C header, the `extern "C"` bridge (`src/netkit_api.cpp`), and the C API test harness.
 
 ## Features
 
@@ -29,27 +34,38 @@ The C API is a thin `extern "C"` bridge (`src/netkit_api.cpp`) over the C++ core
 - **MLP & CNN** — High-level network abstractions with JSON + `.bin` loading
 - **Arena allocator** — Bump-pointer memory management (no heap in layer paths)
 - **Vectors test runner** — Declarative regression tests in `*.vectors.json`
-- **Activations** — ReLU, LeakyReLU, ReLU6, Sigmoid, Tanh, Softmax
+- **Float32 inference** — all tensors, weights, and math use IEEE-754 single precision (`float`)
 
 ## Quick start
 
 ```bash
 make              # build netkit CLI + libnetkit.a
-make run          # run 8 regression tests
+make test         # C++ API tests + C API tests
 ./netkit run models/test_mlp.json --input 1,2
-make example-c    # build C23 example
-./examples/infer_c models/test_mlp.json 1 2
+make example-cpp    # C++26 usage demo
+make example-c      # C23 usage demo
 ```
 
 See [Getting Started](docs/GETTING_STARTED.md) for full details.
 
 ## CLI
 
+Full reference: [docs/CLI.md](docs/CLI.md)
+
 ```bash
-./netkit test                              # regression suite
+./netkit test                              # C++ API regression suite
 ./netkit run models/test_mlp.json --input 1,2
 ./netkit inspect models/test_mlp.json      # architecture + arena sizing
 ```
+
+## Examples
+
+| Demo | Language | Build | Run |
+|------|----------|-------|-----|
+| `examples/infer_cpp.cpp` | C++26 | `make example-cpp` | `./examples/infer_cpp models/test_mlp.json 1 2` |
+| `examples/infer_c.c` | C23 | `make example-c` | `./examples/infer_c models/test_mlp.json 1 2` |
+
+Both load a model from JSON + `.bin` and print input/output tensors. See [Getting Started](docs/GETTING_STARTED.md) for minimal code snippets and linking.
 
 ## Project structure
 
@@ -64,11 +80,21 @@ netkit/
 │   └── ...
 ├── src/                    # C++26 implementation
 ├── examples/
+│   ├── infer_cpp.cpp       # C++26 usage example
 │   └── infer_c.c           # C23 usage example
+├── tests/
+│   └── test_c_api.c        # C23 API regression tests
 ├── models/                 # JSON + bin + vectors bundles
 ├── tools/
 │   └── write_hand_models.py
 └── docs/                   # Guides and API reference
+    ├── GETTING_STARTED.md
+    ├── API.md
+    ├── CLI.md
+    ├── MODEL_FORMAT.md
+    ├── VECTORS_TESTS.md
+    ├── c-api.md / cpp-api.md
+    └── API_PARITY.md
 ```
 
 ## Model file bundles
@@ -78,6 +104,9 @@ netkit/
 | `model.json` | Architecture (layers, activations, input shape) |
 | `model.bin` | Raw float32 weights in layer order |
 | `model.vectors.json` | Regression test cases (optional) |
+
+Full schema, weight layout, and activations: [docs/MODEL_FORMAT.md](docs/MODEL_FORMAT.md).  
+Regression tests: [docs/VECTORS_TESTS.md](docs/VECTORS_TESTS.md).
 
 ## Building
 
@@ -92,8 +121,11 @@ netkit/
 ```bash
 make              # netkit CLI + libnetkit.a
 make lib          # libnetkit.a only
-make run          # build and run tests
-make example-c    # C23 inference example
+make test         # C++ API tests + C API tests
+make test-cpp     # C++ API regression only
+make test-c       # C API regression only
+make example-cpp  # C++26 usage demo
+make example-c    # C23 usage demo
 make clean
 make rebuild
 ```
@@ -101,10 +133,17 @@ make rebuild
 ## Testing
 
 ```bash
-make run
+make test       # C++ API tests, then C API tests
+make test-cpp   # ./netkit test  (C++26 vectors regression)
+make test-c     # ./tests/test_c_api  (C23 API regression)
 ```
 
-Eight vector-driven tests cover MLP and CNN forward passes. To add a test, create or extend a `models/*.vectors.json` file and register it in `src/test.cpp`.
+| Suite | Language | Entry point |
+|-------|----------|-------------|
+| C++ API | C++26 | `src/test.cpp` via `./netkit test` |
+| C API | C23 | `tests/test_c_api.c` |
+
+Both suites cover the same eight vector models plus API-specific smoke checks.
 
 ## Design principles
 
@@ -128,5 +167,6 @@ Eight vector-driven tests cover MLP and CNN forward passes. To add a test, creat
 
 - C++ sources: C++26
 - C sources and `netkit.h`: C23
-- All tests must pass (`make run`)
+- All tests must pass (`make test`)
 - Update docs when changing public API
+- **New C++ public API requires a matching C entry in `netkit.h`** — see [API_PARITY.md](docs/API_PARITY.md)

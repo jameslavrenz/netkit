@@ -87,11 +87,11 @@ namespace Cli
                     break;
 
                 char* end = nullptr;
-                const double value = std::strtod(cursor, &end);
+                const float value = std::strtof(cursor, &end);
                 if (end == cursor)
                     return false;
 
-                values[count++] = static_cast<float>(value);
+                values[count++] = value;
                 cursor = end;
             }
 
@@ -125,7 +125,7 @@ namespace Cli
             const VectorsLoader::RunSummary summary = run_all_tests();
 
             std::cout << "\n============================\n";
-            std::cout << " SUMMARY\n";
+            std::cout << " C++ API SUMMARY\n";
             std::cout << "============================\n";
             std::cout << "Passed: " << summary.passed << "\n";
             std::cout << "Failed: " << summary.failed << "\n";

@@ -1,6 +1,8 @@
 # Executables
 netkit
 examples/infer_c
+examples/infer_cpp
+tests/test_c_api
 
 # Libraries
 libnetkit.a

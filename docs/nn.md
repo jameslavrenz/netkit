@@ -1,5 +1,7 @@
 # Multilayer Perceptrons (MLPs) and Backpropagation — A Complete Engineering Explanation
 
+> **Note:** This document explains neural network *training* theory (backpropagation, loss functions, gradient descent). **netkit is inference-only** — it runs forward passes on pre-trained float32 weights and does not implement training. For netkit usage, start with [GETTING_STARTED.md](GETTING_STARTED.md) and [MODEL_FORMAT.md](MODEL_FORMAT.md).
+
 ---
 
 ## 1. What a Neural Network Actually Is (Engineering View)

@@ -2,6 +2,8 @@
 
 Headers live in [`include/`](../include/). All implementation files use `-std=c++26`.
 
+**Numeric type:** inference uses **float32 only** — `DataType::Float32`, `float` tensors, float32 `.bin` weights, and `expf`/`tanhf` in activations. No double-precision inference path.
+
 ## Core headers
 
 | Header | Purpose |
@@ -20,7 +22,7 @@ Headers live in [`include/`](../include/). All implementation files use `-std=c+
 | `cli.hpp` | CLI dispatch (`Cli::Run`) |
 | `test.hpp` | Test suite entry (`run_all_tests`) |
 
-For a stable C interface from C++ projects or embedded firmware, prefer [`netkit.h`](c-api.md).
+For a stable C interface from C++ projects or embedded firmware, use [`netkit.h`](c-api.md). Every C++ public symbol has a C equivalent — see [`API_PARITY.md`](API_PARITY.md).
 
 ---
 
@@ -221,7 +223,7 @@ LoadResult Load(const char* json_path, Arena& arena, NetworkKind& kind,
 }
 ```
 
-**JSON format**
+**JSON format** — full schema in [MODEL_FORMAT.md](MODEL_FORMAT.md).
 
 ```json
 {
@@ -235,10 +237,19 @@ LoadResult Load(const char* json_path, Arena& arena, NetworkKind& kind,
 }
 ```
 
-**Weight layout (`.bin`)**
+**Weight layout (`.bin`)** — see [MODEL_FORMAT.md](MODEL_FORMAT.md) for byte order and CNN layout.
 
 - Dense: `W[in×out]` row-major, then `b[out]`
 - Conv2D: `W[out×k×k×in]`, then `b[out]`
+
+---
+
+## Examples
+
+| File | Build | Description |
+|------|-------|-------------|
+| [`examples/infer_cpp.cpp`](../examples/infer_cpp.cpp) | `make example-cpp` | Load MLP/CNN and run forward pass via native headers |
+| [`examples/infer_c.c`](../examples/infer_c.c) | `make example-c` | Same workflow via `netkit.h` |
 
 ---
 
@@ -251,7 +262,7 @@ namespace VectorsLoader {
 }
 ```
 
-Drives regression tests from `*.vectors.json` files.
+Drives regression tests from `*.vectors.json` files. Format and tolerance: [VECTORS_TESTS.md](VECTORS_TESTS.md).
 
 ---
 
@@ -263,7 +274,7 @@ namespace Cli {
 }
 ```
 
-Commands: `test`, `run <model.json> --input ...`, `inspect <model.json>`.
+Commands: `test`, `run <model.json> --input ...`, `inspect <model.json>`. Full reference: [CLI.md](CLI.md).
 
 ---
 

@@ -12,7 +12,7 @@ namespace Json
     bool MatchLiteral(const char*& p, const char* end, const char* lit);
 
     bool ParseString(const char*& p, const char* end, char* out, std::size_t out_capacity);
-    bool ParseNumber(const char*& p, const char* end, double& out);
+    bool ParseFloat(const char*& p, const char* end, float& out);
     bool ParseUint(const char*& p, const char* end, uint32_t& out);
 
     // Search object/array text for "key": value; returns pointer to start of value.

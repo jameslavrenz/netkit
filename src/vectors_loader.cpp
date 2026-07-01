@@ -101,10 +101,10 @@ namespace VectorsLoader
                    Json::NextArrayElement(cursor, object_end, elem_begin, elem_end))
             {
                 const char* p = elem_begin;
-                double number = 0.0;
-                if (!Json::ParseNumber(p, elem_end, number))
+                float number = 0.0f;
+                if (!Json::ParseFloat(p, elem_end, number))
                     return false;
-                values[count++] = static_cast<float>(number);
+                values[count++] = number;
             }
 
             return count > 0;

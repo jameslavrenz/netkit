@@ -55,14 +55,14 @@ namespace Json
         return true;
     }
 
-    bool ParseNumber(const char*& p, const char* end, double& out)
+    bool ParseFloat(const char*& p, const char* end, float& out)
     {
         p = SkipWhitespace(p, end);
         if (p >= end)
             return false;
 
         char* after = nullptr;
-        out = ::strtod(const_cast<char*>(p), &after);
+        out = std::strtof(const_cast<char*>(p), &after);
         if (after == p)
             return false;
 
@@ -72,11 +72,17 @@ namespace Json
 
     bool ParseUint(const char*& p, const char* end, uint32_t& out)
     {
-        double value = 0.0;
-        if (!ParseNumber(p, end, value) || value < 0.0)
+        p = SkipWhitespace(p, end);
+        if (p >= end)
+            return false;
+
+        char* after = nullptr;
+        const unsigned long value = std::strtoul(const_cast<char*>(p), &after, 10);
+        if (after == p)
             return false;
 
         out = static_cast<uint32_t>(value);
+        p = after;
         return true;
     }
 

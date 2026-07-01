@@ -266,7 +266,7 @@ namespace Ops
 
         for (uint32_t i = 0; i < A.num_elements; i++)
         {
-            c[i] = 1.0f / (1.0f + std::exp(-a[i]));
+            c[i] = 1.0f / (1.0f + std::expf(-a[i]));
         }
     }
 
@@ -283,7 +283,7 @@ namespace Ops
 
         for (uint32_t i = 0; i < A.num_elements; i++)
         {
-            c[i] = std::tanh(a[i]);
+            c[i] = std::tanhf(a[i]);
         }
     }
 
@@ -351,7 +351,7 @@ namespace Ops
         float sum = 0.0f;
         for (uint32_t i = 0; i < n; i++)
         {
-            float e = std::exp(a[i] - max_val);
+            float e = std::expf(a[i] - max_val);
             c[i] = e;
             sum += e;
         }

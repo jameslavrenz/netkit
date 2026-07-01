@@ -4,6 +4,8 @@ Public header: [`include/netkit.h`](../include/netkit.h)
 
 Compile user code with `-std=c23`. Link against `libnetkit.a` using a C++ linker driver.
 
+Every function listed here mirrors a C++26 entry point. See [`API_PARITY.md`](API_PARITY.md) for the full symbol map and contribution policy.
+
 ## Version
 
 ```c
@@ -25,6 +27,8 @@ const char* nk_version_string(void);  // "0.1.0"
 | `NK_ARENA_DEFAULT_CAPACITY` | 65536 | Default arena size (64 KiB) |
 | `NK_ARENA_STORAGE_BYTES` | 32 | Size of `nk_arena_t.storage` |
 | `NK_MODEL_STORAGE_BYTES` | 64 | Size of `nk_model_t.storage` |
+| `NK_MLP_STORAGE_BYTES` | 16 | Size of `nk_mlp_t.storage` |
+| `NK_CNN_STORAGE_BYTES` | 16 | Size of `nk_cnn_t.storage` |
 
 ## Types
 
@@ -44,11 +48,24 @@ const char* nk_version_string(void);  // "0.1.0"
 | `NK_ERR_INVALID_ARGUMENT` | Null pointer or size mismatch |
 | `NK_ERR_BUFFER_TOO_SMALL` | Output buffer too small |
 | `NK_ERR_MODEL_NOT_LOADED` | Model handle not initialized |
+| `NK_ERR_NOT_INITIALIZED` | Network handle not created |
 
 ```c
 const char* nk_status_string(nk_status_t status);
 const char* nk_last_error(void);  // detail after failed call; thread-local
 ```
+
+### `nk_dtype_t`, `nk_activation_t`, `nk_conv_activation_t`
+
+Mirror C++ `DataType`, `ActivationType`, and `ConvActivationType`.
+
+### `nk_tensor_t`, `nk_conv2d_t`
+
+Mirror C++ `Tensor` and `Conv2D` layouts. Safe to pass by pointer to all `nk_tensor_*` and `nk_ops_*` functions.
+
+### `nk_mlp_t`, `nk_cnn_t`
+
+Opaque handles for manually constructed or file-loaded networks.
 
 ### `nk_network_kind_t`
 
@@ -113,27 +130,56 @@ typedef struct nk_inspect_info {
 
 ```c
 void nk_arena_init(nk_arena_t* arena, void* memory, size_t size);
+void* nk_arena_alloc(nk_arena_t* arena, size_t size);
 void nk_arena_reset(nk_arena_t* arena);
 size_t nk_arena_capacity(const nk_arena_t* arena);
 size_t nk_arena_used(const nk_arena_t* arena);
 size_t nk_arena_remaining(const nk_arena_t* arena);
 ```
 
-- **`nk_arena_init`** — Bind `arena` to a caller-provided memory region. Does not zero the region.
-- **`nk_arena_reset`** — Reset bump pointer; reuse buffer across runs without freeing individual allocations.
+## Tensor, ops, conv, MLP, CNN
 
-## Architecture parsing
+See [`netkit.h`](../include/netkit.h) for:
+
+- `nk_tensor_*` — create, view, fill, print, data access
+- `nk_ops_*` — validation, arithmetic, activations
+- `nk_conv2d_forward`
+- `nk_mlp_*` / `nk_cnn_*` — create, init layer, forward
+
+## Model loader
 
 ```c
 nk_status_t nk_parse_architecture(const char* json_path, nk_arch_info_t* info);
+void nk_arch_print(const char* json_path);
+bool nk_json_path_to_bin_path(const char* json_path, char* bin_path, size_t capacity);
+nk_status_t nk_load_weights_bin(const char* json_path, nk_arena_t* arena, float** weights, size_t* float_count);
+nk_status_t nk_mlp_load(const char* json_path, nk_arena_t* arena, nk_mlp_t* mlp, nk_arch_info_t* info);
+nk_status_t nk_cnn_load(const char* json_path, nk_arena_t* arena, nk_cnn_t* cnn, nk_arch_info_t* info);
+nk_status_t nk_model_load_auto(const char* json_path, nk_arena_t* arena, nk_network_kind_t* kind,
+                               nk_mlp_t* mlp, nk_cnn_t* cnn, nk_arch_info_t* info);
 ```
 
-Parses JSON only. Does not load weights or construct a network. Useful for sizing buffers before load.
+High-level combined handle:
+
+```c
+nk_status_t nk_model_load(const char* json_path, nk_arena_t* arena, nk_model_t* model);
+nk_status_t nk_model_run(...);
+nk_status_t nk_inspect_model(...);
+```
+
+## Tests and CLI
+
+```c
+nk_test_summary_t nk_run_vectors_file(const char* vectors_path);
+nk_test_summary_t nk_run_all_tests(void);
+int nk_cli_run(int argc, char** argv);
+```
+
+Vectors file format: [VECTORS_TESTS.md](VECTORS_TESTS.md). CLI commands: [CLI.md](CLI.md).
 
 ## Model load and inference
 
 ```c
-nk_status_t nk_model_load(const char* json_path, nk_arena_t* arena, nk_model_t* model);
 nk_status_t nk_model_get_arch(const nk_model_t* model, nk_arch_info_t* info);
 uint32_t nk_model_input_count(const nk_model_t* model);
 uint32_t nk_model_output_count(const nk_model_t* model);
@@ -175,9 +221,16 @@ nk_status_t nk_inspect_model(const char* json_path, nk_arena_t* arena, nk_inspec
 
 Loads the model, runs a zero-input forward pass, and reports arena high-water marks. Use this to size embedded memory regions.
 
-## Complete example
+## Complete examples
 
-See [`examples/infer_c.c`](../examples/infer_c.c).
+| File | Build | Description |
+|------|-------|-------------|
+| [`examples/infer_c.c`](../examples/infer_c.c) | `make example-c` | High-level `nk_model_load` / `nk_model_run` |
+| [`examples/infer_cpp.cpp`](../examples/infer_cpp.cpp) | `make example-cpp` | Native C++26 API (see [cpp-api.md](cpp-api.md)) |
+
+Model JSON and weight layout: [MODEL_FORMAT.md](MODEL_FORMAT.md).
+
+### Minimal C example
 
 ```c
 #include <stdalign.h>

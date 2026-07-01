@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Write float32 .bin weight files for mlp_hand and cnn_hand models."""
+"""Write float32 .bin weight files for mlp_hand and cnn_hand models.
+
+Run from repo root:
+    python3 tools/write_hand_models.py
+
+See docs/MODEL_FORMAT.md for weight layout.
+"""
 
 from __future__ import annotations
 
