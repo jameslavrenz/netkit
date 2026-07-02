@@ -105,6 +105,10 @@ if(NETKIT_CMSIS_NN)
     netkit_add_cmsis_nn(netkit)
 endif()
 
+if(NETKIT_CMSIS_DSP OR NETKIT_CMSIS_NN)
+    netkit_apply_cmsis_target_flags(netkit)
+endif()
+
 if(NETKIT_BUILD_CLI)
     add_executable(netkit-cli src/main.cpp)
     set_target_properties(netkit-cli PROPERTIES OUTPUT_NAME netkit)

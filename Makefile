@@ -63,11 +63,7 @@ RUNTIME_SOURCES = src/arena.cpp src/tensor_factory.cpp src/tensor_access.cpp src
                     src/conv2d.cpp src/mlp.cpp src/cnn.cpp src/nk_format.cpp src/nk_loader.cpp \
                     src/netkit_api.cpp
 
-TARGET_CPPFLAGS =
-
-ifneq ($(NETKIT_ARCH),)
-  TARGET_CPPFLAGS += $(NETKIT_ARCH_CFLAGS)
-endif
+TARGET_CPPFLAGS = $(NETKIT_ARCH_CFLAGS)
 
 CMSIS_NN_OBJECTS =
 ifeq ($(NETKIT_CMSIS_NN),1)
