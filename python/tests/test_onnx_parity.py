@@ -91,9 +91,11 @@ class TestOnnxParity(unittest.TestCase):
             raise unittest.SkipTest(f"nk_infer not found: {_nk_infer_bin()} (run make tools/nk_infer)")
         try:
             import onnx  # noqa: F401
-            import onnxruntime  # noqa: F401
+            import onnxruntime as ort
         except ImportError as exc:
             raise unittest.SkipTest("onnx and onnxruntime required (pip install onnx onnxruntime)") from exc
+        # Synthetic CNN sidecars trigger benign MergeShapeInfo warnings at default verbosity.
+        ort.set_default_logger_severity(3)
 
     def test_nk_matches_onnx_runtime(self) -> None:
         from netkit import read_nk, read_test_suite

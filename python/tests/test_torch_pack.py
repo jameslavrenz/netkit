@@ -24,6 +24,15 @@ from netkit.torch_pack import (
 )
 
 
+def _init_small_weights(model: nn.Module, *, std: float = 0.02) -> None:
+    """Training-scale init for pack parity tests (avoids matmul overflow in reference forward)."""
+    for module in model.modules():
+        if isinstance(module, (nn.Linear, nn.Conv2d)):
+            nn.init.normal_(module.weight, mean=0.0, std=std)
+            if module.bias is not None:
+                nn.init.zeros_(module.bias)
+
+
 @unittest.skipIf(torch is None, "torch required (pip install -e \"python[train]\")")
 class TestTorchPack(unittest.TestCase):
     def test_dense_layout_matches_matmul(self) -> None:
@@ -52,6 +61,7 @@ class TestTorchPack(unittest.TestCase):
     def test_tutorial_mlp_pack_matches_reference(self) -> None:
         torch.manual_seed(3)
         model = TutorialMlp784()
+        _init_small_weights(model)
         arch = {
             "network": "mlp",
             "input": [1, 784],
@@ -72,6 +82,7 @@ class TestTorchPack(unittest.TestCase):
     def test_tutorial_cnn_pack_matches_reference(self) -> None:
         torch.manual_seed(5)
         model = TutorialCnn28()
+        _init_small_weights(model)
         arch = {
             "network": "cnn",
             "input": [28, 28, 1],

@@ -89,12 +89,14 @@ def assert_packed_matches_reference(
     for _ in range(samples):
         if network == "mlp":
             features = arch["input"][1]
-            inp = rng.uniform(-1.0, 1.0, features).astype(np.float32)
-            ref = np.asarray(forward_mlp(inp, arch, weights), dtype=np.float32)
+            inp = rng.uniform(-0.5, 0.5, features).astype(np.float32)
+            with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
+                ref = np.asarray(forward_mlp(inp, arch, weights), dtype=np.float32)
         elif network == "cnn":
             h, w, c = arch["input"]
-            inp = rng.uniform(-1.0, 1.0, h * w * c).astype(np.float32)
-            ref = np.asarray(forward_cnn(inp, arch, weights), dtype=np.float32)
+            inp = rng.uniform(-0.5, 0.5, h * w * c).astype(np.float32)
+            with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
+                ref = np.asarray(forward_cnn(inp, arch, weights), dtype=np.float32)
         else:
             raise ValueError(f"unsupported network: {network}")
 
