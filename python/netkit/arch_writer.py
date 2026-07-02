@@ -10,6 +10,10 @@ from .format import activation_from_name
 from .writer import LayerSpec, ModelSpec, RegressionCase, RegressionSuite, write_nk
 
 
+def _out_dim(in_dim: int, kernel: int, stride: int, pad: int = 0) -> int:
+    return (in_dim + 2 * pad - kernel) // stride + 1
+
+
 def _split_mlp_weights(arch: dict, weights: np.ndarray) -> tuple[list[np.ndarray], list[np.ndarray]]:
     offset = 0
     weight_tensors: list[np.ndarray] = []
@@ -42,6 +46,8 @@ def _split_cnn_weights(arch: dict, weights: np.ndarray) -> tuple[list[np.ndarray
         if layer_type == "conv2d":
             k = layer["kernel_size"]
             stride = layer.get("stride", 1)
+            pad_h = layer.get("pad_h", 0)
+            pad_w = layer.get("pad_w", 0)
             out_c = layer["filters"]
             kernel_elems = k * k * channels
             w_flat = weights[offset : offset + kernel_elems * out_c]
@@ -51,14 +57,31 @@ def _split_cnn_weights(arch: dict, weights: np.ndarray) -> tuple[list[np.ndarray
             kernel = w_flat.reshape(out_c, k, k, channels)
             weight_tensors.append(kernel.astype(np.float32))
             bias_tensors.append(b.astype(np.float32))
-            height = (height - k) // stride + 1
-            width = (width - k) // stride + 1
+            height = _out_dim(height, k, stride, pad_h)
+            width = _out_dim(width, k, stride, pad_w)
             channels = out_c
         elif layer_type == "max_pool2d":
             pool = layer["pool_size"]
             stride = layer.get("stride", pool)
-            height = (height - pool) // stride + 1
-            width = (width - pool) // stride + 1
+            pad_h = layer.get("pad_h", 0)
+            pad_w = layer.get("pad_w", 0)
+            height = _out_dim(height, pool, stride, pad_h)
+            width = _out_dim(width, pool, stride, pad_w)
+        elif layer_type == "avg_pool2d":
+            pool = layer["pool_size"]
+            stride = layer.get("stride", pool)
+            pad_h = layer.get("pad_h", 0)
+            pad_w = layer.get("pad_w", 0)
+            height = _out_dim(height, pool, stride, pad_h)
+            width = _out_dim(width, pool, stride, pad_w)
+        elif layer_type == "batch_norm2d":
+            ch = layer["channels"]
+            scale = weights[offset : offset + ch]
+            offset += ch
+            bias = weights[offset : offset + ch]
+            offset += ch
+            weight_tensors.append(scale.astype(np.float32))
+            bias_tensors.append(bias.astype(np.float32))
         elif layer_type == "flatten":
             dense_in = height * width * channels
         elif layer_type == "dense":
@@ -95,6 +118,8 @@ def _arch_to_spec(arch: dict, weights: np.ndarray) -> ModelSpec:
                     filters=layer["filters"],
                     activation=act,
                     alpha=alpha,
+                    pad_h=layer.get("pad_h", 0),
+                    pad_w=layer.get("pad_w", 0),
                 )
             )
         elif layer_type == "max_pool2d":
@@ -103,8 +128,22 @@ def _arch_to_spec(arch: dict, weights: np.ndarray) -> ModelSpec:
                     kind="max_pool2d",
                     pool_size=layer["pool_size"],
                     stride=layer.get("stride", layer["pool_size"]),
+                    pad_h=layer.get("pad_h", 0),
+                    pad_w=layer.get("pad_w", 0),
                 )
             )
+        elif layer_type == "avg_pool2d":
+            layers.append(
+                LayerSpec(
+                    kind="avg_pool2d",
+                    pool_size=layer["pool_size"],
+                    stride=layer.get("stride", layer["pool_size"]),
+                    pad_h=layer.get("pad_h", 0),
+                    pad_w=layer.get("pad_w", 0),
+                )
+            )
+        elif layer_type == "batch_norm2d":
+            layers.append(LayerSpec(kind="batch_norm2d", channels=layer["channels"]))
         elif layer_type == "flatten":
             layers.append(LayerSpec(kind="flatten"))
         else:

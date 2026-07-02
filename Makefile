@@ -67,8 +67,15 @@ TARGET = netkit
 LIB = libnetkit.a
 
 RUNTIME_SOURCES = src/arena.cpp src/tensor_factory.cpp src/tensor_access.cpp src/reference_kernel.cpp src/ops.cpp \
-                    src/conv2d.cpp src/mlp.cpp src/cnn.cpp src/ops_resolver.cpp src/nk_format.cpp src/nk_loader.cpp \
-                    src/netkit_api.cpp
+                    src/conv2d.cpp src/mlp.cpp src/cnn.cpp \
+                    src/layer_ops/nk_op_conv2d.cpp src/layer_ops/nk_op_max_pool2d.cpp \
+                    src/layer_ops/nk_op_avg_pool2d.cpp src/layer_ops/nk_op_batch_norm2d.cpp \
+                    src/layer_ops/nk_op_flatten.cpp src/layer_ops/nk_op_dense.cpp \
+                    src/ops_resolver.cpp src/ops_resolver_default.cpp \
+                    src/nk_format.cpp src/nk_loader.cpp src/netkit_api.cpp
+
+TRIM_LAYER_OP_SOURCES = src/layer_ops/nk_op_conv2d.cpp src/layer_ops/nk_op_max_pool2d.cpp \
+                        src/layer_ops/nk_op_flatten.cpp src/layer_ops/nk_op_dense.cpp
 
 TARGET_CPPFLAGS = $(NETKIT_ARCH_CFLAGS)
 
@@ -164,12 +171,18 @@ NK_INFER = tools/nk_infer
 NK_INFER_SRC = tools/nk_infer.c
 NK_INFER_OBJ = tools/nk_infer.o
 
+TRIM_LIB = libnetkit_trim.a
+TRIM_RUNTIME_SOURCES = src/arena.cpp src/tensor_factory.cpp src/tensor_access.cpp src/reference_kernel.cpp src/ops.cpp \
+                       src/conv2d.cpp src/mlp.cpp src/cnn.cpp $(TRIM_LAYER_OP_SOURCES) src/ops_resolver.cpp \
+                       src/nk_format.cpp src/nk_loader.cpp src/netkit_api.cpp
+TRIM_CORE_OBJECTS = $(TRIM_RUNTIME_SOURCES:.cpp=.o)
+
 .PHONY: all lib clean rebuild test test-cpp test-c test-python run example-c example-cpp examples \
         export-mnist export-mnist-cnn export-mnist-all export-op-matrix \
         export-fashion-mnist export-fashion-mnist-cnn export-fashion-mnist-all \
         export-nk build-all embed-tests cmsis-nn-init cmsis-dsp-init cmsis-init \
         cpu cpu-global mcu mcu-heap mpu mpu-heap embedded-smoke test-embedded-smoke \
-        test-embedded-smoke-matrix
+        test-embedded-smoke-matrix trim-lib check-trim-lib
 
 ifeq ($(BUILD_CLI),1)
 all: $(TARGET)
@@ -180,6 +193,14 @@ build-all: $(LIB) examples embedded-smoke
 endif
 
 lib: $(LIB)
+
+$(TRIM_LIB): $(TRIM_CORE_OBJECTS)
+	ar rcs $@ $^
+
+trim-lib: $(TRIM_LIB)
+
+check-trim-lib: lib trim-lib
+	chmod +x tools/check_trim_lib.sh && ./tools/check_trim_lib.sh
 
 $(LIB): $(CORE_OBJECTS) $(CMSIS_NN_OBJECTS) $(CMSIS_DSP_OBJECTS)
 	ar rcs $@ $^
@@ -229,9 +250,9 @@ $(EMBEDDED_SMOKE_OBJ): $(EMBEDDED_SMOKE_SRC) include/netkit.h
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -f $(CORE_OBJECTS) $(CLI_OBJECTS) $(EXAMPLE_C_OBJ) $(EXAMPLE_CPP_OBJ) $(TEST_C_OBJ) $(EMBEDDED_SMOKE_OBJ) $(NK_INFER_OBJ) \
-	      $(TARGET) $(LIB) $(EXAMPLE_C) $(EXAMPLE_CPP) $(TEST_C) $(EMBEDDED_SMOKE) $(NK_INFER)
-	rm -f src/*.o examples/*.o tests/*.o tools/*.o
+	rm -f $(CORE_OBJECTS) $(TRIM_CORE_OBJECTS) $(CLI_OBJECTS) $(EXAMPLE_C_OBJ) $(EXAMPLE_CPP_OBJ) $(TEST_C_OBJ) $(EMBEDDED_SMOKE_OBJ) $(NK_INFER_OBJ) \
+	      $(TARGET) $(LIB) $(TRIM_LIB) $(EXAMPLE_C) $(EXAMPLE_CPP) $(TEST_C) $(EMBEDDED_SMOKE) $(NK_INFER) examples/trim_firmware examples/trim_firmware.o
+	rm -f src/*.o src/layer_ops/*.o examples/*.o tests/*.o tools/*.o
 	rm -rf build/cmsis_nn build/cmsis_dsp
 
 rebuild: clean all
@@ -254,7 +275,7 @@ test-c:
 	@exit 1
 endif
 
-test: test-cpp test-c test-python
+test: test-cpp test-c test-python check-trim-lib
 
 test-python: $(TARGET) $(NK_INFER)
 	PYTHONPATH=python python3 -m unittest discover -s python/tests -p 'test_*.py'

@@ -29,7 +29,7 @@ Related docs: [NK_FORMAT.md](NK_FORMAT.md), [CLI.md](CLI.md), [BUILD_TARGETS.md]
 | C API | C23 | `make test-c` | `tests/test_c_api.c` |
 | Both | — | `make test` | runs C++ then C |
 
-Both suites exercise the same **69 embedded `.nk` inference cases** (16 hand-checked + 20 MNIST + 13 op matrix + 20 Fashion-MNIST); the C suite adds direct API smoke tests (arena, tensor, ops, load/run). ONNX parity is tested separately in Python — see [TESTING.md](TESTING.md).
+Both suites exercise the same **73 embedded `.nk` inference cases** (16 hand-checked + 20 MNIST + 17 op matrix + 20 Fashion-MNIST); the C suite adds direct API smoke tests (arena, tensor, ops, load/run). ONNX parity is tested separately in Python — see [TESTING.md](TESTING.md).
 
 ## Symbol map
 

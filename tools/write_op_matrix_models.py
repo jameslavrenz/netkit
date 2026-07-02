@@ -118,6 +118,107 @@ def build_op_matrix_cnn() -> tuple[dict, np.ndarray, RegressionSuite]:
     return arch, weights, RegressionSuite(tolerance=1e-5, cases=cases)
 
 
+def build_cnn_extended_ops() -> tuple[dict, np.ndarray, RegressionSuite]:
+    """Padded conv/max-pool, avg pool, batch norm — embedded regression for v3 CNN ops."""
+    arch = {
+        "network": "cnn",
+        "input": [4, 4, 1],
+        "layers": [
+            {
+                "type": "conv2d",
+                "kernel_size": 3,
+                "stride": 1,
+                "filters": 2,
+                "pad_h": 1,
+                "pad_w": 1,
+                "activation": "relu",
+            },
+            {
+                "type": "max_pool2d",
+                "pool_size": 2,
+                "stride": 1,
+                "pad_h": 1,
+                "pad_w": 1,
+            },
+            {
+                "type": "avg_pool2d",
+                "pool_size": 2,
+                "stride": 2,
+                "pad_h": 0,
+                "pad_w": 0,
+            },
+            {"type": "batch_norm2d", "channels": 2},
+            {"type": "flatten"},
+            {"type": "dense", "units": 2, "activation": "none"},
+        ],
+    }
+    rng = np.random.default_rng(41)
+    tensors: list[tuple[np.ndarray, np.ndarray] | None] = []
+    height, width, channels = 4, 4, 1
+    dense_in = 0
+    for layer in arch["layers"]:
+        if layer["type"] == "conv2d":
+            k = layer["kernel_size"]
+            stride = layer.get("stride", 1)
+            pad_h = layer.get("pad_h", 0)
+            pad_w = layer.get("pad_w", 0)
+            out_c = layer["filters"]
+            kernel = rng.uniform(-0.35, 0.35, size=(out_c, k, k, channels)).astype(np.float32)
+            bias = rng.uniform(-0.1, 0.1, size=(out_c,)).astype(np.float32)
+            tensors.append((kernel, bias))
+            height = (height + 2 * pad_h - k) // stride + 1
+            width = (width + 2 * pad_w - k) // stride + 1
+            channels = out_c
+        elif layer["type"] == "max_pool2d":
+            pool = layer["pool_size"]
+            stride = layer.get("stride", pool)
+            pad_h = layer.get("pad_h", 0)
+            pad_w = layer.get("pad_w", 0)
+            height = (height + 2 * pad_h - pool) // stride + 1
+            width = (width + 2 * pad_w - pool) // stride + 1
+        elif layer["type"] == "avg_pool2d":
+            pool = layer["pool_size"]
+            stride = layer.get("stride", pool)
+            pad_h = layer.get("pad_h", 0)
+            pad_w = layer.get("pad_w", 0)
+            height = (height + 2 * pad_h - pool) // stride + 1
+            width = (width + 2 * pad_w - pool) // stride + 1
+        elif layer["type"] == "batch_norm2d":
+            ch = layer["channels"]
+            scale = np.array([1.0, 1.5], dtype=np.float32)
+            bias = np.array([0.05, -0.1], dtype=np.float32)
+            tensors.append((scale, bias))
+        elif layer["type"] == "flatten":
+            tensors.append(None)
+            dense_in = height * width * channels
+        elif layer["type"] == "dense":
+            out_f = layer["units"]
+            w_arr = rng.uniform(-0.4, 0.4, size=(out_f, dense_in)).astype(np.float32)
+            b_arr = rng.uniform(-0.15, 0.15, size=(out_f,)).astype(np.float32)
+            tensors.append((w_arr, b_arr))
+            dense_in = out_f
+
+    weights = pack_cnn_weights(tensors)
+
+    base = np.array(
+        [
+            [1.0, 0.5, 0.0, 0.5],
+            [0.5, 1.0, 0.5, 0.0],
+            [0.0, 0.5, 1.0, 0.5],
+            [0.5, 0.0, 0.5, 1.0],
+        ],
+        dtype=np.float32,
+    ).reshape(-1)
+    inputs = [
+        ("corner gradient", base.tolist()),
+        ("uniform", [0.75] * 16),
+        ("checkerboard", [1.0 if (i + j) % 2 == 0 else -1.0 for i in range(4) for j in range(4)]),
+        ("center spike", [0.0] * 5 + [3.0] + [0.0] * 10),
+    ]
+    cases = [_case(name, list(inp), arch, weights) for name, inp in inputs]
+    return arch, weights, RegressionSuite(tolerance=1e-5, cases=cases)
+
+
 def build_deep_mlp() -> tuple[dict, np.ndarray, RegressionSuite]:
     arch = {
         "network": "mlp",
@@ -157,6 +258,7 @@ def main() -> None:
     specs = [
         ("op_matrix_mlp.nk", *build_op_matrix_mlp()),
         ("op_matrix_cnn.nk", *build_op_matrix_cnn()),
+        ("cnn_extended_ops.nk", *build_cnn_extended_ops()),
         ("deep_mlp.nk", *build_deep_mlp()),
     ]
     for filename, arch, weights, suite in specs:

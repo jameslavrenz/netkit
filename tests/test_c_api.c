@@ -346,6 +346,32 @@ static void TestCnnLoadHasBuffers(void)
     ExpectTrue(nk_cnn_has_activation_buffers(&cnn), "cnn buffers ready after load");
 }
 
+static void TestCnnExtendedOpsLoad(void)
+{
+    printf("\n--- cnn extended ops load ---\n");
+
+    alignas(max_align_t) static unsigned char memory[NK_ARENA_DEFAULT_CAPACITY];
+    nk_arena_t arena;
+    nk_arena_init(&arena, memory, sizeof(memory));
+
+    nk_model_t model;
+    ExpectStatus(nk_model_load("models/cnn_extended_ops.nk", &arena, &model), NK_OK, "cnn extended ops load");
+
+    const float input[16] = {
+        1.0f, 0.5f, 0.0f, 0.5f,
+        0.5f, 1.0f, 0.5f, 0.0f,
+        0.0f, 0.5f, 1.0f, 0.5f,
+        0.5f, 0.0f, 0.5f, 1.0f,
+    };
+    float output[2] = {0.0f, 0.0f};
+    uint32_t output_count = 0;
+
+    ExpectStatus(nk_model_run(&model, &arena, input, 16, output, 2, &output_count),
+                 NK_OK,
+                 "cnn extended ops forward");
+    ExpectTrue(output_count == 2, "cnn extended ops output count");
+}
+
 static void TestRegression(void)
 {
 #if defined(NETKIT_DESKTOP)
@@ -355,8 +381,8 @@ static void TestRegression(void)
 
     const nk_test_summary_t summary = nk_run_all_tests();
     ExpectTrue(summary.failed == 0, "regression failed count");
-    ExpectTrue(summary.passed == 69,
-               "regression passed count (69 embedded cases)");
+    ExpectTrue(summary.passed == 73,
+               "regression passed count (73 embedded cases)");
 #else
     printf("\n--- regression (skipped: NETKIT_TARGET is not cpu) ---\n");
 #endif
@@ -382,6 +408,7 @@ int main(void)
     TestModelLoadRun();
     TestManualMlpActivationBuffers();
     TestCnnLoadHasBuffers();
+    TestCnnExtendedOpsLoad();
     TestRegression();
 
     printf("\n============================\n");

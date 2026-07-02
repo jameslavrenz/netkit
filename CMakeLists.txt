@@ -27,6 +27,15 @@ set(CMAKE_C_STANDARD 23)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
 
+set(NETKIT_LAYER_OP_SOURCES
+    src/layer_ops/nk_op_conv2d.cpp
+    src/layer_ops/nk_op_max_pool2d.cpp
+    src/layer_ops/nk_op_avg_pool2d.cpp
+    src/layer_ops/nk_op_batch_norm2d.cpp
+    src/layer_ops/nk_op_flatten.cpp
+    src/layer_ops/nk_op_dense.cpp
+)
+
 set(NETKIT_RUNTIME_SOURCES
     src/arena.cpp
     src/tensor_factory.cpp
@@ -36,7 +45,9 @@ set(NETKIT_RUNTIME_SOURCES
     src/conv2d.cpp
     src/mlp.cpp
     src/cnn.cpp
+    ${NETKIT_LAYER_OP_SOURCES}
     src/ops_resolver.cpp
+    src/ops_resolver_default.cpp
     src/nk_format.cpp
     src/nk_loader.cpp
     src/netkit_api.cpp

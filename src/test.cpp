@@ -44,6 +44,7 @@ NkRegression::RunSummary run_all_tests()
     std::cout << "============================\n";
     merge(NkRegression::RunModelTests("models/op_matrix_mlp.nk"));
     merge(NkRegression::RunModelTests("models/op_matrix_cnn.nk"));
+    merge(NkRegression::RunModelTests("models/cnn_extended_ops.nk"));
     merge(NkRegression::RunModelTests("models/deep_mlp.nk"));
 
     std::cout << "\n============================\n";

@@ -258,7 +258,33 @@ CNN graph execution uses an **MCU-safe op registry** (`include/ops_resolver.hpp`
 cnn.SetOpsResolver(NkOpList<NkConv2DOpDescriptor, NkDenseOpDescriptor>::View());
 ```
 
-`GetDefaultOpsResolver()` returns `NkAllLayerOps::View()` when `ops_resolver.cpp` is linked.
+`GetDefaultOpsResolver()` returns `NkAllLayerOps::View()` when all `src/layer_ops/*.cpp` units are linked.
+
+### Trimmed firmware (link only the ops you need)
+
+Each layer kind lives in its own translation unit under `src/layer_ops/` with a matching descriptor in `include/layer_ops/`. Link only the `.cpp` files your graph uses, then point the network at a compile-time resolver:
+
+```cpp
+#include "layer_ops/nk_conv2d_op.hpp"
+#include "layer_ops/nk_max_pool2d_op.hpp"
+#include "layer_ops/nk_flatten_op.hpp"
+#include "layer_ops/nk_dense_op.hpp"
+
+using TrimOps = NkOpList<NkConv2DOpDescriptor, NkMaxPool2DOpDescriptor,
+                         NkFlattenOpDescriptor, NkDenseOpDescriptor>;
+cnn.SetOpsResolver(TrimOps::View());
+```
+
+Link: `nk_op_conv2d.cpp`, `nk_op_max_pool2d.cpp`, `nk_op_flatten.cpp`, `nk_op_dense.cpp`, `ops_resolver.cpp` (omit `ops_resolver_default.cpp`, avg-pool, and batch-norm TUs).
+
+Verify on desktop:
+
+```bash
+make trim-lib              # libnetkit_trim.a — conv/max-pool/flatten/dense only
+make check-trim-lib        # asserts avg-pool + batch-norm bodies are absent
+```
+
+See `examples/trim_firmware.cpp` for a minimal recipe.
 
 Full architecture: [KERNELS.md](KERNELS.md).
 

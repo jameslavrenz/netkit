@@ -119,7 +119,20 @@ using MyOps = NkOpList<NkConv2DOpDescriptor, NkDenseOpDescriptor>;
 cnn.SetOpsResolver(MyOps::View());  // reference to constinit static storage
 ```
 
-Descriptors live in `layer_op_registry.hpp`; implementations in `ops_resolver.cpp`. `NkAllLayerOps` is the full six-op table used by `GetDefaultOpsResolver()`.
+Descriptors live in `layer_op_registry.hpp`; implementations in `src/layer_ops/*.cpp`. `NkAllLayerOps` is the full six-op table used by `GetDefaultOpsResolver()`.
+
+### Per-op translation units (firmware DCE)
+
+| Descriptor header | Implementation |
+|-------------------|----------------|
+| `layer_ops/nk_conv2d_op.hpp` | `src/layer_ops/nk_op_conv2d.cpp` |
+| `layer_ops/nk_max_pool2d_op.hpp` | `src/layer_ops/nk_op_max_pool2d.cpp` |
+| `layer_ops/nk_avg_pool2d_op.hpp` | `src/layer_ops/nk_op_avg_pool2d.cpp` |
+| `layer_ops/nk_batch_norm2d_op.hpp` | `src/layer_ops/nk_op_batch_norm2d.cpp` |
+| `layer_ops/nk_flatten_op.hpp` | `src/layer_ops/nk_op_flatten.cpp` |
+| `layer_ops/nk_dense_op.hpp` | `src/layer_ops/nk_op_dense.cpp` |
+
+Link only the `.cpp` files matching your `NkOpList<...>` — unused `NkEval*` bodies are dropped by the linker.
 
 ```
 CNNNetwork::forward
