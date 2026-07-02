@@ -50,6 +50,31 @@ def _build_avgpool_bn_onnx(path: Path) -> None:
     onnx.save(model, str(path))
 
 
+def _build_padded_maxpool_onnx(path: Path) -> None:
+    x = helper.make_tensor_value_info("x", TensorProto.FLOAT, [1, 1, 4, 4])
+    y = helper.make_tensor_value_info("y", TensorProto.FLOAT, [1, 1, 4, 4])
+    pool = helper.make_node(
+        "MaxPool",
+        ["x"],
+        ["y"],
+        kernel_shape=[2, 2],
+        strides=[1, 1],
+        pads=[1, 1, 1, 1],
+    )
+    graph = helper.make_graph([pool], "g", [x], [y])
+    model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 13)])
+    onnx.save(model, str(path))
+
+
+def _build_global_avgpool_onnx(path: Path) -> None:
+    x = helper.make_tensor_value_info("x", TensorProto.FLOAT, [1, 3, 4, 4])
+    y = helper.make_tensor_value_info("y", TensorProto.FLOAT, [1, 3, 1, 1])
+    gap = helper.make_node("GlobalAveragePool", ["x"], ["y"])
+    graph = helper.make_graph([gap], "g", [x], [y])
+    model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 13)])
+    onnx.save(model, str(path))
+
+
 def test_conv_padding_and_relu_fusion():
     with tempfile.TemporaryDirectory() as tmp:
         onnx_path = Path(tmp) / "pad_conv.onnx"
@@ -64,6 +89,7 @@ def test_conv_padding_and_relu_fusion():
         nk_path = convert_onnx_to_nk(onnx_path)
         header = unpack_header(nk_path.read_bytes())
         assert header["num_layers"] == 1
+        assert header["version"] == 3
 
 
 def test_avgpool_and_batch_norm():
@@ -75,3 +101,23 @@ def test_avgpool_and_batch_norm():
         assert spec.layers[1].channels == 2
         assert len(spec.weight_tensors) == 1
         assert len(spec.bias_tensors) == 1
+
+
+def test_maxpool_padding():
+    with tempfile.TemporaryDirectory() as tmp:
+        onnx_path = Path(tmp) / "pad_pool.onnx"
+        _build_padded_maxpool_onnx(onnx_path)
+        spec = onnx_to_spec(onnx_path)
+        assert spec.layers[0].kind == "max_pool2d"
+        assert spec.layers[0].pad_h == 1
+        assert spec.layers[0].pad_w == 1
+
+
+def test_global_average_pool():
+    with tempfile.TemporaryDirectory() as tmp:
+        onnx_path = Path(tmp) / "gap.onnx"
+        _build_global_avgpool_onnx(onnx_path)
+        spec = onnx_to_spec(onnx_path)
+        assert spec.layers[0].kind == "avg_pool2d"
+        assert spec.layers[0].pool_size == 4
+        assert spec.layers[0].stride == 1

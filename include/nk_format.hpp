@@ -10,7 +10,7 @@ namespace NkFormat
 {
     constexpr char kMagic[4] = {'N', 'K', 'I', 'T'};
     constexpr char kTestMagic[4] = {'T', 'C', 'A', 'S'};
-    constexpr uint32_t kVersion = 2;
+    constexpr uint32_t kVersion = 3;
 
     constexpr uint16_t kFlagHasTests = 0x0001;
     constexpr uint32_t kMaxTestCases = 16;
@@ -22,7 +22,7 @@ namespace NkFormat
     constexpr std::size_t kTensorDescBytes = 24;
     constexpr std::size_t kLayerDenseBytes = 16;
     constexpr std::size_t kLayerConvBytes = 24;
-    constexpr std::size_t kLayerPoolBytes = 12;
+    constexpr std::size_t kLayerPoolBytes = 16;
     constexpr std::size_t kLayerFlattenBytes = 4;
 
     constexpr uint32_t kMaxLayers = 16;
@@ -113,6 +113,9 @@ namespace NkFormat
     {
         uint32_t pool_size = 2;
         uint32_t stride = 2;
+        uint8_t pad_h = 0;
+        uint8_t pad_w = 0;
+        uint16_t reserved = 0;
     };
 
     struct LayerDesc

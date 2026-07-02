@@ -271,11 +271,18 @@ bool ReferenceKernel::Conv2dForwardImpl(const Tensor& input,
     return false;
 }
 
-void ReferenceKernel::MaxPool2dForwardImpl(const Tensor& input, int pool_size, int stride, Tensor& output)
+void ReferenceKernel::MaxPool2dForwardImpl(const Tensor& input,
+                                          int pool_size,
+                                          int stride,
+                                          int pad_h,
+                                          int pad_w,
+                                          Tensor& output)
 {
     const float* in = tensor_data_f32(const_cast<Tensor&>(input));
     float* out = tensor_data_f32(output);
 
+    const uint32_t in_h = input.shape[0];
+    const uint32_t in_w = input.shape[1];
     const uint32_t channels = input.shape[2];
     const uint32_t out_h = output.shape[0];
     const uint32_t out_w = output.shape[1];
@@ -291,9 +298,14 @@ void ReferenceKernel::MaxPool2dForwardImpl(const Tensor& input, int pool_size, i
                 {
                     for (int kw = 0; kw < pool_size; ++kw)
                     {
-                        const uint32_t ih = oh * static_cast<uint32_t>(stride) + static_cast<uint32_t>(kh);
-                        const uint32_t iw = ow * static_cast<uint32_t>(stride) + static_cast<uint32_t>(kw);
-                        const uint32_t in_idx = index_nhwc(input, ih, iw, c);
+                        const int ih = static_cast<int>(oh) * stride + kh - pad_h;
+                        const int iw = static_cast<int>(ow) * stride + kw - pad_w;
+                        if (ih < 0 || iw < 0 || static_cast<uint32_t>(ih) >= in_h ||
+                            static_cast<uint32_t>(iw) >= in_w)
+                            continue;
+
+                        const uint32_t in_idx = index_nhwc(input, static_cast<uint32_t>(ih),
+                                                           static_cast<uint32_t>(iw), c);
                         if (in[in_idx] > max_val)
                             max_val = in[in_idx];
                     }
@@ -306,15 +318,21 @@ void ReferenceKernel::MaxPool2dForwardImpl(const Tensor& input, int pool_size, i
     }
 }
 
-void ReferenceKernel::AvgPool2dForwardImpl(const Tensor& input, int pool_size, int stride, Tensor& output)
+void ReferenceKernel::AvgPool2dForwardImpl(const Tensor& input,
+                                           int pool_size,
+                                           int stride,
+                                           int pad_h,
+                                           int pad_w,
+                                           Tensor& output)
 {
     const float* in = tensor_data_f32(const_cast<Tensor&>(input));
     float* out = tensor_data_f32(output);
 
+    const uint32_t in_h = input.shape[0];
+    const uint32_t in_w = input.shape[1];
     const uint32_t channels = input.shape[2];
     const uint32_t out_h = output.shape[0];
     const uint32_t out_w = output.shape[1];
-    const float inv_area = 1.0f / static_cast<float>(pool_size * pool_size);
 
     for (uint32_t c = 0; c < channels; ++c)
     {
@@ -323,19 +341,26 @@ void ReferenceKernel::AvgPool2dForwardImpl(const Tensor& input, int pool_size, i
             for (uint32_t ow = 0; ow < out_w; ++ow)
             {
                 float sum = 0.0f;
+                uint32_t count = 0;
                 for (int kh = 0; kh < pool_size; ++kh)
                 {
                     for (int kw = 0; kw < pool_size; ++kw)
                     {
-                        const uint32_t ih = oh * static_cast<uint32_t>(stride) + static_cast<uint32_t>(kh);
-                        const uint32_t iw = ow * static_cast<uint32_t>(stride) + static_cast<uint32_t>(kw);
-                        const uint32_t in_idx = index_nhwc(input, ih, iw, c);
+                        const int ih = static_cast<int>(oh) * stride + kh - pad_h;
+                        const int iw = static_cast<int>(ow) * stride + kw - pad_w;
+                        if (ih < 0 || iw < 0 || static_cast<uint32_t>(ih) >= in_h ||
+                            static_cast<uint32_t>(iw) >= in_w)
+                            continue;
+
+                        const uint32_t in_idx = index_nhwc(input, static_cast<uint32_t>(ih),
+                                                           static_cast<uint32_t>(iw), c);
                         sum += in[in_idx];
+                        ++count;
                     }
                 }
 
                 const uint32_t out_idx = (oh * out_w + ow) * channels + c;
-                out[out_idx] = sum * inv_area;
+                out[out_idx] = count > 0 ? sum / static_cast<float>(count) : 0.0f;
             }
         }
     }

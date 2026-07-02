@@ -31,6 +31,7 @@ Every stable C++ public symbol has a documented C equivalent except desktop-only
 | [TESTING.md](TESTING.md) | Regression suites, Make targets, CI |
 | [MNIST.md](MNIST.md) / [MNIST_CNN.md](MNIST_CNN.md) | Trained MNIST bundles |
 | [API_PARITY.md](API_PARITY.md) | C ↔ C++ symbol map |
+| [KERNELS.md](KERNELS.md) | CRTP kernel backends and CMSIS dispatch |
 | [c-api.md](c-api.md) | Full C23 reference |
 | [cpp-api.md](cpp-api.md) | Full C++26 reference |
 
@@ -130,7 +131,7 @@ netkit implements its own minimal arena rather than linking [memkit](https://git
 
 ## Supported model format
 
-Runtime models are **`.nk` v2** single files — [NK_FORMAT.md](NK_FORMAT.md).
+Runtime models are **`.nk` v3** single files — [NK_FORMAT.md](NK_FORMAT.md).
 
 Convert ONNX → `.nk` with `python -m netkit convert` or `make export-nk`. Supported ONNX ops: [ONNX.md](ONNX.md).
 
@@ -141,7 +142,7 @@ Convert ONNX → `.nk` with `python -m netkit convert` or `make export-nk`. Supp
 | **CMSIS-NN** | `NETKIT_CMSIS_NN=1` + `NETKIT_TARGET=mcu` + Cortex-M `NETKIT_ARCH` | MCU firmware (CM4, M33, …) |
 | **CMSIS-DSP** | `NETKIT_CMSIS_DSP=1` | Desktop, MCU, MPU |
 
-On **cpu** or **mpu**, `NETKIT_CMSIS_NN=1` prints a Make warning and is ignored — reference kernels (and optional CMSIS-DSP) apply. See [BUILD_TARGETS.md](BUILD_TARGETS.md#cmsis-backends).
+On **cpu** or **mpu**, `NETKIT_CMSIS_NN=1` prints a Make warning and is ignored — reference kernels (and optional CMSIS-DSP) apply. Backend selection is compile-time CRTP — see [KERNELS.md](KERNELS.md) and [BUILD_TARGETS.md](BUILD_TARGETS.md#cmsis-backends).
 
 ## Testing
 

@@ -304,12 +304,16 @@ nk_status_t nk_cnn_init_conv_layer(nk_cnn_t* cnn,
 nk_status_t nk_cnn_init_pool_layer(nk_cnn_t* cnn,
                                    uint32_t layer_idx,
                                    int pool_size,
-                                   int stride);
+                                   int stride,
+                                   int pad_h,
+                                   int pad_w);
 
 nk_status_t nk_cnn_init_avg_pool_layer(nk_cnn_t* cnn,
                                        uint32_t layer_idx,
                                        int pool_size,
-                                       int stride);
+                                       int stride,
+                                       int pad_h,
+                                       int pad_w);
 
 nk_status_t nk_cnn_init_batch_norm_layer(nk_cnn_t* cnn,
                                          uint32_t layer_idx,

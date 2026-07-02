@@ -104,9 +104,19 @@ def write_nk(path: str | Path, spec: ModelSpec) -> None:
                 pad_w=layer.pad_w,
             )
         elif layer.kind == "max_pool2d":
-            layer_bytes += pack_pool_layer(pool_size=layer.pool_size, stride=layer.stride)
+            layer_bytes += pack_pool_layer(
+                pool_size=layer.pool_size,
+                stride=layer.stride,
+                pad_h=layer.pad_h,
+                pad_w=layer.pad_w,
+            )
         elif layer.kind == "avg_pool2d":
-            layer_bytes += pack_avg_pool_layer(pool_size=layer.pool_size, stride=layer.stride)
+            layer_bytes += pack_avg_pool_layer(
+                pool_size=layer.pool_size,
+                stride=layer.stride,
+                pad_h=layer.pad_h,
+                pad_w=layer.pad_w,
+            )
         elif layer.kind == "batch_norm2d":
             layer_bytes += pack_batch_norm_layer(channels=layer.channels)
         elif layer.kind == "flatten":

@@ -1,6 +1,6 @@
 # netkit Binary Model Format (`.nk`)
 
-Version **2** — single-file inference bundle for embedded runtimes. Produced by the Python package in [`python/`](../python/); consumed by the C++ loader (`NkLoader`) and `./netkit run` / `./netkit inspect`.
+Version **3** — single-file inference bundle for embedded runtimes. Produced by the Python package in [`python/`](../python/); consumed by the C++ loader (`NkLoader`) and `./netkit run` / `./netkit inspect`.
 
 ## Overview
 
@@ -41,7 +41,7 @@ Optional **embedded regression tests** (flag `kFlagHasTests`) append a `TCAS` se
 | Offset | Type | Field |
 |--------|------|-------|
 | 0 | `char[4]` | Magic `"NKIT"` |
-| 4 | `uint32` | Format version (`2`) |
+| 4 | `uint32` | Format version (`3`) |
 | 8 | `uint8` | Network kind (`1`=MLP, `2`=CNN) |
 | 9 | `uint8` | Input rank (1–4) |
 | 10 | `uint16` | Flags (`0x0001` = embedded tests) |
@@ -67,9 +67,9 @@ Each layer starts with **`uint8 kind` + 3 reserved bytes**, then kind-specific f
 |------|------:|--------------|
 | `dense` | 1 | `units u32`, `activation u8`, pad×3, `alpha f32` |
 | `conv2d` | 2 | `kernel u32`, `stride u32`, `filters u32`, `activation u8`, `pad_h u8`, `pad_w u8`, `reserved u8`, `alpha f32` |
-| `max_pool2d` | 3 | `pool_size u32`, `stride u32` |
+| `max_pool2d` | 3 | `pool_size u32`, `stride u32`, `pad_h u8`, `pad_w u8`, `reserved u16` |
 | `flatten` | 4 | (none) |
-| `avg_pool2d` | 5 | `pool_size u32`, `stride u32` |
+| `avg_pool2d` | 5 | `pool_size u32`, `stride u32`, `pad_h u8`, `pad_w u8`, `reserved u16` |
 | `batch_norm2d` | 6 | `channels u32`, `reserved u32` |
 
 ### Activation enum (`uint8`)

@@ -88,8 +88,19 @@ def _conv_output_dim(size: int, kernel: int, stride: int, pad: int) -> int:
     return (size + 2 * pad - kernel) // stride + 1
 
 
-def _pool_output_dim(size: int, kernel: int, stride: int) -> int:
-    return (size - kernel) // stride + 1
+def _symmetric_pool_pads(node) -> tuple[int, int]:
+    pads = _attr_ints(node, "pads", [0, 0, 0, 0])
+    if len(pads) < 2:
+        return 0, 0
+    pad_h = int(pads[0])
+    pad_w = int(pads[1])
+    if len(pads) >= 4 and (pads[0] != pads[2] or pads[1] != pads[3]):
+        raise ValueError("asymmetric pool padding is not supported")
+    return pad_h, pad_w
+
+
+def _pool_output_dim(size: int, kernel: int, stride: int, pad: int) -> int:
+    return (size + 2 * pad - kernel) // stride + 1
 
 
 def _clip_is_relu6(node, initializers: dict[str, np.ndarray]) -> bool:
@@ -231,9 +242,12 @@ def onnx_to_spec(onnx_path: str | Path) -> ModelSpec:
             strides = _attr_ints(node, "strides")
             kernel = int(kernel_shape[0]) if kernel_shape else 2
             stride = int(strides[0]) if strides else kernel
-            layers.append(LayerSpec(kind="max_pool2d", pool_size=kernel, stride=stride))
-            spatial_h = _pool_output_dim(spatial_h, kernel, stride)
-            spatial_w = _pool_output_dim(spatial_w, kernel, stride)
+            pad_h, pad_w = _symmetric_pool_pads(node)
+            layers.append(
+                LayerSpec(kind="max_pool2d", pool_size=kernel, stride=stride, pad_h=pad_h, pad_w=pad_w)
+            )
+            spatial_h = _pool_output_dim(spatial_h, kernel, stride, pad_h)
+            spatial_w = _pool_output_dim(spatial_w, kernel, stride, pad_w)
             i += 1
             continue
 
@@ -242,9 +256,29 @@ def onnx_to_spec(onnx_path: str | Path) -> ModelSpec:
             strides = _attr_ints(node, "strides")
             kernel = int(kernel_shape[0]) if kernel_shape else 2
             stride = int(strides[0]) if strides else kernel
-            layers.append(LayerSpec(kind="avg_pool2d", pool_size=kernel, stride=stride))
-            spatial_h = _pool_output_dim(spatial_h, kernel, stride)
-            spatial_w = _pool_output_dim(spatial_w, kernel, stride)
+            pad_h, pad_w = _symmetric_pool_pads(node)
+            layers.append(
+                LayerSpec(kind="avg_pool2d", pool_size=kernel, stride=stride, pad_h=pad_h, pad_w=pad_w)
+            )
+            spatial_h = _pool_output_dim(spatial_h, kernel, stride, pad_h)
+            spatial_w = _pool_output_dim(spatial_w, kernel, stride, pad_w)
+            i += 1
+            continue
+
+        if node.op_type == "GlobalAveragePool":
+            if spatial_h != spatial_w:
+                raise ValueError("GlobalAveragePool requires square spatial dims in this converter")
+            layers.append(
+                LayerSpec(
+                    kind="avg_pool2d",
+                    pool_size=spatial_h,
+                    stride=1,
+                    pad_h=0,
+                    pad_w=0,
+                )
+            )
+            spatial_h = 1
+            spatial_w = 1
             i += 1
             continue
 

@@ -12,7 +12,7 @@ The C++ engine is an **interpreter-style forward executor**:
 
 1. Load a `.nk` file (architecture descriptor + float32 weights).
 2. Walk the layer list at runtime (Dense, Conv2D, MaxPool2D, AvgPool2D, BatchNorm2d, Flatten, activations).
-3. Execute generic kernel ops (`MatMul`, `Conv2D`, activations) from shared implementations.
+3. Execute kernel ops via the compile-time `Kernels` facade (`MatMul`, `Conv2D`, pool, activations) — reference implementations with optional CMSIS-NN / CMSIS-DSP backends ([KERNELS.md](KERNELS.md)).
 4. Allocate weights and **ping-pong activation buffers** from a bump arena.
 
 **Goals:** correctness, predictable memory, small firmware surface, dual C/C++ API, desktop CLI for debug and regression.

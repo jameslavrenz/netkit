@@ -96,7 +96,7 @@ static void TestParseArchitecture(void)
 
     nk_arch_info_t info = {0};
     ExpectStatus(nk_parse_architecture("models/test_mlp.nk", &info), NK_OK, "parse test_mlp.nk");
-    ExpectTrue(info.version == 2, "mlp .nk format version");
+    ExpectTrue(info.version == 3, "mlp .nk format version");
     ExpectTrue(info.kind == NK_NETWORK_MLP, "mlp kind");
     ExpectTrue(info.input_elements == 2, "mlp input elements");
     ExpectTrue(info.output_elements == 2, "mlp output elements");

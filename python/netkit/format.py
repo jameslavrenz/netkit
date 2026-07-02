@@ -9,7 +9,7 @@ import numpy as np
 
 MAGIC = b"NKIT"
 TEST_MAGIC = b"TCAS"
-VERSION = 2
+VERSION = 3
 HEADER_BYTES = 48
 TENSOR_DESC_BYTES = 24
 FLAG_HAS_TESTS = 0x0001
@@ -113,12 +113,16 @@ def pack_conv_layer(
     ) + struct.pack("<BBBBf", int(activation), pad_h, pad_w, 0, alpha)
 
 
-def pack_pool_layer(*, pool_size: int, stride: int) -> bytes:
-    return pack_layer_kind(LayerKind.MAX_POOL2D) + struct.pack("<II", pool_size, stride)
+def pack_pool_layer(*, pool_size: int, stride: int, pad_h: int = 0, pad_w: int = 0) -> bytes:
+    return pack_layer_kind(LayerKind.MAX_POOL2D) + struct.pack(
+        "<II", pool_size, stride
+    ) + struct.pack("<BBH", pad_h, pad_w, 0)
 
 
-def pack_avg_pool_layer(*, pool_size: int, stride: int) -> bytes:
-    return pack_layer_kind(LayerKind.AVG_POOL2D) + struct.pack("<II", pool_size, stride)
+def pack_avg_pool_layer(*, pool_size: int, stride: int, pad_h: int = 0, pad_w: int = 0) -> bytes:
+    return pack_layer_kind(LayerKind.AVG_POOL2D) + struct.pack(
+        "<II", pool_size, stride
+    ) + struct.pack("<BBH", pad_h, pad_w, 0)
 
 
 def pack_batch_norm_layer(*, channels: int) -> bytes:

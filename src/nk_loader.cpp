@@ -66,8 +66,8 @@ namespace NkLoader
                     case NkFormat::LayerKind::AvgPool2D:
                     {
                         const NkFormat::PoolLayerDesc& layer = model.layers[i].pool;
-                        h = (h - layer.pool_size) / layer.stride + 1;
-                        w = (w - layer.pool_size) / layer.stride + 1;
+                        h = (h + 2 * layer.pad_h - layer.pool_size) / layer.stride + 1;
+                        w = (w + 2 * layer.pad_w - layer.pool_size) / layer.stride + 1;
                         features = h * w * c;
                         break;
                     }
@@ -223,13 +223,17 @@ namespace NkLoader
         bool ReadPoolLayer(std::FILE* file, NkFormat::LayerDesc& layer)
         {
             layer.kind = NkFormat::LayerKind::MaxPool2D;
-            return ReadU32(file, layer.pool.pool_size) && ReadU32(file, layer.pool.stride);
+            return ReadU32(file, layer.pool.pool_size) && ReadU32(file, layer.pool.stride) &&
+                   ReadU8(file, layer.pool.pad_h) && ReadU8(file, layer.pool.pad_w) &&
+                   ReadU16(file, layer.pool.reserved);
         }
 
         bool ReadAvgPoolLayer(std::FILE* file, NkFormat::LayerDesc& layer)
         {
             layer.kind = NkFormat::LayerKind::AvgPool2D;
-            return ReadU32(file, layer.pool.pool_size) && ReadU32(file, layer.pool.stride);
+            return ReadU32(file, layer.pool.pool_size) && ReadU32(file, layer.pool.stride) &&
+                   ReadU8(file, layer.pool.pad_h) && ReadU8(file, layer.pool.pad_w) &&
+                   ReadU16(file, layer.pool.reserved);
         }
 
         bool ReadBatchNormLayer(std::FILE* file, NkFormat::LayerDesc& layer)
@@ -927,17 +931,25 @@ namespace NkLoader
                 case NkFormat::LayerKind::MaxPool2D:
                 {
                     const NkFormat::PoolLayerDesc& layer = parsed.layers[i].pool;
-                    network->InitPoolLayer(i, static_cast<int>(layer.pool_size), static_cast<int>(layer.stride));
-                    h = (h - layer.pool_size) / layer.stride + 1;
-                    w = (w - layer.pool_size) / layer.stride + 1;
+                    network->InitPoolLayer(i,
+                                           static_cast<int>(layer.pool_size),
+                                           static_cast<int>(layer.stride),
+                                           static_cast<int>(layer.pad_h),
+                                           static_cast<int>(layer.pad_w));
+                    h = (h + 2 * layer.pad_h - layer.pool_size) / layer.stride + 1;
+                    w = (w + 2 * layer.pad_w - layer.pool_size) / layer.stride + 1;
                     break;
                 }
                 case NkFormat::LayerKind::AvgPool2D:
                 {
                     const NkFormat::PoolLayerDesc& layer = parsed.layers[i].pool;
-                    network->InitAvgPoolLayer(i, static_cast<int>(layer.pool_size), static_cast<int>(layer.stride));
-                    h = (h - layer.pool_size) / layer.stride + 1;
-                    w = (w - layer.pool_size) / layer.stride + 1;
+                    network->InitAvgPoolLayer(i,
+                                              static_cast<int>(layer.pool_size),
+                                              static_cast<int>(layer.stride),
+                                              static_cast<int>(layer.pad_h),
+                                              static_cast<int>(layer.pad_w));
+                    h = (h + 2 * layer.pad_h - layer.pool_size) / layer.stride + 1;
+                    w = (w + 2 * layer.pad_w - layer.pool_size) / layer.stride + 1;
                     break;
                 }
                 case NkFormat::LayerKind::BatchNorm2d:

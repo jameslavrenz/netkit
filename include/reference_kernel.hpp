@@ -30,8 +30,18 @@ struct ReferenceKernel : KernelBase<ReferenceKernel>
                                   NetkitKernelActivation fuse_activation,
                                   Tensor& output);
 
-    static void MaxPool2dForwardImpl(const Tensor& input, int pool_size, int stride, Tensor& output);
-    static void AvgPool2dForwardImpl(const Tensor& input, int pool_size, int stride, Tensor& output);
+    static void MaxPool2dForwardImpl(const Tensor& input,
+                                     int pool_size,
+                                     int stride,
+                                     int pad_h,
+                                     int pad_w,
+                                     Tensor& output);
+    static void AvgPool2dForwardImpl(const Tensor& input,
+                                     int pool_size,
+                                     int stride,
+                                     int pad_h,
+                                     int pad_w,
+                                     Tensor& output);
     static void BatchNorm2dForwardImpl(const Tensor& input,
                                        const float* scale,
                                        const float* bias,

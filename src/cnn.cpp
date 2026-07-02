@@ -37,12 +37,12 @@ void Conv2DLayer::forward(const Tensor& input, Tensor& output)
 
 void MaxPool2DLayer::forward(const Tensor& input, Tensor& output)
 {
-    Kernels::MaxPool2dForward(input, pool_size, stride, output);
+    Kernels::MaxPool2dForward(input, pool_size, stride, pad_h, pad_w, output);
 }
 
 void AvgPool2DLayer::forward(const Tensor& input, Tensor& output)
 {
-    Kernels::AvgPool2dForward(input, pool_size, stride, output);
+    Kernels::AvgPool2dForward(input, pool_size, stride, pad_h, pad_w, output);
 }
 
 void BatchNorm2DLayer::forward(const Tensor& input, Tensor& output)
@@ -99,8 +99,12 @@ bool CNNNetwork::InitActivationBuffers(Arena& arena, uint32_t in_h, uint32_t in_
                                           : blocks[i].avg_pool.pool_size;
                 const int stride = blocks[i].type == CnnBlockType::MaxPool2D ? blocks[i].pool.stride
                                                                              : blocks[i].avg_pool.stride;
-                const uint32_t out_h = CalcOutputDim(h, pool_size, stride);
-                const uint32_t out_w = CalcOutputDim(w, pool_size, stride);
+                const int pad_h = blocks[i].type == CnnBlockType::MaxPool2D ? blocks[i].pool.pad_h
+                                                                            : blocks[i].avg_pool.pad_h;
+                const int pad_w = blocks[i].type == CnnBlockType::MaxPool2D ? blocks[i].pool.pad_w
+                                                                            : blocks[i].avg_pool.pad_w;
+                const uint32_t out_h = CalcOutputDim(h, pool_size, stride, pad_h);
+                const uint32_t out_w = CalcOutputDim(w, pool_size, stride, pad_w);
                 max_activation_elements = MaxU32(max_activation_elements, out_h * out_w * channels);
                 h = out_h;
                 w = out_w;
@@ -165,7 +169,7 @@ void CNNNetwork::InitConvLayer(uint32_t layer_idx,
     blocks[layer_idx].conv.leaky_alpha = leaky_alpha;
 }
 
-void CNNNetwork::InitPoolLayer(uint32_t layer_idx, int pool_size, int stride)
+void CNNNetwork::InitPoolLayer(uint32_t layer_idx, int pool_size, int stride, int pad_h, int pad_w)
 {
     if (!blocks || layer_idx >= num_layers)
         return;
@@ -173,9 +177,11 @@ void CNNNetwork::InitPoolLayer(uint32_t layer_idx, int pool_size, int stride)
     blocks[layer_idx].type = CnnBlockType::MaxPool2D;
     blocks[layer_idx].pool.pool_size = pool_size;
     blocks[layer_idx].pool.stride = stride;
+    blocks[layer_idx].pool.pad_h = pad_h;
+    blocks[layer_idx].pool.pad_w = pad_w;
 }
 
-void CNNNetwork::InitAvgPoolLayer(uint32_t layer_idx, int pool_size, int stride)
+void CNNNetwork::InitAvgPoolLayer(uint32_t layer_idx, int pool_size, int stride, int pad_h, int pad_w)
 {
     if (!blocks || layer_idx >= num_layers)
         return;
@@ -183,6 +189,8 @@ void CNNNetwork::InitAvgPoolLayer(uint32_t layer_idx, int pool_size, int stride)
     blocks[layer_idx].type = CnnBlockType::AvgPool2D;
     blocks[layer_idx].avg_pool.pool_size = pool_size;
     blocks[layer_idx].avg_pool.stride = stride;
+    blocks[layer_idx].avg_pool.pad_h = pad_h;
+    blocks[layer_idx].avg_pool.pad_w = pad_w;
 }
 
 void CNNNetwork::InitBatchNormLayer(uint32_t layer_idx, int channels, float* scale, float* bias)
@@ -260,8 +268,12 @@ Tensor& CNNNetwork::forward(const Tensor& input, Arena& /*arena*/)
                                           : blocks[i].avg_pool.pool_size;
                 const int stride = blocks[i].type == CnnBlockType::MaxPool2D ? blocks[i].pool.stride
                                                                              : blocks[i].avg_pool.stride;
-                const uint32_t out_h = CalcOutputDim(current_input.shape[0], pool_size, stride);
-                const uint32_t out_w = CalcOutputDim(current_input.shape[1], pool_size, stride);
+                const int pad_h = blocks[i].type == CnnBlockType::MaxPool2D ? blocks[i].pool.pad_h
+                                                                            : blocks[i].avg_pool.pad_h;
+                const int pad_w = blocks[i].type == CnnBlockType::MaxPool2D ? blocks[i].pool.pad_w
+                                                                            : blocks[i].avg_pool.pad_w;
+                const uint32_t out_h = CalcOutputDim(current_input.shape[0], pool_size, stride, pad_h);
+                const uint32_t out_w = CalcOutputDim(current_input.shape[1], pool_size, stride, pad_w);
                 const uint32_t out_c = current_input.shape[2];
                 const std::array<uint32_t, 3> shape = {out_h, out_w, out_c};
                 layer_output = ViewND(write_buffer, 3, shape);

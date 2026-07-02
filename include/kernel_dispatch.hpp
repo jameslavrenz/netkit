@@ -317,27 +317,37 @@ namespace detail
                                              output);
         }
 
-        static void MaxPool2dForwardImpl(const Tensor& input, int pool_size, int stride, Tensor& output)
+        static void MaxPool2dForwardImpl(const Tensor& input,
+                                         int pool_size,
+                                         int stride,
+                                         int pad_h,
+                                         int pad_w,
+                                         Tensor& output)
         {
             if constexpr (!IsReferenceKernel<LayerFast>)
             {
                 if (!LayerFast::TryMaxPool2dForward(
-                        input, pool_size, stride, NetkitKernelActivation::None, output))
-                    ReferenceKernel::MaxPool2dForwardImpl(input, pool_size, stride, output);
+                        input, pool_size, stride, pad_h, pad_w, NetkitKernelActivation::None, output))
+                    ReferenceKernel::MaxPool2dForwardImpl(input, pool_size, stride, pad_h, pad_w, output);
             }
             else
-                ReferenceKernel::MaxPool2dForwardImpl(input, pool_size, stride, output);
+                ReferenceKernel::MaxPool2dForwardImpl(input, pool_size, stride, pad_h, pad_w, output);
         }
 
-        static void AvgPool2dForwardImpl(const Tensor& input, int pool_size, int stride, Tensor& output)
+        static void AvgPool2dForwardImpl(const Tensor& input,
+                                         int pool_size,
+                                         int stride,
+                                         int pad_h,
+                                         int pad_w,
+                                         Tensor& output)
         {
             if constexpr (!IsReferenceKernel<LayerFast>)
             {
-                if (!LayerFast::TryAvgPool2dForward(input, pool_size, stride, output))
-                    ReferenceKernel::AvgPool2dForwardImpl(input, pool_size, stride, output);
+                if (!LayerFast::TryAvgPool2dForward(input, pool_size, stride, pad_h, pad_w, output))
+                    ReferenceKernel::AvgPool2dForwardImpl(input, pool_size, stride, pad_h, pad_w, output);
             }
             else
-                ReferenceKernel::AvgPool2dForwardImpl(input, pool_size, stride, output);
+                ReferenceKernel::AvgPool2dForwardImpl(input, pool_size, stride, pad_h, pad_w, output);
         }
 
         static void BatchNorm2dForwardImpl(const Tensor& input,

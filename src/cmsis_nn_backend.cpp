@@ -150,6 +150,8 @@ bool CmsisNnKernel::TryConv2dForward(const Tensor& input,
 bool CmsisNnKernel::TryMaxPool2dForward(const Tensor& input,
                                         int pool_size,
                                         int stride,
+                                        int pad_h,
+                                        int pad_w,
                                         NetkitKernelActivation fuse_activation,
                                         Tensor& output)
 {
@@ -158,7 +160,7 @@ bool CmsisNnKernel::TryMaxPool2dForward(const Tensor& input,
 
     const cmsis_nn_pool_params_f32 pool_params = {
         .stride = {.w = stride, .h = stride},
-        .padding = {.w = 0, .h = 0},
+        .padding = {.w = pad_w, .h = pad_h},
         .activation = fused_activation_clamp(fuse_activation),
     };
 
@@ -189,14 +191,19 @@ bool CmsisNnKernel::TryMaxPool2dForward(const Tensor& input,
                                             out));
 }
 
-bool CmsisNnKernel::TryAvgPool2dForward(const Tensor& input, int pool_size, int stride, Tensor& output)
+bool CmsisNnKernel::TryAvgPool2dForward(const Tensor& input,
+                                        int pool_size,
+                                        int stride,
+                                        int pad_h,
+                                        int pad_w,
+                                        Tensor& output)
 {
     if (input.rank != 3 || output.rank != 3)
         return false;
 
     const cmsis_nn_pool_params_f32 pool_params = {
         .stride = {.w = stride, .h = stride},
-        .padding = {.w = 0, .h = 0},
+        .padding = {.w = pad_w, .h = pad_h},
         .activation = {.min = -FLT_MAX, .max = FLT_MAX},
     };
 

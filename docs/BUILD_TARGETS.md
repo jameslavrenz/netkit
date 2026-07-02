@@ -241,15 +241,19 @@ Dense weights use CMSIS-NN `[out, in]` layout via `FullyConnected` (same as PyTo
 
 Float32 CMSIS-NN support is **experimental** upstream. Helium (MVE) and Neon targets get optimized kernels when `NETKIT_ARCH` and the toolchain flags align.
 
-### Dispatch priority (typical forward pass)
+### Kernel dispatch (CRTP)
 
-```
-Conv / pool / batch norm / FC  → CMSIS-NN when MCU + Cortex-M NETKIT_ARCH + NETKIT_USE_CMSIS_NN
-FC / batch norm / add / clip   → CMSIS-DSP on desktop and MPU (and MCU when NN off)
-Other activations              → CMSIS-NN on MCU when enabled; else reference
-ReLU/ReLU6 (ref path)          → CMSIS-DSP clip on desktop/MPU → reference
-Ops mul / matmul / scale       → CMSIS-DSP when enabled
-```
+Backends are composed at **compile time** via `active_kernel.hpp` — there is no runtime backend switch. Layer and ops code call `Kernels::Op(...)`; `ComposedKernel` tries CMSIS `Try*` methods and falls back to `ReferenceKernel`.
+
+Full architecture: [KERNELS.md](KERNELS.md).
+
+**Typical forward pass (MCU + CMSIS-NN + CMSIS-DSP):**
+
+| Op family | Primary backend |
+|-----------|-----------------|
+| Conv / pool / batch norm / FC / NN activations / softmax | CMSIS-NN (`LayerFast`) |
+| Elementwise mul / matmul / scale / ReLU6 clip | CMSIS-DSP (`VectorFast`) |
+| Any `Try*` miss | Reference |
 
 ## Testing
 

@@ -333,8 +333,6 @@ export-nk:
 	PYTHONPATH=python python3 -m netkit convert models/test_cnn.onnx -o models/test_cnn.nk
 	PYTHONPATH=python python3 -m netkit convert models/cnn_4x4_single.onnx -o models/cnn_4x4_single.nk
 	PYTHONPATH=python python3 -m netkit convert models/cnn_hand.onnx -o models/cnn_hand.nk
-	PYTHONPATH=python python3 -m netkit convert models/mnist_mlp.onnx -o models/mnist_mlp.nk
-	PYTHONPATH=python python3 -m netkit convert models/mnist_cnn.onnx -o models/mnist_cnn.nk
 	PYTHONPATH=python python3 tools/embed_nk_tests.py
 
 embed-tests:

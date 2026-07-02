@@ -216,7 +216,7 @@ See [PHILOSOPHY.md](docs/PHILOSOPHY.md) for the full narrative. In brief:
 
 - **Numeric types:** float16, int16, int8, int4 ([DATATYPES.md](docs/DATATYPES.md))
 - **Packager:** quantized `.nk` export, broader fusion ([PHILOSOPHY.md](docs/PHILOSOPHY.md))
-- **Runtime:** asymmetric conv padding, pool padding, more ONNX ops
+- **Runtime:** asymmetric conv padding, depthwise conv, residual branches
 
 ## License
 

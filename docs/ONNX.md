@@ -22,8 +22,9 @@ See [python/README.md](../python/README.md) and [NK_FORMAT.md](NK_FORMAT.md).
 |---------|--------------|-------|
 | `Gemm` | `dense` | float32 weights/bias initializers; `transB` supported |
 | `Conv` | `conv2d` | NCHW weights → netkit `[O,Kh,Kw,I]`; symmetric `pads` (top=left, bottom=right); fuses trailing activations |
-| `MaxPool` | `max_pool2d` | square kernel from `kernel_shape` |
-| `AveragePool` / `AvgPool` | `avg_pool2d` | square kernel from `kernel_shape` |
+| `MaxPool` | `max_pool2d` | square kernel from `kernel_shape`; symmetric `pads` |
+| `AveragePool` / `AvgPool` | `avg_pool2d` | square kernel from `kernel_shape`; symmetric `pads` |
+| `GlobalAveragePool` | `avg_pool2d` | emitted as `pool_size = H`, `stride = 1` (square spatial dims only) |
 | `BatchNormalization` | `batch_norm2d` | folded to per-channel `scale` + `bias` tensors |
 | `Flatten` | `flatten` | CNN head — test ONNX sidecars transpose NCHW→NHWC before flatten to match runtime |
 | `Relu` | activation | fused when immediately after Gemm/Conv |
@@ -45,7 +46,7 @@ At inference time, feed CNN inputs in **NHWC flatten order** (same as existing n
 - **Float32 only** — other ONNX `TensorProto` types are rejected
 - **No external data** — weights must be embedded in the `.onnx` file (`raw_data` or `float_data`)
 - **Linear graphs** — no branches, skip connections, or subgraphs
-- **Symmetric conv padding only** — `pads` must match top/bottom and left/right
+- **Symmetric conv and pool padding only** — `pads` must match top/bottom and left/right
 - **Square kernels** — `Conv` / pool ops use one `kernel_shape` value for height and width
 
 PyTorch/TensorFlow exports often include `MatMul`, `Add`, `Reshape`, or extra `Pad` nodes — re-export or simplify the graph (e.g. `torch.onnx.export` on an `nn.Sequential`) or extend the converter.

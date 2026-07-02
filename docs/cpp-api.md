@@ -236,8 +236,8 @@ public:
                        float leaky_alpha = 0.01f,
                        int pad_h = 0,
                        int pad_w = 0);
-    void InitPoolLayer(uint32_t layer_idx, int pool_size, int stride);
-    void InitAvgPoolLayer(uint32_t layer_idx, int pool_size, int stride);
+    void InitPoolLayer(uint32_t layer_idx, int pool_size, int stride, int pad_h = 0, int pad_w = 0);
+    void InitAvgPoolLayer(uint32_t layer_idx, int pool_size, int stride, int pad_h = 0, int pad_w = 0);
     void InitBatchNormLayer(uint32_t layer_idx, int channels, float* scale, float* bias);
     void InitFlattenLayer(uint32_t layer_idx);
     void InitDenseLayer(uint32_t layer_idx, const Tensor& W, const Tensor& b,
@@ -368,6 +368,6 @@ Exclude `main.cpp`, `cli.cpp`, and `test.cpp` from your link if you provide your
 - Inference only (no training, no autodiff)
 - Single-threaded
 - No heap allocation in `MLPNetwork` / `CNNNetwork` layer paths
-- Conv padding is symmetric only; pool layers are valid-only (no pool padding yet)
+- Conv padding is symmetric only; pool layers support symmetric padding (`.nk` v3+)
 
 See the [roadmap](../README.md#roadmap) for planned ops (asymmetric padding, quantization).

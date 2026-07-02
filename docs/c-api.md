@@ -293,8 +293,10 @@ nk_status_t nk_cnn_init_conv_layer(nk_cnn_t* cnn, uint32_t layer_idx,
     int kernel_size, int stride, int in_channels, int out_channels,
     float* weights, float* bias, nk_conv_activation_t activation, float leaky_alpha,
     int pad_h, int pad_w);
-nk_status_t nk_cnn_init_pool_layer(nk_cnn_t* cnn, uint32_t layer_idx, int pool_size, int stride);
-nk_status_t nk_cnn_init_avg_pool_layer(nk_cnn_t* cnn, uint32_t layer_idx, int pool_size, int stride);
+nk_status_t nk_cnn_init_pool_layer(nk_cnn_t* cnn, uint32_t layer_idx,
+    int pool_size, int stride, int pad_h, int pad_w);
+nk_status_t nk_cnn_init_avg_pool_layer(nk_cnn_t* cnn, uint32_t layer_idx,
+    int pool_size, int stride, int pad_h, int pad_w);
 nk_status_t nk_cnn_init_batch_norm_layer(nk_cnn_t* cnn, uint32_t layer_idx,
     int channels, float* scale, float* bias);
 ```
@@ -311,8 +313,8 @@ Hybrid CNN models (conv → pool → batch norm → flatten → dense) use:
 
 ```c
 nk_cnn_init_conv_layer(cnn, idx, kernel, stride, in_c, out_c, w, b, act, alpha, pad_h, pad_w);
-nk_cnn_init_pool_layer(cnn, idx, pool_size, stride);           /* max pool */
-nk_cnn_init_avg_pool_layer(cnn, idx, pool_size, stride);
+nk_cnn_init_pool_layer(cnn, idx, pool_size, stride, pad_h, pad_w);           /* max pool */
+nk_cnn_init_avg_pool_layer(cnn, idx, pool_size, stride, pad_h, pad_w);
 nk_cnn_init_batch_norm_layer(cnn, idx, channels, scale, bias);
 nk_cnn_init_flatten_layer(cnn, idx);
 nk_cnn_init_dense_layer(cnn, idx, &weights, &bias, NK_ACTIVATION_RELU, 0.01f);

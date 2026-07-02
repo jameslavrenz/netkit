@@ -38,6 +38,8 @@ struct MaxPool2DLayer
 {
     int pool_size = 2;
     int stride = 2;
+    int pad_h = 0;
+    int pad_w = 0;
 
     void forward(const Tensor& input, Tensor& output);
 };
@@ -46,6 +48,8 @@ struct AvgPool2DLayer
 {
     int pool_size = 2;
     int stride = 2;
+    int pad_h = 0;
+    int pad_w = 0;
 
     void forward(const Tensor& input, Tensor& output);
 };
@@ -106,9 +110,9 @@ public:
                        int pad_h = 0,
                        int pad_w = 0);
 
-    void InitPoolLayer(uint32_t layer_idx, int pool_size, int stride);
+    void InitPoolLayer(uint32_t layer_idx, int pool_size, int stride, int pad_h = 0, int pad_w = 0);
 
-    void InitAvgPoolLayer(uint32_t layer_idx, int pool_size, int stride);
+    void InitAvgPoolLayer(uint32_t layer_idx, int pool_size, int stride, int pad_h = 0, int pad_w = 0);
 
     void InitBatchNormLayer(uint32_t layer_idx, int channels, float* scale, float* bias);
 

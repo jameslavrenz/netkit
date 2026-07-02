@@ -18,12 +18,19 @@ struct CmsisNnKernel
                                  Tensor& output);
 
     static bool TryMaxPool2dForward(const Tensor& input,
-                                  int pool_size,
-                                  int stride,
-                                  NetkitKernelActivation fuse_activation,
-                                  Tensor& output);
+                                    int pool_size,
+                                    int stride,
+                                    int pad_h,
+                                    int pad_w,
+                                    NetkitKernelActivation fuse_activation,
+                                    Tensor& output);
 
-    static bool TryAvgPool2dForward(const Tensor& input, int pool_size, int stride, Tensor& output);
+    static bool TryAvgPool2dForward(const Tensor& input,
+                                    int pool_size,
+                                    int stride,
+                                    int pad_h,
+                                    int pad_w,
+                                    Tensor& output);
 
     static bool TryBatchNorm2dForward(const Tensor& input,
                                       const float* scale,

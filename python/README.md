@@ -4,7 +4,7 @@ Convert ONNX models into binary **`.nk`** files for the C++ runtime.
 
 **Role in netkit:** Phase 1 serializer (ONNX → `.nk`). Phase 2 adds packager optimizations (fusion at export, layout, quantization) — see [docs/PHILOSOPHY.md](../docs/PHILOSOPHY.md).
 
-Supported ONNX ops: `Gemm`, `Conv` (symmetric padding), `MaxPool`, `AveragePool`, `BatchNormalization`, `Flatten`, and fused activations (`Relu`, `Sigmoid`, `Tanh`, `LeakyRelu`, `Clip`→ReLU6, `Softmax`). Details: [docs/ONNX.md](../docs/ONNX.md).
+Supported ONNX ops: `Gemm`, `Conv` (symmetric padding), `MaxPool` / `AveragePool` (symmetric padding), `GlobalAveragePool`, `BatchNormalization`, `Flatten`, and fused activations (`Relu`, `Sigmoid`, `Tanh`, `LeakyRelu`, `Clip`→ReLU6, `Softmax`). Details: [docs/ONNX.md](../docs/ONNX.md).
 
 ## Install
 
