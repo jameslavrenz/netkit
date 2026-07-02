@@ -31,6 +31,7 @@ set(NETKIT_RUNTIME_SOURCES
     src/arena.cpp
     src/tensor_factory.cpp
     src/tensor_access.cpp
+    src/reference_kernel.cpp
     src/ops.cpp
     src/conv2d.cpp
     src/mlp.cpp
