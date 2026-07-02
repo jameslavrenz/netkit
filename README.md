@@ -41,7 +41,8 @@ Application code is C++26. C23 is limited to the C header, the `extern "C"` brid
 - **CLI** — `test`, `run`, and `inspect` commands for desktop development
 - **MLP & CNN** — High-level network abstractions with `.nk` loading
 - **Arena allocator** — Bump-pointer memory with aligned allocation (no heap in layer paths)
-- **Regression tests** — embedded `.nk` cases (69 C++) plus Python ONNX parity (49) via `make test`
+- **Regression tests** — embedded `.nk` cases (69 C++) plus Python ONNX parity (69) via `make test`
+- **Embedded smoke** — MCU/MPU + `NETKIT_ARCH` + CMSIS bring-up harness (`make test-embedded-smoke-matrix`)
 - **Float32 inference** — all tensors, weights, and math use IEEE-754 single precision (`float`)
 - **Optional CMSIS backends** — compile-time CMSIS-NN and CMSIS-DSP acceleration (`NETKIT_CMSIS_NN`, `NETKIT_CMSIS_DSP`, `NETKIT_ARCH`)
 
@@ -95,11 +96,13 @@ netkit/
 │   ├── infer_cpp.cpp       # C++26 usage example
 │   └── infer_c.c           # C23 usage example
 ├── tests/
-│   └── test_c_api.c        # C23 API regression tests
+│   ├── test_c_api.c        # C23 API regression tests
+│   └── embedded_smoke.c    # MCU/MPU lean-runtime smoke (no CLI)
 ├── models/                 # bundled .nk models + matching .onnx sources
 ├── tools/
 │   ├── export_mnist_mlp.py
-│   └── export_mnist_cnn.py
+│   ├── export_mnist_cnn.py
+│   └── run_embedded_smoke.sh  # MCU/MPU + CMSIS profile matrix
 └── docs/                   # Guides and API reference
     ├── TESTING.md
     ├── GETTING_STARTED.md
@@ -139,7 +142,8 @@ make build-all    # cpu: netkit + examples + C API test binary
 make test         # C++ embedded regression + Python ONNX parity (cpu only)
 make test-cpp     # C++ embedded .nk cases only (69)
 make test-c       # C API regression only
-make test-python  # .nk vs ONNX Runtime (49)
+make test-python  # .nk vs ONNX Runtime (69)
+make test-embedded-smoke-matrix  # MCU/MPU + NETKIT_ARCH + CMSIS (host smoke)
 make example-cpp  # C++26 usage demo
 make example-c    # C23 usage demo
 make cmsis-init   # fetch CMSIS-NN + CMSIS-DSP (optional backends)
@@ -159,6 +163,10 @@ make NETKIT_CMSIS_NN=1 NETKIT_CMSIS_DSP=1 test-cpp # both backends
 
 # Firmware with core-specific ARM_MATH_* flags
 make NETKIT_ARCH=CM4 NETKIT_TARGET=mcu NETKIT_CMSIS_NN=1 NETKIT_CMSIS_DSP=1 lib
+
+# Host smoke before on-device bring-up (7 profiles; sets NETKIT_HOST_SMOKE=1)
+make cmsis-init
+make test-embedded-smoke-matrix
 ```
 
 Set **`NETKIT_ARCH`** when cross-compiling (e.g. `CM4`, `M33`, `M55`, `NEON`). Leave unset for native desktop builds. Full flag table: [docs/BUILD_TARGETS.md](docs/BUILD_TARGETS.md).
@@ -184,13 +192,15 @@ make test       # C++ embedded cases, then C API, then Python ONNX parity
 make test-cpp   # ./netkit test
 make test-c     # ./tests/test_c_api
 make test-python
+make test-embedded-smoke-matrix   # lean MCU/MPU profiles (see docs/TESTING.md)
 ```
 
 | Suite | Language | Entry point | Cases |
 |-------|----------|-------------|-------|
 | C++ embedded | C++26 | `./netkit test` → `src/test.cpp` | 69 (16 hand + 20 MNIST + 13 op matrix + 20 Fashion-MNIST) |
 | C API | C23 | `tests/test_c_api.c` | Same 69 + API smoke tests |
-| ONNX parity | Python | `python/tests/test_onnx_parity.py` | 49 (.nk vs ONNX Runtime; tutorial CNNs pending) |
+| ONNX parity | Python | `python/tests/test_onnx_parity.py` | 69 (.nk vs ONNX Runtime on all bundled models) |
+| Embedded smoke | C23 | `tests/embedded_smoke.c` | MCU/MPU load/run on hand MLP + CNN (`make test-embedded-smoke-matrix`) |
 
 Regression cases are embedded in each bundled `.nk` file ([NK_FORMAT.md](docs/NK_FORMAT.md)).  
 MNIST MLP: [MNIST.md](docs/MNIST.md). MNIST CNN: [MNIST_CNN.md](docs/MNIST_CNN.md).

@@ -33,7 +33,7 @@ make export-nk
 
 ```bash
 pip install -e python   # onnx + onnxruntime for parity tests
-make test-python        # .nk CLI vs ONNX Runtime (from repo root, after make)
+make test-python        # .nk vs ONNX Runtime, 69 cases (from repo root, after make)
 ```
 
 See [docs/TESTING.md](../docs/TESTING.md) and [docs/ONNX.md](../docs/ONNX.md).

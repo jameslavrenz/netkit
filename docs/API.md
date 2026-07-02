@@ -136,10 +136,12 @@ Convert ONNX → `.nk` with `python -m netkit convert` or `make export-nk`.
 
 ## Testing
 
-Both API test suites run **69 embedded `.nk` regression cases** on CPU builds — [TESTING.md](TESTING.md). ONNX parity runs in Python (`make test-python`).
+Both API test suites run **69 embedded `.nk` regression cases** on CPU builds — [TESTING.md](TESTING.md). Python ONNX parity covers **69** embedded inputs (`make test-python`). MCU/MPU bring-up: `make test-embedded-smoke-matrix`.
 
 ```bash
-make test       # C++ then C (cpu only)
+make test       # C++ then C then Python ONNX parity (cpu only)
 make test-cpp   # ./netkit test
 make test-c     # ./tests/test_c_api
+make test-python
+make test-embedded-smoke-matrix   # MCU/MPU + CMSIS host smoke
 ```

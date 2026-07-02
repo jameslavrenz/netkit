@@ -6,7 +6,7 @@ netkit uses **GNU Make** as the primary build and test driver. **CMake** is opti
 
 ```bash
 make              # NETKIT_TARGET=cpu (default): netkit CLI + libnetkit.a
-make build-all    # netkit + examples + C API test binary (cpu)
+make build-all    # cpu: netkit + examples + C API test binary; mcu/mpu: lib + examples + embedded_smoke
 make test         # C++ embedded regression + Python ONNX parity (cpu only)
 make test-cpp     # ./netkit test only (69 embedded .nk cases)
 make test-c       # ./tests/test_c_api only

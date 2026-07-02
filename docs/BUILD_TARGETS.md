@@ -45,7 +45,7 @@ Aliases like `Cortex-M4` normalize to `CM4`. CMake also sets `NETKIT_TARGET` fro
 | `ARM_MATH_LOOPUNROLL` | All CMSIS-DSP builds (desktop + embedded) | CMSIS-DSP 1.10+ defaults to no unroll; this enables 4× loop unroll for faster inference |
 | `__DSP_PRESENT=1` | `NETKIT_ARCH=M33` | Required for Armv8-M DSP extension; avoids scalar fallbacks |
 | `ARM_MATH_MVEF` / `ARM_MATH_MVEI` | `NETKIT_ARCH=M55`, `M85` | Helium vector extensions (complements toolchain `-mcpu=cortex-m55`) |
-| `HOST` / `__GNUC_PYTHON__` | Desktop only | CMSIS-DSP portable host path (no CMSIS-Core device headers) |
+| `HOST` / `__GNUC_PYTHON__` | Desktop only, or `NETKIT_HOST_SMOKE=1` on host MCU/MPU smoke | CMSIS-DSP portable host path (no CMSIS-Core device headers) |
 
 MCU builds also add `-Ithird_party/CMSIS-Core/Include` when that directory exists.
 
@@ -69,6 +69,7 @@ Compile-time macros (from `include/netkit_config.h`):
 | `NETKIT_GLOBAL_ARENA` | CPU only — force global/static arena instead of heap default |
 | `NETKIT_USE_CMSIS_NN` | CMSIS-NN backends enabled (see CMSIS section) |
 | `NETKIT_USE_CMSIS_DSP` | CMSIS-DSP backends enabled (see CMSIS section) |
+| `NETKIT_HOST_SMOKE` | Host MCU/MPU smoke only — adds `__GNUC_PYTHON__` for CMSIS without CMSIS-Core |
 
 Default arena constant (`NK_ARENA_DEFAULT_CAPACITY` / `Arena::kDefaultCapacity`):
 
@@ -111,6 +112,8 @@ make mcu-heap         # NETKIT_TARGET=mcu NETKIT_HEAP_ARENA=1 lib
 make mpu              # NETKIT_TARGET=mpu lib
 make mpu-heap         # NETKIT_TARGET=mpu NETKIT_HEAP_ARENA=1 lib
 make cmsis-init       # fetch CMSIS-NN + CMSIS-DSP
+make embedded-smoke   # lean MCU/MPU smoke binary (current NETKIT_TARGET)
+make test-embedded-smoke-matrix   # 7-profile host smoke (see TESTING.md)
 ```
 
 ## Quick commands (CMake)

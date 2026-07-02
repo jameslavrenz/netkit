@@ -23,7 +23,7 @@ See [python/README.md](../python/README.md) and [NK_FORMAT.md](NK_FORMAT.md).
 | `Gemm` | `dense` | float32 weights/bias initializers; `transB` supported |
 | `Conv` | `conv2d` | NCHW weights → netkit `[O,Kh,Kw,I]`; **valid conv, no padding** |
 | `MaxPool` | `max_pool2d` | square kernel from `kernel_shape` |
-| `Flatten` | `flatten` | CNN head only |
+| `Flatten` | `flatten` | CNN head — test ONNX sidecars transpose NCHW→NHWC before flatten to match runtime |
 | `Relu` | activation | fused when immediately after Gemm/Conv |
 | `Softmax` | activation | fused when immediately after final Gemm |
 

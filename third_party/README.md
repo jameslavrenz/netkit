@@ -51,3 +51,7 @@ Leave `NETKIT_ARCH` unset for native desktop builds (`__GNUC_PYTHON__` host path
 | `cmake/netkit_arch.cmake` | `NETKIT_ARCH` resolver (CMake) |
 
 See [docs/BUILD_TARGETS.md](../docs/BUILD_TARGETS.md#cmsis-backends).
+
+## Host embedded smoke
+
+`make test-embedded-smoke-matrix` (or `./tools/run_embedded_smoke.sh`) rebuilds `libnetkit.a` for seven MCU/MPU profiles and runs `tests/embedded_smoke`. CMSIS profiles pass `NETKIT_HOST_SMOKE=1` so object code compiles on Linux/macOS hosts without CMSIS-Core.

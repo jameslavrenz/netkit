@@ -37,7 +37,7 @@ You get:
 Verify:
 
 ```bash
-make test         # 69 embedded .nk cases (+ Python ONNX parity via make test-python)
+make test         # 69 embedded .nk cases + 69 Python ONNX parity (make test-python)
 ```
 
 ---
@@ -132,6 +132,24 @@ make cmsis-init
 make NETKIT_CMSIS_NN=1 test-cpp   # conv, pool, FC, activations, softmax
 make NETKIT_CMSIS_DSP=1 test-cpp  # Ops add/mul/scale/clip/matmul
 ```
+
+### Embedded smoke (MCU/MPU bring-up)
+
+Before flashing firmware, validate lean runtime linking on the host:
+
+```bash
+make cmsis-init
+make test-embedded-smoke-matrix   # mcu/mpu × reference + CMSIS × CM4/M33/A32
+```
+
+Single profile:
+
+```bash
+make NETKIT_TARGET=mcu NETKIT_ARCH=CM4 NETKIT_CMSIS_NN=1 NETKIT_CMSIS_DSP=1 embedded-smoke
+./tests/embedded_smoke
+```
+
+The matrix sets `NETKIT_HOST_SMOKE=1` so CMSIS-DSP uses the portable host path without CMSIS-Core headers. On hardware, omit `NETKIT_HOST_SMOKE` and use your toolchain `-mcpu` flags. Details: [TESTING.md](TESTING.md#embedded-smoke-mcupu).
 
 ### CMake alternative
 
@@ -233,9 +251,9 @@ netkit/
 ├── src/               C++26 engine
 ├── python/netkit/     ONNX → .nk packager (Phase 2 optimizations land here)
 ├── examples/          infer_c.c, infer_cpp.cpp
-├── tests/             test_c_api.c
+├── tests/             test_c_api.c, embedded_smoke.c
 ├── models/            bundled .nk + .onnx
-├── tools/             MNIST export scripts
+├── tools/             MNIST export scripts, run_embedded_smoke.sh
 └── docs/              guides (start with this file)
 ```
 
@@ -249,6 +267,7 @@ netkit/
 | Try a model quickly | `./netkit run model.nk --input ...` |
 | Size firmware RAM | `./netkit inspect model.nk --full` |
 | Ship on MCU | `make NETKIT_TARGET=mcu lib`, link into firmware, static arena |
+| Smoke MCU/MPU + CMSIS on host | `make test-embedded-smoke-matrix` |
 | Add regression case | Edit `python/netkit/regression_data.py`, `make embed-tests`, register in `src/test.cpp` |
 
 ---
