@@ -11,6 +11,7 @@ namespace Ops
     bool CheckSameShape2D(const Tensor& A, const Tensor& B, const Tensor& C);
     bool CheckSameShapeND(const Tensor& A, const Tensor& B, const Tensor& C);
     bool IsMatMulValid(const Tensor& A, const Tensor& B, const Tensor& C);
+    bool IsFullyConnectedValid(const Tensor& input, const Tensor& kernel, const Tensor& output);
     bool IsElementwiseValidND(const Tensor& A, const Tensor& B, const Tensor& C);
     bool IsUnaryOpValid(const Tensor& A, const Tensor& C);
 
@@ -20,6 +21,7 @@ namespace Ops
     void MatAdd(const Tensor& A, const Tensor& B, Tensor& C);
     void MatAddND(const Tensor& A, const Tensor& B, Tensor& C);
     void MatMul(const Tensor& A, const Tensor& B, Tensor& C);
+    void FullyConnected(const Tensor& input, const Tensor& kernel, Tensor& output);
     void MulND(const Tensor& A, const Tensor& B, Tensor& C);
 
     // Activation functions

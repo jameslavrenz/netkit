@@ -55,6 +55,20 @@ def _onnx_conv_to_netkit(weight: np.ndarray) -> np.ndarray:
     return np.transpose(w, (0, 2, 3, 1)).copy()
 
 
+def _attr_int(node, name: str, default: int = 0) -> int:
+    for attr in node.attribute:
+        if attr.name == name:
+            return int(attr.i)
+    return default
+
+
+def _onnx_gemm_weight_to_netkit(weight: np.ndarray, *, trans_b: int) -> tuple[np.ndarray, int]:
+    """Normalize ONNX Gemm B matrix to netkit dense layout [out, in]."""
+    if trans_b:
+        return weight.astype(np.float32), int(weight.shape[0])
+    return weight.T.astype(np.float32), int(weight.shape[1])
+
+
 def _attr_ints(node, name: str, default: list[int] | None = None) -> list[int]:
     for attr in node.attribute:
         if attr.name == name:
@@ -95,9 +109,10 @@ def onnx_to_spec(onnx_path: str | Path) -> ModelSpec:
 
             weight = initializers[node.input[1]]
             bias = initializers[node.input[2]] if len(node.input) >= 3 else None
-            out_features = weight.shape[1]
+            trans_b = _attr_int(node, "transB", 0)
+            packed_w, out_features = _onnx_gemm_weight_to_netkit(weight, trans_b=trans_b)
             layers.append(LayerSpec(kind="dense", units=out_features, activation=activation))
-            weight_tensors.append(weight.astype(np.float32))
+            weight_tensors.append(packed_w)
             bias_tensors.append(
                 (bias.astype(np.float32) if bias is not None else np.zeros(out_features, dtype=np.float32))
             )
@@ -179,11 +194,12 @@ def onnx_to_spec(onnx_path: str | Path) -> ModelSpec:
         if node.op_type == "Gemm":
             weight = initializers[node.input[1]]
             bias = initializers[node.input[2]] if len(node.input) >= 3 else None
-            out_features = weight.shape[1]
+            trans_b = _attr_int(node, "transB", 0)
+            packed_w, out_features = _onnx_gemm_weight_to_netkit(weight, trans_b=trans_b)
             layers.append(
                 LayerSpec(kind="dense", units=out_features, activation=activation)
             )
-            weight_tensors.append(weight.astype(np.float32))
+            weight_tensors.append(packed_w)
             bias_tensors.append(
                 (bias.astype(np.float32) if bias is not None else np.zeros(out_features, dtype=np.float32))
             )

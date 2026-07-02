@@ -1,18 +1,27 @@
 # Testing
 
-netkit uses **Make** as the primary build and test driver (no CMake required). C++ regression tests run through `./netkit test` and the C API harness `tests/test_c_api`. ONNX parity runs in Python.
+netkit uses **GNU Make** as the primary build and test driver. **CMake** is optional (`cmake -B cmake-build && cmake --build cmake-build`) with the same flags — see [BUILD_TARGETS.md](BUILD_TARGETS.md). C++ regression tests run through `./netkit test` and the C API harness `tests/test_c_api`. ONNX parity runs in Python.
 
 ## Quick commands
 
 ```bash
 make              # NETKIT_TARGET=cpu (default): netkit CLI + libnetkit.a
-make test         # C++ embedded regression + Python ONNX parity (cpu only)
 make build-all    # netkit + examples + C API test binary (cpu)
+make test         # C++ embedded regression + Python ONNX parity (cpu only)
 make test-cpp     # ./netkit test only (69 embedded .nk cases)
 make test-c       # ./tests/test_c_api only
 make test-python  # .nk vs ONNX Runtime (49 cases; requires onnxruntime)
 make clean        # remove objects and binaries
 make rebuild      # clean + make
+
+# Optional CMSIS backend parity (after make cmsis-init)
+make NETKIT_CMSIS_NN=1 test-cpp
+make NETKIT_CMSIS_DSP=1 test-cpp
+make NETKIT_CMSIS_NN=1 NETKIT_CMSIS_DSP=1 test-cpp
+
+# Optional CMake build + test
+cmake -B cmake-build && cmake --build cmake-build
+./cmake-build/netkit test
 ```
 
 Embedded runtime-only builds: `make NETKIT_TARGET=mcu lib` or `make NETKIT_TARGET=mpu lib` — see [BUILD_TARGETS.md](BUILD_TARGETS.md). Full regression requires `NETKIT_TARGET=cpu`. New users: [GETTING_STARTED.md](GETTING_STARTED.md).
@@ -136,4 +145,15 @@ Requires **PyTorch** for training scripts (`pip install -e "python[train]"`). Nu
 
 ## CI
 
-GitHub Actions (`.github/workflows/ci.yml`): `make`, `make test` (C++ embedded + Python ONNX parity), example smoke tests, CLI smoke tests. Model weights and embedded test cases are in the repo — no training in CI.
+GitHub Actions (`.github/workflows/ci.yml`):
+
+1. `make cmsis-init` — fetch CMSIS-NN and CMSIS-DSP
+2. `make` — default desktop build
+3. `make NETKIT_CMSIS_NN=1 test-cpp` — CMSIS-NN parity
+4. `make NETKIT_CMSIS_DSP=1 test-cpp` — CMSIS-DSP parity
+5. `make NETKIT_CMSIS_NN=1 NETKIT_CMSIS_DSP=1 test-cpp` — both backends
+6. `make test` — full C++ embedded + C API + Python ONNX parity
+7. Example and CLI smoke tests
+8. CMake configure + build smoke test
+
+Model weights and embedded test cases are in the repo — no training in CI.

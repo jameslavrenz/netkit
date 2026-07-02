@@ -11,6 +11,20 @@
 #   NETKIT_GLOBAL_ARENA=1  — CPU only: use static/global arena instead of heap default
 #   NETKIT_HEAP_ARENA=1    — MCU/MPU: compile heap arena helpers (off by default)
 #
+# Optional CMSIS-NN kernels (Apache-2.0, fetch with ./tools/fetch_cmsis_nn.sh):
+#   NETKIT_CMSIS_NN=1      — use ARM CMSIS-NN float32 conv2d + max-pool + FC backends
+#
+# Optional CMSIS-DSP kernels (Apache-2.0, fetch with ./tools/fetch_cmsis_dsp.sh):
+#   NETKIT_CMSIS_DSP=1     — use ARM CMSIS-DSP float32 vector/matrix ops in Ops::
+#
+# Target architecture (empty = desktop CPU; sets ARM_MATH_* flags for CMSIS):
+#   NETKIT_ARCH=CM4        — Cortex-M4 (ARM_MATH_CM4)
+#   NETKIT_ARCH=CM7         — Cortex-M7 (ARM_MATH_CM7)
+#   NETKIT_ARCH=M33        — Cortex-M33 (ARM_MATH_ARMV8MML)
+#   NETKIT_ARCH=M55        — Cortex-M55 (ARM_MATH_M55)
+#   NETKIT_ARCH=NEON       — Cortex-A with NEON (ARM_MATH_NEON)
+#   See third_party/netkit_arch.mk for full list
+#
 # Common targets:
 #   make              — cpu: netkit CLI + libnetkit.a (heap arena default)
 #   make lib          — libnetkit.a for current NETKIT_TARGET
@@ -32,6 +46,11 @@
 NETKIT_TARGET ?= cpu
 NETKIT_GLOBAL_ARENA ?= 0
 NETKIT_HEAP_ARENA ?= 0
+NETKIT_CMSIS_NN ?= 0
+NETKIT_CMSIS_DSP ?= 0
+NETKIT_ARCH ?=
+
+include third_party/netkit_arch.mk
 
 CC = clang
 CXX = clang++
@@ -44,9 +63,36 @@ RUNTIME_SOURCES = src/arena.cpp src/tensor_factory.cpp src/tensor_access.cpp src
                     src/conv2d.cpp src/mlp.cpp src/cnn.cpp src/nk_format.cpp src/nk_loader.cpp \
                     src/netkit_api.cpp
 
+TARGET_CPPFLAGS =
+
+ifneq ($(NETKIT_ARCH),)
+  TARGET_CPPFLAGS += $(NETKIT_ARCH_CFLAGS)
+endif
+
+CMSIS_NN_OBJECTS =
+ifeq ($(NETKIT_CMSIS_NN),1)
+  CMSIS_NN_DIR ?= third_party/CMSIS-NN
+  ifeq ($(wildcard $(CMSIS_NN_DIR)/Include/arm_nnfunctions.h),)
+    $(error NETKIT_CMSIS_NN=1 requires CMSIS-NN at $(CMSIS_NN_DIR) — run ./tools/fetch_cmsis_nn.sh)
+  endif
+  include third_party/cmsis_nn.mk
+  TARGET_CPPFLAGS += -DNETKIT_USE_CMSIS_NN=1 -DARM_NN_ENABLE_F32=1 -I$(CMSIS_NN_DIR)/Include
+  RUNTIME_SOURCES += src/cmsis_nn_backend.cpp
+endif
+
+CMSIS_DSP_OBJECTS =
+ifeq ($(NETKIT_CMSIS_DSP),1)
+  CMSIS_DSP_DIR ?= third_party/CMSIS-DSP
+  ifeq ($(wildcard $(CMSIS_DSP_DIR)/Include/arm_math.h),)
+    $(error NETKIT_CMSIS_DSP=1 requires CMSIS-DSP at $(CMSIS_DSP_DIR) — run ./tools/fetch_cmsis_dsp.sh)
+  endif
+  include third_party/cmsis_dsp.mk
+  TARGET_CPPFLAGS += -DNETKIT_USE_CMSIS_DSP=1 -I$(CMSIS_DSP_DIR)/Include -I$(CMSIS_DSP_DIR)/PrivateInclude
+  RUNTIME_SOURCES += src/cmsis_dsp_backend.cpp
+endif
+
 DESKTOP_SOURCES = src/nk_regression.cpp src/cli.cpp src/test.cpp
 
-TARGET_CPPFLAGS =
 ifeq ($(NETKIT_TARGET),cpu)
   TARGET_CPPFLAGS += -DNETKIT_TARGET_CPU=1
   CORE_SOURCES = $(RUNTIME_SOURCES) $(DESKTOP_SOURCES)
@@ -102,7 +148,7 @@ NK_INFER_OBJ = tools/nk_infer.o
 .PHONY: all lib clean rebuild test test-cpp test-c test-python run example-c example-cpp examples \
         export-mnist export-mnist-cnn export-mnist-all export-op-matrix \
         export-fashion-mnist export-fashion-mnist-cnn export-fashion-mnist-all \
-        export-nk build-all embed-tests \
+        export-nk build-all embed-tests cmsis-nn-init cmsis-dsp-init cmsis-init \
         cpu cpu-global mcu mcu-heap mpu mpu-heap
 
 ifeq ($(BUILD_CLI),1)
@@ -115,7 +161,7 @@ endif
 
 lib: $(LIB)
 
-$(LIB): $(CORE_OBJECTS)
+$(LIB): $(CORE_OBJECTS) $(CMSIS_NN_OBJECTS) $(CMSIS_DSP_OBJECTS)
 	ar rcs $@ $^
 
 ifeq ($(BUILD_CLI),1)
@@ -160,6 +206,7 @@ clean:
 	rm -f $(CORE_OBJECTS) $(CLI_OBJECTS) $(EXAMPLE_C_OBJ) $(EXAMPLE_CPP_OBJ) $(TEST_C_OBJ) $(NK_INFER_OBJ) \
 	      $(TARGET) $(LIB) $(EXAMPLE_C) $(EXAMPLE_CPP) $(TEST_C) $(NK_INFER)
 	rm -f src/*.o examples/*.o tests/*.o tools/*.o
+	rm -rf build/cmsis_nn build/cmsis_dsp
 
 rebuild: clean all
 
@@ -211,6 +258,14 @@ mpu:
 
 mpu-heap:
 	$(MAKE) NETKIT_TARGET=mpu NETKIT_HEAP_ARENA=1 lib
+
+cmsis-nn-init:
+	./tools/fetch_cmsis_nn.sh
+
+cmsis-dsp-init:
+	./tools/fetch_cmsis_dsp.sh
+
+cmsis-init: cmsis-nn-init cmsis-dsp-init
 
 export-mnist:
 	PYTHONPATH=python python3 tools/export_mnist_mlp.py

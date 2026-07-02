@@ -27,4 +27,9 @@ python/netkit_tools.egg-info/
 # clangd index cache
 .cache/
 
+# CMake build trees
+cmake-build/
+cmake-build-*/
+build/
+
 /data/

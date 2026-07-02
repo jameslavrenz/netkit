@@ -1,4 +1,5 @@
 #include "cnn.hpp"
+#include "netkit_backend.h"
 #include "ops.hpp"
 #include "tensor_factory.hpp"
 #include "tensor_access.hpp"
@@ -16,6 +17,28 @@ namespace
         return static_cast<uint32_t>((static_cast<int>(input_dim) - kernel_size) / stride + 1);
     }
 
+    NetkitBackendActivation ToBackendActivation(ConvActivationType activation)
+    {
+        switch (activation)
+        {
+            case ConvActivationType::None:
+                return NETKIT_BACKEND_ACT_NONE;
+            case ConvActivationType::ReLU:
+                return NETKIT_BACKEND_ACT_RELU;
+            case ConvActivationType::Sigmoid:
+                return NETKIT_BACKEND_ACT_SIGMOID;
+            case ConvActivationType::Tanh:
+                return NETKIT_BACKEND_ACT_TANH;
+            case ConvActivationType::LeakyReLU:
+                return NETKIT_BACKEND_ACT_LEAKY_RELU;
+            case ConvActivationType::ReLU6:
+                return NETKIT_BACKEND_ACT_RELU6;
+            case ConvActivationType::Softmax:
+                return NETKIT_BACKEND_ACT_SOFTMAX;
+        }
+        return NETKIT_BACKEND_ACT_NONE;
+    }
+
     void FlattenNhwc(const Tensor& input, Tensor& output)
     {
         const float* in = tensor_data_f32(const_cast<Tensor&>(input));
@@ -31,13 +54,16 @@ namespace
 
 void Conv2DLayer::forward(const Tensor& input, Tensor& output)
 {
-    conv.forward(input, output);
+    const NetkitBackendActivation backend_activation = ToBackendActivation(activation);
+    const bool used_cmsis = conv.forward(input, output, backend_activation);
 
     switch (activation)
     {
         case ConvActivationType::None:
             break;
         case ConvActivationType::ReLU:
+            if (used_cmsis && netkit_activation_is_fused(backend_activation))
+                break;
             ReLU(output, output);
             break;
         case ConvActivationType::Sigmoid:
@@ -50,6 +76,8 @@ void Conv2DLayer::forward(const Tensor& input, Tensor& output)
             LeakyReLU(output, output, leaky_alpha);
             break;
         case ConvActivationType::ReLU6:
+            if (used_cmsis && netkit_activation_is_fused(backend_activation))
+                break;
             ReLU6(output, output);
             break;
         case ConvActivationType::Softmax:
@@ -60,6 +88,9 @@ void Conv2DLayer::forward(const Tensor& input, Tensor& output)
 
 void MaxPool2DLayer::forward(const Tensor& input, Tensor& output)
 {
+    if (netkit_cmsis_max_pool2d_forward(&input, pool_size, stride, NETKIT_BACKEND_ACT_NONE, &output))
+        return;
+
     const float* in = tensor_data_f32(const_cast<Tensor&>(input));
     float* out = tensor_data_f32(output);
 
@@ -150,7 +181,7 @@ bool CNNNetwork::InitActivationBuffers(Arena& arena, uint32_t in_h, uint32_t in_
             }
             case CnnBlockType::Dense:
             {
-                const uint32_t out_features = blocks[i].dense.weights.shape[1];
+                const uint32_t out_features = blocks[i].dense.weights.shape[0];
                 max_activation_elements = MaxU32(max_activation_elements, out_features);
                 w = out_features;
                 break;
@@ -272,7 +303,7 @@ Tensor& CNNNetwork::forward(const Tensor& input, Arena& /*arena*/)
             }
             case CnnBlockType::Dense:
             {
-                const uint32_t out_features = blocks[i].dense.weights.shape[1];
+                const uint32_t out_features = blocks[i].dense.weights.shape[0];
                 layer_output = View2D(write_buffer, 1, out_features);
                 break;
             }

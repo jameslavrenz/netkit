@@ -14,7 +14,7 @@ Welcome to netkit. This guide takes you from clone to your first inference in a 
 |-----------|-------------|
 | Compiler (engine) | **C++26** — clang++ 17+, g++ 14+ |
 | Compiler (C API) | **C23** — clang 17+ or gcc 14+ |
-| Build | GNU **Make** |
+| Build | GNU **Make** (primary); **CMake** 3.16+ optional |
 | Python packager (optional) | Python 3 + numpy + onnx — `pip install -e python`; training scripts also need `pip install -e "python[train]"` (PyTorch) |
 
 Inference is **float32-only** today. float16, int16, int8, and int4 are on the roadmap — [DATATYPES.md](DATATYPES.md).
@@ -97,6 +97,51 @@ make NETKIT_TARGET=mpu NETKIT_HEAP_ARENA=1 lib     # MPU + heap helpers
 ```
 
 Macros are defined in [`include/netkit_config.h`](../include/netkit_config.h). Full tables: [BUILD_TARGETS.md](BUILD_TARGETS.md).
+
+### Target architecture (`NETKIT_ARCH`)
+
+Leave **`NETKIT_ARCH` unset** for native desktop builds. Set it when cross-compiling firmware so CMSIS gets the right `ARM_MATH_*` defines:
+
+```bash
+# Desktop (default) — no NETKIT_ARCH
+make
+
+# Cortex-M4 firmware library with CMSIS backends
+make cmsis-init
+make NETKIT_ARCH=CM4 NETKIT_TARGET=mcu NETKIT_CMSIS_NN=1 NETKIT_CMSIS_DSP=1 lib
+
+# Cortex-M33 (adds __DSP_PRESENT=1)
+make NETKIT_ARCH=M33 NETKIT_TARGET=mcu NETKIT_CMSIS_NN=1 NETKIT_CMSIS_DSP=1 lib
+```
+
+| Core | `NETKIT_ARCH` | Extra CMSIS flags |
+|------|---------------|-------------------|
+| Cortex-M4 | `CM4` | `ARM_MATH_LOOPUNROLL` |
+| Cortex-M33 | `M33` | `__DSP_PRESENT=1`, loop unroll |
+| Cortex-M55/M85 | `M55` / `M85` | `ARM_MATH_MVEF`, `ARM_MATH_MVEI`, loop unroll |
+| AArch64 Neon | `NEON` | loop unroll |
+
+See the full core table in [BUILD_TARGETS.md](BUILD_TARGETS.md#target-architecture-netkit_arch).
+
+### Optional CMSIS backends
+
+Fetch once, then enable at compile time (no runtime switching):
+
+```bash
+make cmsis-init
+make NETKIT_CMSIS_NN=1 test-cpp   # conv, pool, FC, activations, softmax
+make NETKIT_CMSIS_DSP=1 test-cpp  # Ops add/mul/scale/clip/matmul
+```
+
+### CMake alternative
+
+```bash
+cmake -B cmake-build
+cmake --build cmake-build
+./cmake-build/netkit test
+```
+
+Use `-DNETKIT_ARCH=CM4`, `-DNETKIT_CMSIS_NN=ON`, etc. Desktop CMake builds enable CMSIS-DSP by default with reference NN kernels.
 
 ### Size a buffer for your model
 

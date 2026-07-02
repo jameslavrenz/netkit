@@ -206,7 +206,7 @@ public:
 };
 ```
 
-Weight matrix shape per layer: `[in_features, out_features]` row-major.
+Weight matrix shape per layer: `[out_features, in_features]` row-major (CMSIS-NN / PyTorch layout).
 
 ---
 

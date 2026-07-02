@@ -1,4 +1,6 @@
 #include "ops.hpp"
+#include "netkit_backend.h"
+#include <cfloat>
 
 namespace Ops
 {
@@ -24,6 +26,9 @@ namespace Ops
             return;
         }
 
+        if (netkit_cmsis_dsp_mult_f32(&A, &B, &C))
+            return;
+
         const float* a = static_cast<const float*>(A.data);
         const float* b = static_cast<const float*>(B.data);
         float* c = static_cast<float*>(C.data);
@@ -36,6 +41,9 @@ namespace Ops
 
     void MulScalar(const Tensor& A, float scalar, Tensor& C)
     {
+        if (netkit_cmsis_dsp_scale_f32(&A, scalar, &C))
+            return;
+
         const float* a = static_cast<const float*>(A.data);
         float* c = static_cast<float*>(C.data);
 
@@ -71,7 +79,13 @@ namespace Ops
         {
             std::cout << "Shape mismatch in Add()\n";
             return;
-        }        
+        }
+
+        if (netkit_cmsis_nn_add_f32(&A, &B, &C))
+            return;
+
+        if (netkit_cmsis_dsp_add_f32(&A, &B, &C))
+            return;
 
         const float* a = static_cast<const float*>(A.data);
         const float* b = static_cast<const float*>(B.data);
@@ -117,6 +131,12 @@ namespace Ops
             return;
         }
 
+        if (netkit_cmsis_nn_add_f32(&A, &B, &C))
+            return;
+
+        if (netkit_cmsis_dsp_add_f32(&A, &B, &C))
+            return;
+
         const float* a = static_cast<const float*>(A.data);
         const float* b = static_cast<const float*>(B.data);
         float* c = static_cast<float*>(C.data);
@@ -144,6 +164,9 @@ namespace Ops
             std::cout << "MatMul shape mismatch\n";
             return;
         }
+
+        if (netkit_cmsis_dsp_mat_mul_f32(&A, &B, &C))
+            return;
 
         const float* a = static_cast<const float*>(A.data);
         const float* b = static_cast<const float*>(B.data);
@@ -173,6 +196,46 @@ namespace Ops
         }
     }
 
+    bool IsFullyConnectedValid(const Tensor& input, const Tensor& kernel, const Tensor& output)
+    {
+        return input.rank == 2 && kernel.rank == 2 && output.rank == 2 && kernel.shape[1] == input.shape[1] &&
+               output.shape[0] == input.shape[0] && output.shape[1] == kernel.shape[0];
+    }
+
+    void FullyConnected(const Tensor& input, const Tensor& kernel, Tensor& output)
+    {
+        if (!IsFullyConnectedValid(input, kernel, output))
+        {
+            std::cout << "FullyConnected shape mismatch\n";
+            return;
+        }
+
+        const float* in = static_cast<const float*>(input.data);
+        const float* wt = static_cast<const float*>(kernel.data);
+        float* out = static_cast<float*>(output.data);
+
+        const uint32_t batch = input.shape[0];
+        const uint32_t in_features = input.shape[1];
+        const uint32_t out_features = kernel.shape[0];
+
+        for (uint32_t b = 0; b < batch; ++b)
+        {
+            for (uint32_t oc = 0; oc < out_features; ++oc)
+            {
+                float sum = 0.0f;
+                for (uint32_t ic = 0; ic < in_features; ++ic)
+                {
+                    const uint32_t in_index = b * input.stride[0] + ic * input.stride[1];
+                    const uint32_t wt_index = oc * kernel.stride[0] + ic * kernel.stride[1];
+                    sum += in[in_index] * wt[wt_index];
+                }
+
+                const uint32_t out_index = b * output.stride[0] + oc * output.stride[1];
+                out[out_index] = sum;
+            }
+        }
+    }
+
     bool IsElementwiseValidND(const Tensor& A, const Tensor& B, const Tensor& C)
     {
         if (A.rank != B.rank || A.rank != C.rank)
@@ -196,6 +259,9 @@ namespace Ops
             std::cout << "MulND shape mismatch\n";
             return;
         }
+
+        if (netkit_cmsis_dsp_mult_f32(&A, &B, &C))
+            return;
 
         const float* a = static_cast<const float*>(A.data);
         const float* b = static_cast<const float*>(B.data);
@@ -244,6 +310,12 @@ namespace Ops
             return;
         }
 
+        if (netkit_cmsis_activation_forward(&A, &C, NETKIT_BACKEND_ACT_RELU, 0.0f))
+            return;
+
+        if (netkit_cmsis_dsp_clip_f32(&A, &C, 0.0f, FLT_MAX))
+            return;
+
         const float* a = static_cast<const float*>(A.data);
         float* c = static_cast<float*>(C.data);
 
@@ -260,6 +332,9 @@ namespace Ops
             std::cout << "Sigmoid shape mismatch\n";
             return;
         }
+
+        if (netkit_cmsis_activation_forward(&A, &C, NETKIT_BACKEND_ACT_SIGMOID, 0.0f))
+            return;
 
         const float* a = static_cast<const float*>(A.data);
         float* c = static_cast<float*>(C.data);
@@ -278,6 +353,9 @@ namespace Ops
             return;
         }
 
+        if (netkit_cmsis_activation_forward(&A, &C, NETKIT_BACKEND_ACT_TANH, 0.0f))
+            return;
+
         const float* a = static_cast<const float*>(A.data);
         float* c = static_cast<float*>(C.data);
 
@@ -295,6 +373,9 @@ namespace Ops
             return;
         }
 
+        if (netkit_cmsis_activation_forward(&A, &C, NETKIT_BACKEND_ACT_LEAKY_RELU, alpha))
+            return;
+
         const float* a = static_cast<const float*>(A.data);
         float* c = static_cast<float*>(C.data);
 
@@ -311,6 +392,12 @@ namespace Ops
             std::cout << "ReLU6 shape mismatch\n";
             return;
         }
+
+        if (netkit_cmsis_activation_forward(&A, &C, NETKIT_BACKEND_ACT_RELU6, 0.0f))
+            return;
+
+        if (netkit_cmsis_dsp_clip_f32(&A, &C, 0.0f, 6.0f))
+            return;
 
         const float* a = static_cast<const float*>(A.data);
         float* c = static_cast<float*>(C.data);
@@ -336,6 +423,9 @@ namespace Ops
 
     void Softmax(const Tensor& A, Tensor& C)
     {
+        if (netkit_cmsis_softmax_forward(&A, &C))
+            return;
+
         const float* a = static_cast<const float*>(A.data);
         float* c = static_cast<float*>(C.data);
 

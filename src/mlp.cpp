@@ -1,9 +1,35 @@
 #include "mlp.hpp"
+#include "netkit_backend.h"
 #include "ops.hpp"
 #include "tensor_factory.hpp"
 
 using namespace Ops;
 using namespace TensorFactory;
+
+namespace
+{
+    NetkitBackendActivation ToBackendActivation(ActivationType activation)
+    {
+        switch (activation)
+        {
+            case ActivationType::None:
+                return NETKIT_BACKEND_ACT_NONE;
+            case ActivationType::ReLU:
+                return NETKIT_BACKEND_ACT_RELU;
+            case ActivationType::Sigmoid:
+                return NETKIT_BACKEND_ACT_SIGMOID;
+            case ActivationType::Tanh:
+                return NETKIT_BACKEND_ACT_TANH;
+            case ActivationType::LeakyReLU:
+                return NETKIT_BACKEND_ACT_LEAKY_RELU;
+            case ActivationType::ReLU6:
+                return NETKIT_BACKEND_ACT_RELU6;
+            case ActivationType::Softmax:
+                return NETKIT_BACKEND_ACT_SOFTMAX;
+        }
+        return NETKIT_BACKEND_ACT_NONE;
+    }
+}
 
 // ====================================================
 // MLPLayer Implementation
@@ -11,19 +37,26 @@ using namespace TensorFactory;
 
 void MLPLayer::forward(const Tensor& input, Tensor& output)
 {
-    // Step 1: Linear transformation (y = x @ W)
-    MatMul(input, weights, output);
+    const NetkitBackendActivation backend_activation = ToBackendActivation(activation);
+    const bool used_cmsis_nn =
+        netkit_cmsis_fully_connected_forward(&input, &weights, &bias, backend_activation, &output) != 0;
 
-    // Step 2: Add bias (y = y + b)
-    MatAdd(output, bias, output);
+    if (!used_cmsis_nn)
+    {
+        if (!netkit_cmsis_dsp_fully_connected_forward(&input, &weights, &bias, &output))
+        {
+            FullyConnected(input, weights, output);
+            MatAdd(output, bias, output);
+        }
+    }
 
-    // Step 3: Apply activation function
     switch (activation)
     {
         case ActivationType::None:
-            // No activation
             break;
         case ActivationType::ReLU:
+            if (used_cmsis_nn && netkit_activation_is_fused(backend_activation))
+                break;
             ReLU(output, output);
             break;
         case ActivationType::Sigmoid:
@@ -36,6 +69,8 @@ void MLPLayer::forward(const Tensor& input, Tensor& output)
             LeakyReLU(output, output, leaky_alpha);
             break;
         case ActivationType::ReLU6:
+            if (used_cmsis_nn && netkit_activation_is_fused(backend_activation))
+                break;
             ReLU6(output, output);
             break;
         case ActivationType::Softmax:
@@ -65,7 +100,7 @@ bool MLPNetwork::InitActivationBuffers(Arena& arena, uint32_t batch_rows)
 
     for (uint32_t i = 0; i < num_layers - 1; ++i)
     {
-        const uint32_t cols = layers[i].weights.shape[1];
+        const uint32_t cols = layers[i].weights.shape[0];
         const uint32_t elements = batch_rows * cols;
         if (elements > max_activation_elements)
             max_activation_elements = elements;
@@ -115,7 +150,7 @@ void MLPNetwork::forward(const Tensor& input, Tensor& output, Arena& /*arena*/)
         }
 
         const uint32_t rows = current_input.shape[0];
-        const uint32_t cols = layers[i].weights.shape[1];
+        const uint32_t cols = layers[i].weights.shape[0];
         Tensor layer_output = View2D(write_buffer, rows, cols);
         if (layer_output.num_elements > max_activation_elements)
             return;

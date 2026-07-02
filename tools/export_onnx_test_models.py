@@ -112,7 +112,7 @@ def export_mlp(arch: dict, weights: np.ndarray, graph_name: str) -> onnx.ModelPr
     for idx, layer in enumerate(layers):
         out_features = layer["units"]
         w_size = in_features * out_features
-        w = weights[offset : offset + w_size].reshape(in_features, out_features)
+        w = weights[offset : offset + w_size].reshape(out_features, in_features)
         offset += w_size
         b = weights[offset : offset + out_features]
         offset += out_features
@@ -132,7 +132,7 @@ def export_mlp(arch: dict, weights: np.ndarray, graph_name: str) -> onnx.ModelPr
                 alpha=1.0,
                 beta=1.0,
                 transA=0,
-                transB=0,
+                transB=1,
             )
         )
         tensor = append_activation(
@@ -244,7 +244,7 @@ def export_cnn(arch: dict, weights: np.ndarray, graph_name: str) -> onnx.ModelPr
             out_features = layer["units"]
             in_features = dense_in
             w_size = in_features * out_features
-            w = weights[offset : offset + w_size].reshape(in_features, out_features)
+            w = weights[offset : offset + w_size].reshape(out_features, in_features)
             offset += w_size
             b = weights[offset : offset + out_features]
             offset += out_features
@@ -267,7 +267,7 @@ def export_cnn(arch: dict, weights: np.ndarray, graph_name: str) -> onnx.ModelPr
                     alpha=1.0,
                     beta=1.0,
                     transA=0,
-                    transB=0,
+                    transB=1,
                 )
             )
             tensor = append_activation(

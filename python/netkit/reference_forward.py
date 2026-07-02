@@ -1,4 +1,4 @@
-"""NumPy reference forward pass matching netkit C++ runtime layout (NHWC conv, row-major GEMM)."""
+"""NumPy reference forward pass matching netkit C++ runtime layout (NHWC conv, [out,in] dense)."""
 
 from __future__ import annotations
 
@@ -97,11 +97,11 @@ def forward_mlp(flat_input: np.ndarray, arch: dict[str, Any], weights: np.ndarra
     for layer in arch["layers"]:
         out_features = layer["units"]
         w_size = in_features * out_features
-        w = weights[offset : offset + w_size].reshape(in_features, out_features)
+        w = weights[offset : offset + w_size].reshape(out_features, in_features)
         offset += w_size
         b = weights[offset : offset + out_features]
         offset += out_features
-        x = x @ w + b
+        x = w @ x + b
         x = _activate(x, layer.get("activation", "none"), alpha=float(layer.get("alpha", 0.01)))
         in_features = out_features
 
@@ -142,11 +142,11 @@ def forward_cnn(flat_input: np.ndarray, arch: dict[str, Any], weights: np.ndarra
         elif layer_type == "dense":
             out_f = layer["units"]
             w_size = dense_in * out_f
-            w = weights[offset : offset + w_size].reshape(dense_in, out_f)
+            w = weights[offset : offset + w_size].reshape(out_f, dense_in)
             offset += w_size
             b = weights[offset : offset + out_f]
             offset += out_f
-            x = x @ w + b
+            x = w @ x + b
             x = _activate(x, layer.get("activation", "none"), alpha=float(layer.get("alpha", 0.01)))
             dense_in = out_f
 

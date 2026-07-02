@@ -15,12 +15,12 @@ enum class ActivationType
 
 struct MLPLayer
 {
-    Tensor weights;      // Weight matrix (input_dim x output_dim)
-    Tensor bias;         // Bias vector (1 x output_dim)
+    Tensor weights;      // Weight matrix [out_features, in_features] (CMSIS-NN / PyTorch layout)
+    Tensor bias;         // Bias vector [1, out_features]
     ActivationType activation;
     float leaky_alpha;   // Only used if activation is LeakyReLU
 
-    // Forward pass: output = activation(input @ weights + bias)
+    // Forward pass: output = activation(FC(input, weights) + bias)
     void forward(const Tensor& input, Tensor& output);
 };
 

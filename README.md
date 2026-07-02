@@ -43,6 +43,7 @@ Application code is C++26. C23 is limited to the C header, the `extern "C"` brid
 - **Arena allocator** — Bump-pointer memory with aligned allocation (no heap in layer paths)
 - **Regression tests** — embedded `.nk` cases (69 C++) plus Python ONNX parity (49) via `make test`
 - **Float32 inference** — all tensors, weights, and math use IEEE-754 single precision (`float`)
+- **Optional CMSIS backends** — compile-time CMSIS-NN and CMSIS-DSP acceleration (`NETKIT_CMSIS_NN`, `NETKIT_CMSIS_DSP`, `NETKIT_ARCH`)
 
 ## Quick start
 
@@ -125,7 +126,7 @@ Format spec: [docs/NK_FORMAT.md](docs/NK_FORMAT.md). Regression tests: [docs/TES
 
 - C++26 compiler (clang++ 17+, g++ 14+)
 - C23 compiler for C examples (clang 17+, gcc 14+)
-- Make
+- GNU Make (primary); CMake 3.16+ (optional)
 
 ### Targets
 
@@ -141,11 +142,36 @@ make test-c       # C API regression only
 make test-python  # .nk vs ONNX Runtime (49)
 make example-cpp  # C++26 usage demo
 make example-c    # C23 usage demo
+make cmsis-init   # fetch CMSIS-NN + CMSIS-DSP (optional backends)
 make export-mnist # regenerate MNIST MLP model (requires PyTorch: pip install -e "python[train]")
 make export-mnist-cnn # regenerate MNIST CNN model (requires PyTorch)
 make clean
 make rebuild
 ```
+
+### Optional CMSIS backends and architecture
+
+```bash
+make cmsis-init
+make NETKIT_CMSIS_NN=1 test-cpp                    # CMSIS-NN conv/pool/FC/activations
+make NETKIT_CMSIS_DSP=1 test-cpp                   # CMSIS-DSP Ops primitives
+make NETKIT_CMSIS_NN=1 NETKIT_CMSIS_DSP=1 test-cpp # both backends
+
+# Firmware with core-specific ARM_MATH_* flags
+make NETKIT_ARCH=CM4 NETKIT_TARGET=mcu NETKIT_CMSIS_NN=1 NETKIT_CMSIS_DSP=1 lib
+```
+
+Set **`NETKIT_ARCH`** when cross-compiling (e.g. `CM4`, `M33`, `M55`, `NEON`). Leave unset for native desktop builds. Full flag table: [docs/BUILD_TARGETS.md](docs/BUILD_TARGETS.md).
+
+### CMake (optional)
+
+```bash
+cmake -B cmake-build
+cmake --build cmake-build
+./cmake-build/netkit test
+```
+
+CMake options mirror Make: `NETKIT_TARGET`, `NETKIT_ARCH`, `NETKIT_CMSIS_NN`, `NETKIT_CMSIS_DSP`, arena flags.
 
 See [docs/BUILD_TARGETS.md](docs/BUILD_TARGETS.md) for CPU vs MCU vs MPU builds and [docs/TESTING.md](docs/TESTING.md) for the regression layout.
 

@@ -48,7 +48,7 @@ def build_op_matrix_mlp() -> tuple[dict, np.ndarray, RegressionSuite]:
     in_f = 5
     for layer in arch["layers"]:
         out_f = layer["units"]
-        w = rng.uniform(-0.5, 0.5, size=(in_f, out_f)).astype(np.float32)
+        w = rng.uniform(-0.5, 0.5, size=(out_f, in_f)).astype(np.float32)
         b = rng.uniform(-0.25, 0.25, size=(out_f,)).astype(np.float32)
         layers.append((w, b))
         in_f = out_f
@@ -99,7 +99,7 @@ def build_op_matrix_cnn() -> tuple[dict, np.ndarray, RegressionSuite]:
             dense_in = height * width * channels
         elif layer["type"] == "dense":
             out_f = layer["units"]
-            w_arr = rng.uniform(-0.5, 0.5, size=(dense_in, out_f)).astype(np.float32)
+            w_arr = rng.uniform(-0.5, 0.5, size=(out_f, dense_in)).astype(np.float32)
             b_arr = rng.uniform(-0.2, 0.2, size=(out_f,)).astype(np.float32)
             tensors.append((w_arr, b_arr))
             dense_in = out_f
@@ -137,7 +137,7 @@ def build_deep_mlp() -> tuple[dict, np.ndarray, RegressionSuite]:
     in_f = 6
     for layer in arch["layers"]:
         out_f = layer["units"]
-        w = rng.normal(0.0, 0.15, size=(in_f, out_f)).astype(np.float32)
+        w = rng.normal(0.0, 0.15, size=(out_f, in_f)).astype(np.float32)
         b = rng.normal(0.0, 0.05, size=(out_f,)).astype(np.float32)
         layers.append((w, b))
         in_f = out_f

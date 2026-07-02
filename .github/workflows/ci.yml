@@ -13,6 +13,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Install Clang
         run: |
@@ -27,11 +29,29 @@ jobs:
       - name: Install Python dependencies
         run: pip install -e "python[train]"
 
+      - name: Fetch CMSIS libraries
+        run: make cmsis-init
+
       - name: Build
         run: make
 
+      - name: Build with CMSIS-NN backend
+        run: make NETKIT_CMSIS_NN=1 test-cpp
+
+      - name: Build with CMSIS-DSP backend
+        run: make NETKIT_CMSIS_DSP=1 test-cpp
+
+      - name: Build with CMSIS-NN and CMSIS-DSP backends
+        run: make NETKIT_CMSIS_NN=1 NETKIT_CMSIS_DSP=1 test-cpp
+
       - name: Run C++, C API, and Python tests
         run: make test
+
+      - name: CMake configure and build
+        run: |
+          cmake -B cmake-build
+          cmake --build cmake-build
+          ./cmake-build/netkit test
 
       - name: Build and run C++ example
         run: |

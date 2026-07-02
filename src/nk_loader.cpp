@@ -775,7 +775,7 @@ namespace NkLoader
             if (w_desc.num_elements != in_features * out_features || b_desc.num_elements != out_features)
                 return Fail(LoadStatus::SizeMismatch, "MLP tensor shape mismatch in .nk catalog");
 
-            Tensor W = TensorFactory::View2D(weights + weight_offset, in_features, out_features);
+            Tensor W = TensorFactory::View2D(weights + weight_offset, out_features, in_features);
             Tensor B = TensorFactory::View2D(biases + bias_offset, 1, out_features);
             weight_offset += w_desc.num_elements;
             bias_offset += b_desc.num_elements;
@@ -907,7 +907,7 @@ namespace NkLoader
                     if (w_desc.num_elements != weight_elems || b_desc.num_elements != layer.units)
                         return Fail(LoadStatus::SizeMismatch, "CNN dense tensor shape mismatch in .nk catalog");
 
-                    Tensor W = TensorFactory::View2D(weights + weight_offset, dense_in, layer.units);
+                    Tensor W = TensorFactory::View2D(weights + weight_offset, layer.units, dense_in);
                     Tensor B = TensorFactory::View2D(biases + bias_offset, 1, layer.units);
                     network->InitDenseLayer(i, W, B, ToMlpActivation(layer.activation), layer.alpha);
                     weight_offset += weight_elems;

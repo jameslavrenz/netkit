@@ -10,7 +10,7 @@ namespace NkFormat
 {
     constexpr char kMagic[4] = {'N', 'K', 'I', 'T'};
     constexpr char kTestMagic[4] = {'T', 'C', 'A', 'S'};
-    constexpr uint32_t kVersion = 1;
+    constexpr uint32_t kVersion = 2;
 
     constexpr uint16_t kFlagHasTests = 0x0001;
     constexpr uint32_t kMaxTestCases = 16;

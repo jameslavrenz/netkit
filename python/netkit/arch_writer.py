@@ -19,7 +19,7 @@ def _split_mlp_weights(arch: dict, weights: np.ndarray) -> tuple[list[np.ndarray
     for layer in arch["layers"]:
         out_features = layer["units"]
         w_size = in_features * out_features
-        w = weights[offset : offset + w_size].reshape(in_features, out_features)
+        w = weights[offset : offset + w_size].reshape(out_features, in_features)
         offset += w_size
         b = weights[offset : offset + out_features]
         offset += out_features
@@ -64,7 +64,7 @@ def _split_cnn_weights(arch: dict, weights: np.ndarray) -> tuple[list[np.ndarray
         elif layer_type == "dense":
             out_f = layer["units"]
             w_size = dense_in * out_f
-            dense_w = weights[offset : offset + w_size].reshape(dense_in, out_f)
+            dense_w = weights[offset : offset + w_size].reshape(out_f, dense_in)
             offset += w_size
             b = weights[offset : offset + out_f]
             offset += out_f

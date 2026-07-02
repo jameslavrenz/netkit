@@ -20,8 +20,8 @@ def netkit_softmax(logits: np.ndarray) -> np.ndarray:
 
 
 def pack_dense(linear: nn.Linear) -> tuple[np.ndarray, np.ndarray]:
-    """PyTorch Linear [out, in] -> netkit W [in, out] row-major + bias [out]."""
-    w = linear.weight.detach().cpu().numpy().T.astype(np.float32)
+    """PyTorch Linear [out, in] -> netkit W [out, in] row-major + bias [out]."""
+    w = linear.weight.detach().cpu().numpy().astype(np.float32)
     b = linear.bias.detach().cpu().numpy().astype(np.float32)
     return w, b
 

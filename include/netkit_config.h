@@ -15,6 +15,14 @@
  *   MCU / MPU default — caller-owned static/global buffer via nk_arena_init().
  *                       NETKIT_HEAP_ARENA=1 allows one init_heap() at startup; never freed.
  *
+ * Optional kernel backends (Makefile / CMake):
+ *   NETKIT_USE_CMSIS_NN  — ARM CMSIS-NN float32 conv/pool/FC/activations/softmax/add
+ *   NETKIT_USE_CMSIS_DSP — ARM CMSIS-DSP float32 vector/matrix ops + clip
+ *
+ * Target architecture (Makefile NETKIT_ARCH=... / CMake -DNETKIT_ARCH=...):
+ *   Maps to CMSIS ARM_MATH_* flags (CM0–M85, A32, NEON). Unset = desktop host.
+ *   Also sets ARM_MATH_LOOPUNROLL (DSP), __DSP_PRESENT (M33), MVEF/MVEI (M55/M85).
+ *
  * See docs/BUILD_TARGETS.md.
  */
 #ifndef NETKIT_CONFIG_H

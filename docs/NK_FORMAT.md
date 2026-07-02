@@ -1,6 +1,6 @@
 # netkit Binary Model Format (`.nk`)
 
-Version **1** — single-file inference bundle for embedded runtimes. Produced by the Python package in [`python/`](../python/); consumed by the C++ loader (`NkLoader`) and `./netkit run` / `./netkit inspect`.
+Version **2** — single-file inference bundle for embedded runtimes. Produced by the Python package in [`python/`](../python/); consumed by the C++ loader (`NkLoader`) and `./netkit run` / `./netkit inspect`.
 
 ## Overview
 
@@ -41,7 +41,7 @@ Optional **embedded regression tests** (flag `kFlagHasTests`) append a `TCAS` se
 | Offset | Type | Field |
 |--------|------|-------|
 | 0 | `char[4]` | Magic `"NKIT"` |
-| 4 | `uint32` | Format version (`1`) |
+| 4 | `uint32` | Format version (`2`) |
 | 8 | `uint8` | Network kind (`1`=MLP, `2`=CNN) |
 | 9 | `uint8` | Input rank (1–4) |
 | 10 | `uint16` | Flags (`0x0001` = embedded tests) |
@@ -84,7 +84,7 @@ Each layer starts with **`uint8 kind` + 3 reserved bytes**, then kind-specific f
 | `dims` | `uint32[4]` (unused dims `0`) |
 | `num_elements` | `uint32` |
 
-Example MLP first-layer weight with `2 → 2` units: `rank=2`, `dtype=float32`, `dims=[2,2]`, `num_elements=4`.
+Example MLP first-layer weight with `2 → 2` units: `rank=2`, `dtype=float32`, `dims=[2,2]` (`[out_features, in_features]`), `num_elements=4`.
 
 Example conv weight: `rank=4`, `dims=[O,Kh,Kw,I]` in **netkit** layout `[out, kernel, kernel, in_channels]`.
 

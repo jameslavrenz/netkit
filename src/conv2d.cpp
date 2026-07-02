@@ -1,7 +1,19 @@
 #include "conv2d.hpp"
+#include "netkit_backend.h"
 
-void Conv2D::forward(const Tensor& input, Tensor& output)
+bool Conv2D::forward(const Tensor& input, Tensor& output, NetkitBackendActivation fuse_activation)
 {
+    if (netkit_cmsis_conv2d_forward(&input,
+                                    weights,
+                                    bias,
+                                    kernel_size,
+                                    stride,
+                                    in_channels,
+                                    out_channels,
+                                    fuse_activation,
+                                    &output))
+        return true;
+
     float* in  = tensor_data_f32(const_cast<Tensor&>(input));
     float* out = tensor_data_f32(output);
 
@@ -39,4 +51,6 @@ void Conv2D::forward(const Tensor& input, Tensor& output)
             }
         }
     }
+
+    return false;
 }

@@ -34,7 +34,7 @@ class TestTorchPack(unittest.TestCase):
 
         w, b = pack_dense(linear)
         x = np.array([1.0, 0.5, -1.0, 2.0], dtype=np.float32)
-        expected = x @ w + b
+        expected = x @ w.T + b
         actual = linear(torch.from_numpy(x)).detach().cpu().numpy()
         np.testing.assert_allclose(actual, expected, rtol=0.0, atol=1e-6)
 
