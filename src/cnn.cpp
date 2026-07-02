@@ -1,13 +1,11 @@
 #include "cnn.hpp"
-#include "netkit_backend.h"
-#include "ops.hpp"
+#include "active_kernel.hpp"
+#include "activation_followup.hpp"
 #include "tensor_factory.hpp"
 #include "tensor_access.hpp"
 #include <array>
-#include <cmath>
 #include <cstring>
 
-using namespace Ops;
 using namespace TensorFactory;
 
 namespace
@@ -15,28 +13,6 @@ namespace
     uint32_t CalcOutputDim(uint32_t input_dim, int kernel_size, int stride, int pad = 0)
     {
         return static_cast<uint32_t>((static_cast<int>(input_dim) + 2 * pad - kernel_size) / stride + 1);
-    }
-
-    NetkitBackendActivation ToBackendActivation(ConvActivationType activation)
-    {
-        switch (activation)
-        {
-            case ConvActivationType::None:
-                return NETKIT_BACKEND_ACT_NONE;
-            case ConvActivationType::ReLU:
-                return NETKIT_BACKEND_ACT_RELU;
-            case ConvActivationType::Sigmoid:
-                return NETKIT_BACKEND_ACT_SIGMOID;
-            case ConvActivationType::Tanh:
-                return NETKIT_BACKEND_ACT_TANH;
-            case ConvActivationType::LeakyReLU:
-                return NETKIT_BACKEND_ACT_LEAKY_RELU;
-            case ConvActivationType::ReLU6:
-                return NETKIT_BACKEND_ACT_RELU6;
-            case ConvActivationType::Softmax:
-                return NETKIT_BACKEND_ACT_SOFTMAX;
-        }
-        return NETKIT_BACKEND_ACT_NONE;
     }
 
     void FlattenNhwc(const Tensor& input, Tensor& output)
@@ -54,131 +30,24 @@ namespace
 
 void Conv2DLayer::forward(const Tensor& input, Tensor& output)
 {
-    const NetkitBackendActivation backend_activation = ToBackendActivation(activation);
-    const bool used_cmsis = conv.forward(input, output, backend_activation);
-
-    switch (activation)
-    {
-        case ConvActivationType::None:
-            break;
-        case ConvActivationType::ReLU:
-            if (used_cmsis && netkit_activation_is_fused(backend_activation))
-                break;
-            ReLU(output, output);
-            break;
-        case ConvActivationType::Sigmoid:
-            Sigmoid(output, output);
-            break;
-        case ConvActivationType::Tanh:
-            Tanh(output, output);
-            break;
-        case ConvActivationType::LeakyReLU:
-            LeakyReLU(output, output, leaky_alpha);
-            break;
-        case ConvActivationType::ReLU6:
-            if (used_cmsis && netkit_activation_is_fused(backend_activation))
-                break;
-            ReLU6(output, output);
-            break;
-        case ConvActivationType::Softmax:
-            Softmax(output, output);
-            break;
-    }
+    const NetkitKernelActivation kernel_activation = ToKernelActivation(activation);
+    const bool fused_in_kernel = conv.forward(input, output, kernel_activation);
+    ApplyFusedOutputActivation(kernel_activation, fused_in_kernel, output, leaky_alpha);
 }
 
 void MaxPool2DLayer::forward(const Tensor& input, Tensor& output)
 {
-    if (netkit_cmsis_max_pool2d_forward(&input, pool_size, stride, NETKIT_BACKEND_ACT_NONE, &output))
-        return;
-
-    const float* in = tensor_data_f32(const_cast<Tensor&>(input));
-    float* out = tensor_data_f32(output);
-
-    const uint32_t channels = input.shape[2];
-    const uint32_t out_h = output.shape[0];
-    const uint32_t out_w = output.shape[1];
-
-    for (uint32_t c = 0; c < channels; ++c)
-    {
-        for (uint32_t oh = 0; oh < out_h; ++oh)
-        {
-            for (uint32_t ow = 0; ow < out_w; ++ow)
-            {
-                float max_val = -INFINITY;
-                for (int kh = 0; kh < pool_size; ++kh)
-                {
-                    for (int kw = 0; kw < pool_size; ++kw)
-                    {
-                        const uint32_t ih = oh * static_cast<uint32_t>(stride) + static_cast<uint32_t>(kh);
-                        const uint32_t iw = ow * static_cast<uint32_t>(stride) + static_cast<uint32_t>(kw);
-                        const uint32_t in_idx = index_nhwc(input, ih, iw, c);
-                        if (in[in_idx] > max_val)
-                            max_val = in[in_idx];
-                    }
-                }
-
-                const uint32_t out_idx = (oh * out_w + ow) * channels + c;
-                out[out_idx] = max_val;
-            }
-        }
-    }
+    Kernels::MaxPool2dForward(input, pool_size, stride, output);
 }
 
 void AvgPool2DLayer::forward(const Tensor& input, Tensor& output)
 {
-    if (netkit_cmsis_avg_pool2d_forward(&input, pool_size, stride, &output))
-        return;
-
-    const float* in = tensor_data_f32(const_cast<Tensor&>(input));
-    float* out = tensor_data_f32(output);
-
-    const uint32_t channels = input.shape[2];
-    const uint32_t out_h = output.shape[0];
-    const uint32_t out_w = output.shape[1];
-    const float inv_area = 1.0f / static_cast<float>(pool_size * pool_size);
-
-    for (uint32_t c = 0; c < channels; ++c)
-    {
-        for (uint32_t oh = 0; oh < out_h; ++oh)
-        {
-            for (uint32_t ow = 0; ow < out_w; ++ow)
-            {
-                float sum = 0.0f;
-                for (int kh = 0; kh < pool_size; ++kh)
-                {
-                    for (int kw = 0; kw < pool_size; ++kw)
-                    {
-                        const uint32_t ih = oh * static_cast<uint32_t>(stride) + static_cast<uint32_t>(kh);
-                        const uint32_t iw = ow * static_cast<uint32_t>(stride) + static_cast<uint32_t>(kw);
-                        const uint32_t in_idx = index_nhwc(input, ih, iw, c);
-                        sum += in[in_idx];
-                    }
-                }
-
-                const uint32_t out_idx = (oh * out_w + ow) * channels + c;
-                out[out_idx] = sum * inv_area;
-            }
-        }
-    }
+    Kernels::AvgPool2dForward(input, pool_size, stride, output);
 }
 
 void BatchNorm2DLayer::forward(const Tensor& input, Tensor& output)
 {
-    if (netkit_cmsis_batch_norm2d_forward(&input, scale, bias, channels, &output))
-        return;
-    if (netkit_cmsis_dsp_nn_overlap_fallback() &&
-        netkit_cmsis_dsp_batch_norm2d_forward(&input, scale, bias, channels, &output))
-        return;
-
-    const float* in = tensor_data_f32(const_cast<Tensor&>(input));
-    float* out = tensor_data_f32(output);
-    const uint32_t channels_u = static_cast<uint32_t>(channels);
-
-    for (uint32_t i = 0; i < input.num_elements; ++i)
-    {
-        const uint32_t c = i % channels_u;
-        out[i] = in[i] * scale[c] + bias[c];
-    }
+    Kernels::BatchNorm2dForward(input, scale, bias, channels, output);
 }
 
 CNNNetwork::CNNNetwork(uint32_t num_layers, Arena& arena)

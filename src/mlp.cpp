@@ -1,92 +1,17 @@
 #include "mlp.hpp"
-#include "netkit_backend.h"
-#include "ops.hpp"
+#include "active_kernel.hpp"
+#include "activation_followup.hpp"
 #include "tensor_factory.hpp"
 
-using namespace Ops;
 using namespace TensorFactory;
-
-namespace
-{
-    NetkitBackendActivation ToBackendActivation(ActivationType activation)
-    {
-        switch (activation)
-        {
-            case ActivationType::None:
-                return NETKIT_BACKEND_ACT_NONE;
-            case ActivationType::ReLU:
-                return NETKIT_BACKEND_ACT_RELU;
-            case ActivationType::Sigmoid:
-                return NETKIT_BACKEND_ACT_SIGMOID;
-            case ActivationType::Tanh:
-                return NETKIT_BACKEND_ACT_TANH;
-            case ActivationType::LeakyReLU:
-                return NETKIT_BACKEND_ACT_LEAKY_RELU;
-            case ActivationType::ReLU6:
-                return NETKIT_BACKEND_ACT_RELU6;
-            case ActivationType::Softmax:
-                return NETKIT_BACKEND_ACT_SOFTMAX;
-        }
-        return NETKIT_BACKEND_ACT_NONE;
-    }
-}
-
-// ====================================================
-// MLPLayer Implementation
-// ====================================================
 
 void MLPLayer::forward(const Tensor& input, Tensor& output)
 {
-    const NetkitBackendActivation backend_activation = ToBackendActivation(activation);
-    const bool used_cmsis_nn =
-        netkit_cmsis_fully_connected_forward(&input, &weights, &bias, backend_activation, &output) != 0;
-
-    if (!used_cmsis_nn && netkit_cmsis_dsp_nn_overlap_fallback())
-    {
-        if (!netkit_cmsis_dsp_fully_connected_forward(&input, &weights, &bias, &output))
-        {
-            FullyConnected(input, weights, output);
-            MatAdd(output, bias, output);
-        }
-    }
-    else if (!used_cmsis_nn)
-    {
-        FullyConnected(input, weights, output);
-        MatAdd(output, bias, output);
-    }
-
-    switch (activation)
-    {
-        case ActivationType::None:
-            break;
-        case ActivationType::ReLU:
-            if (used_cmsis_nn && netkit_activation_is_fused(backend_activation))
-                break;
-            ReLU(output, output);
-            break;
-        case ActivationType::Sigmoid:
-            Sigmoid(output, output);
-            break;
-        case ActivationType::Tanh:
-            Tanh(output, output);
-            break;
-        case ActivationType::LeakyReLU:
-            LeakyReLU(output, output, leaky_alpha);
-            break;
-        case ActivationType::ReLU6:
-            if (used_cmsis_nn && netkit_activation_is_fused(backend_activation))
-                break;
-            ReLU6(output, output);
-            break;
-        case ActivationType::Softmax:
-            Softmax(output, output);
-            break;
-    }
+    const NetkitKernelActivation kernel_activation = ToKernelActivation(activation);
+    const bool fused_in_kernel =
+        Kernels::FullyConnectedWithBias(input, weights, bias, kernel_activation, output);
+    ApplyFusedOutputActivation(kernel_activation, fused_in_kernel, output, leaky_alpha);
 }
-
-// ====================================================
-// MLPNetwork Implementation
-// ====================================================
 
 MLPNetwork::MLPNetwork(uint32_t num_layers, Arena& arena)
     : layers(nullptr), num_layers(num_layers)
@@ -120,8 +45,11 @@ bool MLPNetwork::InitActivationBuffers(Arena& arena, uint32_t batch_rows)
     return ping_a != nullptr && ping_b != nullptr;
 }
 
-void MLPNetwork::InitLayer(uint32_t layer_idx, const Tensor& weights, const Tensor& bias,
-                            ActivationType activation, float leaky_alpha)
+void MLPNetwork::InitLayer(uint32_t layer_idx,
+                           const Tensor& weights,
+                           const Tensor& bias,
+                           ActivationType activation,
+                           float leaky_alpha)
 {
     if (!layers || layer_idx >= num_layers)
         return;

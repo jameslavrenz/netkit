@@ -66,7 +66,7 @@ CXXFLAGS = -fcolor-diagnostics -fansi-escape-codes -g -std=c++26 -Wall -Wextra -
 TARGET = netkit
 LIB = libnetkit.a
 
-RUNTIME_SOURCES = src/arena.cpp src/tensor_factory.cpp src/tensor_access.cpp src/ops.cpp \
+RUNTIME_SOURCES = src/arena.cpp src/tensor_factory.cpp src/tensor_access.cpp src/reference_kernel.cpp src/ops.cpp \
                     src/conv2d.cpp src/mlp.cpp src/cnn.cpp src/nk_format.cpp src/nk_loader.cpp \
                     src/netkit_api.cpp
 

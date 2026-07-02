@@ -1,5 +1,5 @@
 #pragma once
-#include "netkit_backend.h"
+#include "kernel_activation.hpp"
 #include "tensor_access.hpp"
 #include <cstdint>
 
@@ -15,8 +15,7 @@ struct Conv2D
     float* weights; // [out][kh][kw][in]
     float* bias;    // [out]
 
-    // Returns true when CMSIS-NN handled the forward pass.
     bool forward(const Tensor& input,
                  Tensor& output,
-                 NetkitBackendActivation fuse_activation = NETKIT_BACKEND_ACT_NONE);
+                 NetkitKernelActivation fuse_activation = NetkitKernelActivation::None);
 };
