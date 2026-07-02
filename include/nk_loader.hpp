@@ -80,6 +80,7 @@ namespace NkLoader
     bool IsNkPath(const char* path);
 
     LoadResult ParseFile(const char* nk_path, ParsedModel& out);
+    LoadResult ParseBuffer(const uint8_t* data, std::size_t size, ParsedModel& out);
     LoadResult ReadTestSuite(const char* nk_path, TestSuite& out);
     std::size_t ModelPayloadBytes(const ParsedModel& model);
     void FillArchInfo(const ParsedModel& model, ArchInfo& info);
@@ -95,11 +96,25 @@ namespace NkLoader
                        std::array<uint32_t, kMaxTensorRank>& input_shape,
                        uint32_t& input_rank);
 
+    LoadResult LoadMLPFromBuffer(const uint8_t* data,
+                                 std::size_t size,
+                                 Arena& arena,
+                                 MLPNetwork*& network,
+                                 std::array<uint32_t, kMaxTensorRank>& input_shape,
+                                 uint32_t& input_rank);
+
     LoadResult LoadCNN(const char* nk_path,
                        Arena& arena,
                        CNNNetwork*& network,
                        std::array<uint32_t, kMaxTensorRank>& input_shape,
                        uint32_t& input_rank);
+
+    LoadResult LoadCNNFromBuffer(const uint8_t* data,
+                                 std::size_t size,
+                                 Arena& arena,
+                                 CNNNetwork*& network,
+                                 std::array<uint32_t, kMaxTensorRank>& input_shape,
+                                 uint32_t& input_rank);
 
     LoadResult Load(const char* nk_path,
                     Arena& arena,
@@ -108,6 +123,15 @@ namespace NkLoader
                     CNNNetwork*& cnn,
                     std::array<uint32_t, kMaxTensorRank>& input_shape,
                     uint32_t& input_rank);
+
+    LoadResult LoadFromBuffer(const uint8_t* data,
+                              std::size_t size,
+                              Arena& arena,
+                              NetworkKind& kind,
+                              MLPNetwork*& mlp,
+                              CNNNetwork*& cnn,
+                              std::array<uint32_t, kMaxTensorRank>& input_shape,
+                              uint32_t& input_rank);
 
     const char* StatusMessage(LoadStatus status);
     const char* NetworkKindName(NetworkKind kind);

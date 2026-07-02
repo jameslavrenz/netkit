@@ -2,7 +2,7 @@
 
 netkit is a C++26 neural network kit for on-device inference on MCUs and MPUs. It is developed and validated on the desktop, then deployed to embedded targets. Companion to [memkit](https://github.com/jameslavrenz/memkit) for memory management.
 
-Models are loaded from binary **`.nk`** files (single-file architecture + weights). Convert from ONNX with `python -m netkit convert`. **Inference is float32-only today**; float16, int16, int8, and int4 are on the roadmap — see [docs/DATATYPES.md](docs/DATATYPES.md).
+Models are loaded from binary **`.nk`** files (single-file architecture + weights). Convert from ONNX with `python -m netkit convert`, or embed a `.nk` in firmware with `python -m netkit aot`. **Inference is float32-only today**; float16, int16, int8, and int4 are on the roadmap — see [docs/DATATYPES.md](docs/DATATYPES.md).
 
 ## Documentation
 
@@ -17,7 +17,7 @@ Models are loaded from binary **`.nk`** files (single-file architecture + weight
 | **[Data Types](docs/DATATYPES.md)** | Float32 today; float16 / int16 / int8 / int4 roadmap |
 | **[ONNX Import](docs/ONNX.md)** | Python packager (ONNX → `.nk`); parity tests in Python |
 | **[Binary .nk Format](docs/NK_FORMAT.md)** | Single-file models — Python packager + C++ loader |
-| **[Python packager](python/README.md)** | `python -m netkit convert` (ONNX → `.nk`) |
+| **[Python packager](python/README.md)** | `python -m netkit convert` (ONNX → `.nk`), `aot` (embed `.nk` in C/C++) |
 | **[Testing](docs/TESTING.md)** | Regression suites, Make targets, CI |
 | **[C API Reference](docs/c-api.md)** | `netkit.h` (C23) |
 | **[C++ API Reference](docs/cpp-api.md)** | Headers in `include/` (C++26) |
@@ -41,7 +41,7 @@ Application code is C++26. C23 is limited to the C header, the `extern "C"` brid
 - **CLI** — `test`, `run`, and `inspect` commands for desktop development
 - **MLP & CNN** — conv (with padding), max/avg pool, batch norm, flatten, dense; `.nk` loading
 - **Arena allocator** — Bump-pointer memory with aligned allocation (no heap in layer paths)
-- **Regression tests** — embedded `.nk` cases (69 C++) plus Python ONNX parity (69) via `make test`
+- **Regression tests** — 73 embedded `.nk` cases (C++/C) plus Python ONNX parity (69) and AOT compile tests via `make test`
 - **Embedded smoke** — MCU/MPU + `NETKIT_ARCH` + CMSIS bring-up harness (`make test-embedded-smoke-matrix`)
 - **Float32 inference** — all tensors, weights, and math use IEEE-754 single precision (`float`)
 - **Optional CMSIS backends** — CMSIS-NN when `NETKIT_TARGET=mcu` + Cortex-M `NETKIT_ARCH` (flag ignored on cpu/mpu); CMSIS-DSP on any target
@@ -140,9 +140,9 @@ make NETKIT_TARGET=mpu lib   # lean embedded runtime
 make NETKIT_TARGET=cpu NETKIT_GLOBAL_ARENA=1 all   # desktop, static arena
 make build-all    # cpu: netkit + examples + C API test binary
 make test         # C++ embedded regression + Python ONNX parity (cpu only)
-make test-cpp     # C++ embedded .nk cases only (69)
+make test-cpp     # C++ embedded .nk cases only (73)
 make test-c       # C API regression only
-make test-python  # .nk vs ONNX Runtime (69)
+make test-python  # ONNX parity (69) + AOT compile tests (requires libnetkit.a)
 make test-embedded-smoke-matrix  # MCU/MPU + NETKIT_ARCH + CMSIS (host smoke)
 make example-cpp  # C++26 usage demo
 make example-c    # C23 usage demo
@@ -193,9 +193,10 @@ make test-embedded-smoke-matrix   # lean MCU/MPU profiles (see docs/TESTING.md)
 
 | Suite | Language | Entry point | Cases |
 |-------|----------|-------------|-------|
-| C++ embedded | C++26 | `./netkit test` → `src/test.cpp` | 69 (16 hand + 20 MNIST + 13 op matrix + 20 Fashion-MNIST) |
-| C API | C23 | `tests/test_c_api.c` | Same 69 + API smoke tests |
-| ONNX parity | Python | `python/tests/test_onnx_parity.py` | 69 (.nk vs ONNX Runtime on all bundled models) |
+| C++ embedded | C++26 | `./netkit test` → `src/test.cpp` | 73 (16 hand + 20 MNIST + 17 op matrix + 20 Fashion-MNIST) |
+| C API | C23 | `tests/test_c_api.c` | Same 73 + API smoke tests |
+| ONNX parity | Python | `python/tests/test_onnx_parity.py` | 69 (.nk vs ONNX Runtime on bundled sidecars) |
+| AOT compile | Python | `python/tests/test_aot_compile.py` | Generates C/C++ from `.nk`, builds, runs vs reference |
 | Embedded smoke | C23 | `tests/embedded_smoke.c` | MCU/MPU load/run on hand MLP + CNN (`make test-embedded-smoke-matrix`) |
 
 Regression cases are embedded in each bundled `.nk` file ([NK_FORMAT.md](docs/NK_FORMAT.md)).  
@@ -205,7 +206,7 @@ MNIST MLP: [MNIST.md](docs/MNIST.md). MNIST CNN: [MNIST_CNN.md](docs/MNIST_CNN.m
 
 See [PHILOSOPHY.md](docs/PHILOSOPHY.md) for the full narrative. In brief:
 
-- **Phase 1 (today)** — Interpreter-style C++ runtime: load `.nk`, execute layer graph with generic kernels
+- **Phase 1 (today)** — Interpreter-style C++ runtime: load `.nk` (file or embedded memory), execute layer graph with generic kernels; Python packager converts ONNX → `.nk` and can AOT-embed `.nk` bytes into C/C++26 or C23 source
 - **Phase 2 (planned)** — Python packager optimizations: fusion, layout, quantization-aware export
 - **Lightweight** — Standard C/C++ only, no external dependencies in the engine
 - **Memory-conscious** — Arena bump allocator; target-specific defaults (CPU 4 MiB / MCU 64 KiB / MPU 128 KiB)

@@ -283,6 +283,7 @@ struct ParsedModel { /* header, layers, tensor catalog */ };
 struct ArchInfo { /* version, kind, input/output counts, weight_floats */ };
 
 LoadResult ParseFile(const char* nk_path, ParsedModel& out);
+LoadResult ParseBuffer(const uint8_t* data, std::size_t size, ParsedModel& out);
 void FillArchInfo(const ParsedModel& model, ArchInfo& info);
 uint32_t InputElements(const ParsedModel& model);
 uint32_t OutputElements(const ParsedModel& model);
@@ -293,18 +294,30 @@ void PrintNetworkSummary(const char* nk_path, const ParsedModel& model);
 LoadResult LoadMLP(const char* nk_path, Arena& arena, MLPNetwork*& network,
                    std::array<uint32_t, kMaxTensorRank>& input_shape, uint32_t& input_rank);
 
+LoadResult LoadMLPFromBuffer(const uint8_t* data, std::size_t size, Arena& arena, MLPNetwork*& network,
+                             std::array<uint32_t, kMaxTensorRank>& input_shape, uint32_t& input_rank);
+
 LoadResult LoadCNN(const char* nk_path, Arena& arena, CNNNetwork*& network,
                    std::array<uint32_t, kMaxTensorRank>& input_shape, uint32_t& input_rank);
+
+LoadResult LoadCNNFromBuffer(const uint8_t* data, std::size_t size, Arena& arena, CNNNetwork*& network,
+                             std::array<uint32_t, kMaxTensorRank>& input_shape, uint32_t& input_rank);
 
 LoadResult Load(const char* nk_path, Arena& arena, NetworkKind& kind,
                 MLPNetwork*& mlp, CNNNetwork*& cnn,
                 std::array<uint32_t, kMaxTensorRank>& input_shape, uint32_t& input_rank);
+
+LoadResult LoadFromBuffer(const uint8_t* data, std::size_t size, Arena& arena, NetworkKind& kind,
+                          MLPNetwork*& mlp, CNNNetwork*& cnn,
+                          std::array<uint32_t, kMaxTensorRank>& input_shape, uint32_t& input_rank);
 }
 ```
 
-**C equivalents:** `nk_parse_architecture` fills `nk_arch_info_t`. `PrintNetworkSummary` → `nk_arch_print`. `PrintHeader` is a detailed binary dump (no C binding).
+**C equivalents:** `nk_parse_architecture` / `nk_parse_architecture_memory` fill `nk_arch_info_t`. `PrintNetworkSummary` → `nk_arch_print`. `PrintHeader` is a detailed binary dump (no C binding). Embedded firmware uses `LoadFromBuffer` / `LoadMLPFromBuffer` / `LoadCNNFromBuffer` (C: `nk_model_load_memory`).
 
-**High-level C++ usage** loads with `Load` / `LoadMLP` / `LoadCNN` and calls `forward` directly. The C API adds `nk_model_t` + `nk_model_run` as a convenience wrapper — see [c-api.md](c-api.md).
+**High-level C++ usage** loads with `Load` / `LoadMLP` / `LoadCNN` (file) or `LoadFromBuffer` / `LoadMLPFromBuffer` / `LoadCNNFromBuffer` (embedded `.nk` bytes) and calls `forward` directly. The C API adds `nk_model_t` + `nk_model_run` as a convenience wrapper — see [c-api.md](c-api.md).
+
+**AOT firmware:** `python -m netkit aot` generates C++26 or C23 sources with an embedded `.nk` blob and thin wrappers — see [GETTING_STARTED.md](GETTING_STARTED.md#5-aot-compile-embed-nk-in-firmware).
 
 **Format** — full binary layout in [NK_FORMAT.md](NK_FORMAT.md). Convert ONNX with `python -m netkit convert`.
 

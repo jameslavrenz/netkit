@@ -37,7 +37,7 @@ You get:
 Verify:
 
 ```bash
-make test         # 69 embedded .nk cases + 69 Python ONNX parity (make test-python)
+make test         # 73 embedded .nk cases + Python ONNX parity + AOT tests (make test-python)
 ```
 
 ---
@@ -185,7 +185,44 @@ Format spec: [NK_FORMAT.md](NK_FORMAT.md). Python details: [python/README.md](..
 
 ---
 
-## 5. Integrate in your application
+## 5. AOT compile (embed `.nk` in firmware)
+
+After you have a validated `.nk`, the Python packager can embed it as a static byte array and generate load/run wrappers for the runtime:
+
+```bash
+# Default: C++26 (.hpp + .cpp)
+python -m netkit aot models/test_mlp.nk -o build/aot
+
+# C23 (.h + .c)
+python -m netkit aot models/test_mlp.nk -o build/aot --language c
+
+# Optional smoke main (compile with -DNETKIT_AOT_MAIN)
+python -m netkit aot models/test_mlp.nk -o build/aot --main
+```
+
+Typical pipeline (single build session):
+
+```text
+model.onnx  →  convert  →  model.nk  →  aot  →  model_aot.{hpp,cpp}
+                              ↓
+                         make test-python / ./netkit test
+```
+
+At runtime the generated code calls `NkLoader::LoadMLPFromBuffer` / `LoadCNNFromBuffer` (C++) or `nk_model_load_memory` (C) — same `.nk` format, loaded from flash/RAM instead of a filesystem path.
+
+Link generated sources with `libnetkit.a`:
+
+```bash
+make lib
+clang++ -std=c++26 -Iinclude -c build/aot/test_mlp_aot.cpp -o test_mlp_aot.o
+clang++ -std=c++26 -Iinclude -o my_app my_app.cpp test_mlp_aot.o libnetkit.a
+```
+
+Tests: `make test-python` includes `python/tests/test_aot_compile.py` (compile + run vs reference). See [TESTING.md](TESTING.md).
+
+---
+
+## 6. Integrate in your application
 
 ### C API (C23) — typical for firmware
 
@@ -243,13 +280,13 @@ Helper for target-default arena setup: `include/arena_util.hpp` (`ArenaUtil::Ini
 
 ---
 
-## 6. Project layout
+## 7. Project layout
 
 ```
 netkit/
 ├── include/           netkit.h (C) + *.hpp (C++)
 ├── src/               C++26 engine
-├── python/netkit/     ONNX → .nk packager (Phase 2 optimizations land here)
+├── python/netkit/     ONNX → .nk packager + AOT compiler (Phase 2 optimizations land here)
 ├── examples/          infer_c.c, infer_cpp.cpp
 ├── tests/             test_c_api.c, embedded_smoke.c
 ├── models/            bundled .nk + .onnx

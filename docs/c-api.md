@@ -326,11 +326,14 @@ nk_cnn_init_dense_layer(cnn, idx, &weights, &bias, NK_ACTIVATION_RELU, 0.01f);
 
 For file-based models, use `nk_cnn_load` or `nk_model_load` — all block types (including avg pool, batch norm, padded conv) are configured from the `.nk` layer list.
 
+For **embedded** models (AOT firmware), pass the static `.nk` byte array to `nk_model_load_memory` — same loader path, no filesystem.
+
 ## Model loader (`.nk`)
 
 | C function | C++ equivalent | Notes |
 |------------|----------------|-------|
 | `nk_parse_architecture` | `NkLoader::ParseFile` + `FillArchInfo` | Populates `nk_arch_info_t` |
+| `nk_parse_architecture_memory` | `NkLoader::ParseBuffer` + `FillArchInfo` | Parse embedded blob without a file |
 | `nk_arch_print` | `NkLoader::PrintNetworkSummary` | Boxed summary to stdout |
 | `nk_mlp_load` | `NkLoader::LoadMLP` | |
 | `nk_cnn_load` | `NkLoader::LoadCNN` | Conv / max & avg pool / batch norm / flatten / dense |
@@ -338,6 +341,7 @@ For file-based models, use `nk_cnn_load` or `nk_model_load` — all block types 
 
 ```c
 nk_status_t nk_parse_architecture(const char* nk_path, nk_arch_info_t* info);
+nk_status_t nk_parse_architecture_memory(const uint8_t* data, size_t size, nk_arch_info_t* info);
 nk_status_t nk_arch_print(const char* nk_path);
 nk_status_t nk_mlp_load(const char* nk_path, nk_arena_t* arena, nk_mlp_t* mlp, nk_arch_info_t* info);
 nk_status_t nk_cnn_load(const char* nk_path, nk_arena_t* arena, nk_cnn_t* cnn, nk_arch_info_t* info);
@@ -349,6 +353,7 @@ High-level combined handle:
 
 ```c
 nk_status_t nk_model_load(const char* nk_path, nk_arena_t* arena, nk_model_t* model);
+nk_status_t nk_model_load_memory(const uint8_t* data, size_t size, nk_arena_t* arena, nk_model_t* model);
 nk_status_t nk_model_get_arch(const nk_model_t* model, nk_arch_info_t* info);
 uint32_t nk_model_input_count(const nk_model_t* model);
 uint32_t nk_model_output_count(const nk_model_t* model);

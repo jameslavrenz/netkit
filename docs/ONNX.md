@@ -9,6 +9,7 @@ There is **no ONNX reader in C++**. Parity between converted models and their so
 ```bash
 pip install -e python
 python -m netkit convert models/my_model.onnx -o models/my_model.nk
+python -m netkit aot models/my_model.nk -o build/aot   # optional: embed .nk in C/C++ for firmware
 make export-nk    # all bundled regression models
 
 ./netkit run models/my_model.nk --input 1,2,3
@@ -56,7 +57,7 @@ PyTorch/TensorFlow exports often include `MatMul`, `Add`, `Reshape`, or extra `P
 | Suite | What it validates |
 |-------|-------------------|
 | C++ `make test-cpp` / `make test-c` | **`.nk` loader + inference** against embedded `TCAS` cases in each model (73 cases) |
-| Python `make test-python` | **`.nk` runtime vs ONNX Runtime** on embedded inputs (69 cases) |
+| Python `make test-python` | **`.nk` runtime vs ONNX Runtime** on embedded inputs (69 cases); **AOT compile** tests (C/C++ from `.nk`, requires `make lib`) |
 
 ```bash
 make                          # build netkit CLI

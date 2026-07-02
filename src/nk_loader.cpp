@@ -290,6 +290,212 @@ namespace NkLoader
             return ReadExact(file, biases, parsed.header.biases_bytes);
         }
 
+        struct ByteCursor
+        {
+            const uint8_t* data = nullptr;
+            std::size_t size = 0;
+            std::size_t pos = 0;
+        };
+
+        bool CursorReadExact(ByteCursor& cursor, void* buffer, std::size_t bytes)
+        {
+            if (bytes == 0)
+                return true;
+            if (cursor.pos + bytes > cursor.size)
+                return false;
+            std::memcpy(buffer, cursor.data + cursor.pos, bytes);
+            cursor.pos += bytes;
+            return true;
+        }
+
+        bool CursorReadU8(ByteCursor& cursor, uint8_t& value)
+        {
+            return CursorReadExact(cursor, &value, 1);
+        }
+
+        bool CursorReadU16(ByteCursor& cursor, uint16_t& value)
+        {
+            return CursorReadExact(cursor, &value, sizeof(value));
+        }
+
+        bool CursorReadU32(ByteCursor& cursor, uint32_t& value)
+        {
+            return CursorReadExact(cursor, &value, sizeof(value));
+        }
+
+        bool CursorReadF32(ByteCursor& cursor, float& value)
+        {
+            return CursorReadExact(cursor, &value, sizeof(value));
+        }
+
+        bool ReadHeaderCursor(ByteCursor& cursor, NkFormat::FileHeader& header)
+        {
+            char magic[4] = {};
+            if (!CursorReadExact(cursor, magic, 4))
+                return false;
+
+            if (std::memcmp(magic, NkFormat::kMagic, 4) != 0)
+            {
+                SetError("Invalid .nk magic (expected NKIT)");
+                return false;
+            }
+
+            if (!CursorReadU32(cursor, header.version))
+                return false;
+
+            uint8_t network_kind = 0;
+            if (!CursorReadU8(cursor, network_kind) || !CursorReadU8(cursor, header.input_rank) ||
+                !CursorReadU16(cursor, header.flags))
+                return false;
+
+            header.network_kind = static_cast<NkFormat::NetworkKind>(network_kind);
+            for (uint32_t i = 0; i < NkFormat::kMaxInputRank; ++i)
+            {
+                if (!CursorReadU32(cursor, header.input_shape[i]))
+                    return false;
+            }
+
+            return CursorReadU32(cursor, header.num_layers) && CursorReadU32(cursor, header.num_weight_tensors) &&
+                   CursorReadU32(cursor, header.num_bias_tensors) && CursorReadU32(cursor, header.weights_bytes) &&
+                   CursorReadU32(cursor, header.biases_bytes);
+        }
+
+        bool ReadTensorDescCursor(ByteCursor& cursor, NkFormat::TensorDesc& desc)
+        {
+            uint8_t dtype = 0;
+            uint16_t pad = 0;
+            if (!CursorReadU8(cursor, desc.rank) || !CursorReadU8(cursor, dtype) || !CursorReadU16(cursor, pad))
+                return false;
+
+            desc.dtype = static_cast<NkFormat::DType>(dtype);
+            for (uint32_t i = 0; i < NkFormat::kMaxTensorRank; ++i)
+            {
+                if (!CursorReadU32(cursor, desc.dims[i]))
+                    return false;
+            }
+
+            return CursorReadU32(cursor, desc.num_elements);
+        }
+
+        bool ReadDenseLayerCursor(ByteCursor& cursor, NkFormat::LayerDesc& layer)
+        {
+            layer.kind = NkFormat::LayerKind::Dense;
+            uint8_t pad[3] = {};
+            uint8_t activation = 0;
+            return CursorReadU32(cursor, layer.dense.units) && CursorReadU8(cursor, activation) &&
+                   CursorReadExact(cursor, pad, sizeof(pad)) && CursorReadF32(cursor, layer.dense.alpha) &&
+                   (layer.dense.activation = static_cast<NkFormat::Activation>(activation), true);
+        }
+
+        bool ReadConvLayerCursor(ByteCursor& cursor, NkFormat::LayerDesc& layer)
+        {
+            layer.kind = NkFormat::LayerKind::Conv2D;
+            uint8_t activation = 0;
+            return CursorReadU32(cursor, layer.conv.kernel_size) && CursorReadU32(cursor, layer.conv.stride) &&
+                   CursorReadU32(cursor, layer.conv.filters) && CursorReadU8(cursor, activation) &&
+                   CursorReadU8(cursor, layer.conv.pad_h) && CursorReadU8(cursor, layer.conv.pad_w) &&
+                   CursorReadU8(cursor, layer.conv.reserved) && CursorReadF32(cursor, layer.conv.alpha) &&
+                   (layer.conv.activation = static_cast<NkFormat::Activation>(activation), true);
+        }
+
+        bool ReadPoolLayerCursor(ByteCursor& cursor, NkFormat::LayerDesc& layer)
+        {
+            layer.kind = NkFormat::LayerKind::MaxPool2D;
+            return CursorReadU32(cursor, layer.pool.pool_size) && CursorReadU32(cursor, layer.pool.stride) &&
+                   CursorReadU8(cursor, layer.pool.pad_h) && CursorReadU8(cursor, layer.pool.pad_w) &&
+                   CursorReadU16(cursor, layer.pool.reserved);
+        }
+
+        bool ReadAvgPoolLayerCursor(ByteCursor& cursor, NkFormat::LayerDesc& layer)
+        {
+            layer.kind = NkFormat::LayerKind::AvgPool2D;
+            return CursorReadU32(cursor, layer.pool.pool_size) && CursorReadU32(cursor, layer.pool.stride) &&
+                   CursorReadU8(cursor, layer.pool.pad_h) && CursorReadU8(cursor, layer.pool.pad_w) &&
+                   CursorReadU16(cursor, layer.pool.reserved);
+        }
+
+        bool ReadBatchNormLayerCursor(ByteCursor& cursor, NkFormat::LayerDesc& layer)
+        {
+            layer.kind = NkFormat::LayerKind::BatchNorm2d;
+            return CursorReadU32(cursor, layer.batch_norm.channels) &&
+                   CursorReadU32(cursor, layer.batch_norm.reserved);
+        }
+
+        bool ReadFlattenLayerCursor(ByteCursor& cursor, NkFormat::LayerDesc& layer)
+        {
+            layer.kind = NkFormat::LayerKind::Flatten;
+            (void)cursor;
+            return true;
+        }
+
+        bool ReadLayerCursor(ByteCursor& cursor, NkFormat::LayerDesc& layer)
+        {
+            uint8_t kind = 0;
+            uint8_t pad[3] = {};
+            if (!CursorReadU8(cursor, kind) || !CursorReadExact(cursor, pad, sizeof(pad)))
+                return false;
+
+            switch (static_cast<NkFormat::LayerKind>(kind))
+            {
+                case NkFormat::LayerKind::Dense:
+                    return ReadDenseLayerCursor(cursor, layer);
+                case NkFormat::LayerKind::Conv2D:
+                    return ReadConvLayerCursor(cursor, layer);
+                case NkFormat::LayerKind::MaxPool2D:
+                    return ReadPoolLayerCursor(cursor, layer);
+                case NkFormat::LayerKind::AvgPool2D:
+                    return ReadAvgPoolLayerCursor(cursor, layer);
+                case NkFormat::LayerKind::BatchNorm2d:
+                    return ReadBatchNormLayerCursor(cursor, layer);
+                case NkFormat::LayerKind::Flatten:
+                    return ReadFlattenLayerCursor(cursor, layer);
+                default:
+                    SetError("Unsupported .nk layer kind");
+                    return false;
+            }
+        }
+
+        LoadResult ValidateParsedSize(const ParsedModel& parsed, std::size_t total_size)
+        {
+            const std::size_t expected_size = parsed.payload_offset +
+                                              static_cast<std::size_t>(parsed.header.weights_bytes) +
+                                              static_cast<std::size_t>(parsed.header.biases_bytes);
+
+            if (total_size < expected_size)
+                return Fail(LoadStatus::TruncatedFile, ".nk payload size does not match header");
+
+            const bool has_tests = (parsed.header.flags & NkFormat::kFlagHasTests) != 0;
+            if (!has_tests && total_size != expected_size)
+                return Fail(LoadStatus::TruncatedFile, ".nk payload size does not match header");
+
+            return LoadResult{LoadStatus::Ok, FromNkNetwork(parsed.header.network_kind), nullptr};
+        }
+
+        LoadResult CopyPayloadToArena(const ParsedModel& parsed,
+                                      const uint8_t* blob,
+                                      std::size_t blob_size,
+                                      Arena& arena,
+                                      float*& weights,
+                                      float*& biases)
+        {
+            const std::size_t weights_bytes = parsed.header.weights_bytes;
+            const std::size_t biases_bytes = parsed.header.biases_bytes;
+            const std::size_t total_bytes = weights_bytes + biases_bytes;
+            const std::size_t needed = parsed.payload_offset + total_bytes;
+
+            if (!blob || blob_size < needed)
+                return Fail(LoadStatus::TruncatedFile, ".nk buffer too small for payload");
+
+            float* storage = static_cast<float*>(arena.alloc(total_bytes, alignof(float)));
+            if (!storage)
+                return Fail(LoadStatus::ArenaOverflow, "Arena out of memory while loading .nk weights");
+
+            weights = storage;
+            biases = reinterpret_cast<float*>(reinterpret_cast<uint8_t*>(storage) + weights_bytes);
+            std::memcpy(weights, blob + parsed.payload_offset, weights_bytes);
+            std::memcpy(biases, blob + parsed.payload_offset + weights_bytes, biases_bytes);
+            return LoadResult{LoadStatus::Ok, FromNkNetwork(parsed.header.network_kind), nullptr};
+        }
 
         ActivationType ToMlpActivation(NkFormat::Activation activation)
         {
@@ -317,6 +523,194 @@ namespace NkLoader
                 case NkFormat::Activation::Softmax: return ConvActivationType::Softmax;
                 default: return ConvActivationType::None;
             }
+        }
+
+        LoadResult InstantiateMLP(const ParsedModel& parsed,
+                                float* weights,
+                                float* biases,
+                                Arena& arena,
+                                MLPNetwork*& network,
+                                const std::array<uint32_t, kMaxTensorRank>& input_shape,
+                                uint32_t input_rank)
+        {
+            network = nullptr;
+
+            void* network_mem = arena.alloc(sizeof(MLPNetwork), alignof(MLPNetwork));
+            if (!network_mem)
+                return Fail(LoadStatus::ArenaOverflow, "Arena out of memory while creating MLPNetwork");
+
+            network = new (network_mem) MLPNetwork(parsed.header.num_layers, arena);
+            if (!network->IsValid())
+                return Fail(LoadStatus::ArenaOverflow, "Arena out of memory while allocating MLP layers");
+
+            uint32_t weight_index = 0;
+            uint32_t bias_index = 0;
+            uint32_t in_features = input_shape[1];
+            std::size_t weight_offset = 0;
+            std::size_t bias_offset = 0;
+
+            for (uint32_t i = 0; i < parsed.header.num_layers; ++i)
+            {
+                const uint32_t out_features = parsed.layers[i].dense.units;
+                const NkFormat::TensorDesc& w_desc = parsed.weight_tensors[weight_index++];
+                const NkFormat::TensorDesc& b_desc = parsed.bias_tensors[bias_index++];
+
+                if (w_desc.num_elements != in_features * out_features || b_desc.num_elements != out_features)
+                    return Fail(LoadStatus::SizeMismatch, "MLP tensor shape mismatch in .nk catalog");
+
+                Tensor W = TensorFactory::View2D(weights + weight_offset, out_features, in_features);
+                Tensor B = TensorFactory::View2D(biases + bias_offset, 1, out_features);
+                weight_offset += w_desc.num_elements;
+                bias_offset += b_desc.num_elements;
+
+                network->InitLayer(i, W, B, ToMlpActivation(parsed.layers[i].dense.activation),
+                                   parsed.layers[i].dense.alpha);
+                in_features = out_features;
+            }
+
+            if (!network->InitActivationBuffers(arena, input_shape[0]))
+                return Fail(LoadStatus::ArenaOverflow, "Arena out of memory while allocating MLP activation buffers");
+
+            (void)input_rank;
+            return LoadResult{LoadStatus::Ok, NetworkKind::Mlp, nullptr};
+        }
+
+        LoadResult InstantiateCNN(const ParsedModel& parsed,
+                                  float* weights,
+                                  float* biases,
+                                  Arena& arena,
+                                  CNNNetwork*& network,
+                                  const std::array<uint32_t, kMaxTensorRank>& input_shape,
+                                  uint32_t input_rank)
+        {
+            network = nullptr;
+
+            void* network_mem = arena.alloc(sizeof(CNNNetwork), alignof(CNNNetwork));
+            if (!network_mem)
+                return Fail(LoadStatus::ArenaOverflow, "Arena out of memory while creating CNNNetwork");
+
+            network = new (network_mem) CNNNetwork(parsed.header.num_layers, arena);
+            if (!network->IsValid())
+                return Fail(LoadStatus::ArenaOverflow, "Arena out of memory while allocating CNN layers");
+
+            uint32_t weight_index = 0;
+            uint32_t bias_index = 0;
+            std::size_t weight_offset = 0;
+            std::size_t bias_offset = 0;
+
+            uint32_t in_channels = input_shape[2];
+            uint32_t h = input_shape[0];
+            uint32_t w = input_shape[1];
+            uint32_t dense_in = 0;
+
+            for (uint32_t i = 0; i < parsed.header.num_layers; ++i)
+            {
+                switch (parsed.layers[i].kind)
+                {
+                    case NkFormat::LayerKind::Conv2D:
+                    {
+                        const NkFormat::ConvLayerDesc& layer = parsed.layers[i].conv;
+                        const NkFormat::TensorDesc& w_desc = parsed.weight_tensors[weight_index++];
+                        const NkFormat::TensorDesc& b_desc = parsed.bias_tensors[bias_index++];
+
+                        const std::size_t kernel_elems = static_cast<std::size_t>(layer.kernel_size) *
+                                                         layer.kernel_size * in_channels;
+                        const std::size_t weight_elems = kernel_elems * layer.filters;
+
+                        if (w_desc.num_elements != weight_elems || b_desc.num_elements != layer.filters)
+                            return Fail(LoadStatus::SizeMismatch, "CNN conv tensor shape mismatch in .nk catalog");
+
+                        network->InitConvLayer(i,
+                                               static_cast<int>(layer.kernel_size),
+                                               static_cast<int>(layer.stride),
+                                               static_cast<int>(in_channels),
+                                               static_cast<int>(layer.filters),
+                                               weights + weight_offset,
+                                               biases + bias_offset,
+                                               ToConvActivation(layer.activation),
+                                               layer.alpha,
+                                               static_cast<int>(layer.pad_h),
+                                               static_cast<int>(layer.pad_w));
+                        weight_offset += weight_elems;
+                        bias_offset += layer.filters;
+                        h = (h + 2 * layer.pad_h - layer.kernel_size) / layer.stride + 1;
+                        w = (w + 2 * layer.pad_w - layer.kernel_size) / layer.stride + 1;
+                        in_channels = layer.filters;
+                        break;
+                    }
+                    case NkFormat::LayerKind::MaxPool2D:
+                    {
+                        const NkFormat::PoolLayerDesc& layer = parsed.layers[i].pool;
+                        network->InitPoolLayer(i,
+                                               static_cast<int>(layer.pool_size),
+                                               static_cast<int>(layer.stride),
+                                               static_cast<int>(layer.pad_h),
+                                               static_cast<int>(layer.pad_w));
+                        h = (h + 2 * layer.pad_h - layer.pool_size) / layer.stride + 1;
+                        w = (w + 2 * layer.pad_w - layer.pool_size) / layer.stride + 1;
+                        break;
+                    }
+                    case NkFormat::LayerKind::AvgPool2D:
+                    {
+                        const NkFormat::PoolLayerDesc& layer = parsed.layers[i].pool;
+                        network->InitAvgPoolLayer(i,
+                                                  static_cast<int>(layer.pool_size),
+                                                  static_cast<int>(layer.stride),
+                                                  static_cast<int>(layer.pad_h),
+                                                  static_cast<int>(layer.pad_w));
+                        h = (h + 2 * layer.pad_h - layer.pool_size) / layer.stride + 1;
+                        w = (w + 2 * layer.pad_w - layer.pool_size) / layer.stride + 1;
+                        break;
+                    }
+                    case NkFormat::LayerKind::BatchNorm2d:
+                    {
+                        const NkFormat::BatchNormLayerDesc& layer = parsed.layers[i].batch_norm;
+                        const NkFormat::TensorDesc& s_desc = parsed.weight_tensors[weight_index++];
+                        const NkFormat::TensorDesc& b_desc = parsed.bias_tensors[bias_index++];
+
+                        if (s_desc.num_elements != layer.channels || b_desc.num_elements != layer.channels)
+                            return Fail(LoadStatus::SizeMismatch, "CNN batch norm tensor shape mismatch in .nk catalog");
+
+                        network->InitBatchNormLayer(i,
+                                                    static_cast<int>(layer.channels),
+                                                    weights + weight_offset,
+                                                    biases + bias_offset);
+                        weight_offset += layer.channels;
+                        bias_offset += layer.channels;
+                        break;
+                    }
+                    case NkFormat::LayerKind::Flatten:
+                        dense_in = h * w * in_channels;
+                        network->InitFlattenLayer(i);
+                        break;
+                    case NkFormat::LayerKind::Dense:
+                    {
+                        const NkFormat::DenseLayerDesc& layer = parsed.layers[i].dense;
+                        const NkFormat::TensorDesc& w_desc = parsed.weight_tensors[weight_index++];
+                        const NkFormat::TensorDesc& b_desc = parsed.bias_tensors[bias_index++];
+                        const std::size_t weight_elems = static_cast<std::size_t>(dense_in) * layer.units;
+
+                        if (w_desc.num_elements != weight_elems || b_desc.num_elements != layer.units)
+                            return Fail(LoadStatus::SizeMismatch, "CNN dense tensor shape mismatch in .nk catalog");
+
+                        Tensor W = TensorFactory::View2D(weights + weight_offset, layer.units, dense_in);
+                        Tensor B = TensorFactory::View2D(biases + bias_offset, 1, layer.units);
+                        network->InitDenseLayer(i, W, B, ToMlpActivation(layer.activation), layer.alpha);
+                        weight_offset += weight_elems;
+                        bias_offset += layer.units;
+                        dense_in = layer.units;
+                        break;
+                    }
+                    default:
+                        break;
+                }
+            }
+
+            if (!network->InitActivationBuffers(arena, input_shape[0], input_shape[1], input_shape[2]))
+                return Fail(LoadStatus::ArenaOverflow, "Arena out of memory while allocating CNN activation buffers");
+
+            (void)input_rank;
+            return LoadResult{LoadStatus::Ok, NetworkKind::Cnn, nullptr};
         }
 
         void PrintTensorDesc(const char* label, const NkFormat::TensorDesc& desc)
@@ -441,11 +835,49 @@ namespace NkLoader
         if (file_size < 0 || static_cast<std::size_t>(file_size) < expected_size)
             return Fail(LoadStatus::TruncatedFile, ".nk payload size does not match header");
 
-        const bool has_tests = (out.header.flags & NkFormat::kFlagHasTests) != 0;
-        if (!has_tests && static_cast<std::size_t>(file_size) != expected_size)
-            return Fail(LoadStatus::TruncatedFile, ".nk payload size does not match header");
+        return ValidateParsedSize(out, static_cast<std::size_t>(file_size));
+    }
 
-        return LoadResult{LoadStatus::Ok, FromNkNetwork(out.header.network_kind), nullptr};
+    LoadResult ParseBuffer(const uint8_t* data, std::size_t size, ParsedModel& out)
+    {
+        out = ParsedModel{};
+
+        if (!data || size == 0)
+            return Fail(LoadStatus::ReadFailed, "Empty .nk buffer");
+
+        ByteCursor cursor{data, size, 0};
+
+        if (!ReadHeaderCursor(cursor, out.header))
+            return Fail(LoadStatus::InvalidMagic, g_error[0] ? g_error : "Failed to read .nk header");
+
+        if (out.header.version != NkFormat::kVersion)
+            return Fail(LoadStatus::UnsupportedVersion, "Unsupported .nk version");
+
+        if (out.header.num_layers > NkFormat::kMaxLayers ||
+            out.header.num_weight_tensors > NkFormat::kMaxTensorCatalog ||
+            out.header.num_bias_tensors > NkFormat::kMaxTensorCatalog)
+            return Fail(LoadStatus::UnsupportedLayer, "Too many layers or tensors in .nk file");
+
+        for (uint32_t i = 0; i < out.header.num_layers; ++i)
+        {
+            if (!ReadLayerCursor(cursor, out.layers[i]))
+                return Fail(LoadStatus::ReadFailed, g_error[0] ? g_error : "Failed to read layer descriptor");
+        }
+
+        for (uint32_t i = 0; i < out.header.num_weight_tensors; ++i)
+        {
+            if (!ReadTensorDescCursor(cursor, out.weight_tensors[i]))
+                return Fail(LoadStatus::ReadFailed, "Failed to read weight tensor descriptor");
+        }
+
+        for (uint32_t i = 0; i < out.header.num_bias_tensors; ++i)
+        {
+            if (!ReadTensorDescCursor(cursor, out.bias_tensors[i]))
+                return Fail(LoadStatus::ReadFailed, "Failed to read bias tensor descriptor");
+        }
+
+        out.payload_offset = cursor.pos;
+        return ValidateParsedSize(out, size);
     }
 
     std::size_t ModelPayloadBytes(const ParsedModel& model)
@@ -793,43 +1225,37 @@ namespace NkLoader
 
         std::fclose(file);
 
-        void* network_mem = arena.alloc(sizeof(MLPNetwork), alignof(MLPNetwork));
-        if (!network_mem)
-            return Fail(LoadStatus::ArenaOverflow, "Arena out of memory while creating MLPNetwork");
+        return InstantiateMLP(parsed, weights, biases, arena, network, input_shape, input_rank);
+    }
 
-        network = new (network_mem) MLPNetwork(parsed.header.num_layers, arena);
-        if (!network->IsValid())
-            return Fail(LoadStatus::ArenaOverflow, "Arena out of memory while allocating MLP layers");
+    LoadResult LoadMLPFromBuffer(const uint8_t* data,
+                                 std::size_t size,
+                                 Arena& arena,
+                                 MLPNetwork*& network,
+                                 std::array<uint32_t, kMaxTensorRank>& input_shape,
+                                 uint32_t& input_rank)
+    {
+        network = nullptr;
 
-        uint32_t weight_index = 0;
-        uint32_t bias_index = 0;
-        uint32_t in_features = input_shape[1];
-        std::size_t weight_offset = 0;
-        std::size_t bias_offset = 0;
+        ParsedModel parsed{};
+        LoadResult parse_result = ParseBuffer(data, size, parsed);
+        if (parse_result.status != LoadStatus::Ok)
+            return parse_result;
 
-        for (uint32_t i = 0; i < parsed.header.num_layers; ++i)
-        {
-            const uint32_t out_features = parsed.layers[i].dense.units;
-            const NkFormat::TensorDesc& w_desc = parsed.weight_tensors[weight_index++];
-            const NkFormat::TensorDesc& b_desc = parsed.bias_tensors[bias_index++];
+        if (parsed.header.network_kind != NkFormat::NetworkKind::Mlp)
+            return Fail(LoadStatus::UnsupportedLayer, ".nk buffer is not an MLP");
 
-            if (w_desc.num_elements != in_features * out_features || b_desc.num_elements != out_features)
-                return Fail(LoadStatus::SizeMismatch, "MLP tensor shape mismatch in .nk catalog");
+        input_rank = parsed.header.input_rank;
+        for (uint32_t i = 0; i < input_rank; ++i)
+            input_shape[i] = parsed.header.input_shape[i];
 
-            Tensor W = TensorFactory::View2D(weights + weight_offset, out_features, in_features);
-            Tensor B = TensorFactory::View2D(biases + bias_offset, 1, out_features);
-            weight_offset += w_desc.num_elements;
-            bias_offset += b_desc.num_elements;
+        float* weights = nullptr;
+        float* biases = nullptr;
+        LoadResult copy_result = CopyPayloadToArena(parsed, data, size, arena, weights, biases);
+        if (copy_result.status != LoadStatus::Ok)
+            return copy_result;
 
-            network->InitLayer(i, W, B, ToMlpActivation(parsed.layers[i].dense.activation),
-                               parsed.layers[i].dense.alpha);
-            in_features = out_features;
-        }
-
-        if (!network->InitActivationBuffers(arena, input_shape[0]))
-            return Fail(LoadStatus::ArenaOverflow, "Arena out of memory while allocating MLP activation buffers");
-
-        return LoadResult{LoadStatus::Ok, NetworkKind::Mlp, nullptr};
+        return InstantiateMLP(parsed, weights, biases, arena, network, input_shape, input_rank);
     }
 
     LoadResult LoadCNN(const char* nk_path,
@@ -875,129 +1301,37 @@ namespace NkLoader
 
         std::fclose(file);
 
-        void* network_mem = arena.alloc(sizeof(CNNNetwork), alignof(CNNNetwork));
-        if (!network_mem)
-            return Fail(LoadStatus::ArenaOverflow, "Arena out of memory while creating CNNNetwork");
+        return InstantiateCNN(parsed, weights, biases, arena, network, input_shape, input_rank);
+    }
 
-        network = new (network_mem) CNNNetwork(parsed.header.num_layers, arena);
-        if (!network->IsValid())
-            return Fail(LoadStatus::ArenaOverflow, "Arena out of memory while allocating CNN layers");
+    LoadResult LoadCNNFromBuffer(const uint8_t* data,
+                                 std::size_t size,
+                                 Arena& arena,
+                                 CNNNetwork*& network,
+                                 std::array<uint32_t, kMaxTensorRank>& input_shape,
+                                 uint32_t& input_rank)
+    {
+        network = nullptr;
 
-        uint32_t weight_index = 0;
-        uint32_t bias_index = 0;
-        std::size_t weight_offset = 0;
-        std::size_t bias_offset = 0;
+        ParsedModel parsed{};
+        LoadResult parse_result = ParseBuffer(data, size, parsed);
+        if (parse_result.status != LoadStatus::Ok)
+            return parse_result;
 
-        uint32_t in_channels = input_shape[2];
-        uint32_t h = input_shape[0];
-        uint32_t w = input_shape[1];
-        uint32_t dense_in = 0;
+        if (parsed.header.network_kind != NkFormat::NetworkKind::Cnn)
+            return Fail(LoadStatus::UnsupportedLayer, ".nk buffer is not a CNN");
 
-        for (uint32_t i = 0; i < parsed.header.num_layers; ++i)
-        {
-            switch (parsed.layers[i].kind)
-            {
-                case NkFormat::LayerKind::Conv2D:
-                {
-                    const NkFormat::ConvLayerDesc& layer = parsed.layers[i].conv;
-                    const NkFormat::TensorDesc& w_desc = parsed.weight_tensors[weight_index++];
-                    const NkFormat::TensorDesc& b_desc = parsed.bias_tensors[bias_index++];
+        input_rank = parsed.header.input_rank;
+        for (uint32_t i = 0; i < input_rank; ++i)
+            input_shape[i] = parsed.header.input_shape[i];
 
-                    const std::size_t kernel_elems = static_cast<std::size_t>(layer.kernel_size) *
-                                                     layer.kernel_size * in_channels;
-                    const std::size_t weight_elems = kernel_elems * layer.filters;
+        float* weights = nullptr;
+        float* biases = nullptr;
+        LoadResult copy_result = CopyPayloadToArena(parsed, data, size, arena, weights, biases);
+        if (copy_result.status != LoadStatus::Ok)
+            return copy_result;
 
-                    if (w_desc.num_elements != weight_elems || b_desc.num_elements != layer.filters)
-                        return Fail(LoadStatus::SizeMismatch, "CNN conv tensor shape mismatch in .nk catalog");
-
-                    network->InitConvLayer(i,
-                                           static_cast<int>(layer.kernel_size),
-                                           static_cast<int>(layer.stride),
-                                           static_cast<int>(in_channels),
-                                           static_cast<int>(layer.filters),
-                                           weights + weight_offset,
-                                           biases + bias_offset,
-                                           ToConvActivation(layer.activation),
-                                           layer.alpha,
-                                           static_cast<int>(layer.pad_h),
-                                           static_cast<int>(layer.pad_w));
-                    weight_offset += weight_elems;
-                    bias_offset += layer.filters;
-                    h = (h + 2 * layer.pad_h - layer.kernel_size) / layer.stride + 1;
-                    w = (w + 2 * layer.pad_w - layer.kernel_size) / layer.stride + 1;
-                    in_channels = layer.filters;
-                    break;
-                }
-                case NkFormat::LayerKind::MaxPool2D:
-                {
-                    const NkFormat::PoolLayerDesc& layer = parsed.layers[i].pool;
-                    network->InitPoolLayer(i,
-                                           static_cast<int>(layer.pool_size),
-                                           static_cast<int>(layer.stride),
-                                           static_cast<int>(layer.pad_h),
-                                           static_cast<int>(layer.pad_w));
-                    h = (h + 2 * layer.pad_h - layer.pool_size) / layer.stride + 1;
-                    w = (w + 2 * layer.pad_w - layer.pool_size) / layer.stride + 1;
-                    break;
-                }
-                case NkFormat::LayerKind::AvgPool2D:
-                {
-                    const NkFormat::PoolLayerDesc& layer = parsed.layers[i].pool;
-                    network->InitAvgPoolLayer(i,
-                                              static_cast<int>(layer.pool_size),
-                                              static_cast<int>(layer.stride),
-                                              static_cast<int>(layer.pad_h),
-                                              static_cast<int>(layer.pad_w));
-                    h = (h + 2 * layer.pad_h - layer.pool_size) / layer.stride + 1;
-                    w = (w + 2 * layer.pad_w - layer.pool_size) / layer.stride + 1;
-                    break;
-                }
-                case NkFormat::LayerKind::BatchNorm2d:
-                {
-                    const NkFormat::BatchNormLayerDesc& layer = parsed.layers[i].batch_norm;
-                    const NkFormat::TensorDesc& s_desc = parsed.weight_tensors[weight_index++];
-                    const NkFormat::TensorDesc& b_desc = parsed.bias_tensors[bias_index++];
-
-                    if (s_desc.num_elements != layer.channels || b_desc.num_elements != layer.channels)
-                        return Fail(LoadStatus::SizeMismatch, "CNN batch norm tensor shape mismatch in .nk catalog");
-
-                    network->InitBatchNormLayer(i,
-                                                static_cast<int>(layer.channels),
-                                                weights + weight_offset,
-                                                biases + bias_offset);
-                    weight_offset += layer.channels;
-                    bias_offset += layer.channels;
-                    break;
-                }
-                case NkFormat::LayerKind::Flatten:
-                    dense_in = h * w * in_channels;
-                    network->InitFlattenLayer(i);
-                    break;
-                case NkFormat::LayerKind::Dense:
-                {
-                    const NkFormat::DenseLayerDesc& layer = parsed.layers[i].dense;
-                    const NkFormat::TensorDesc& w_desc = parsed.weight_tensors[weight_index++];
-                    const NkFormat::TensorDesc& b_desc = parsed.bias_tensors[bias_index++];
-                    const std::size_t weight_elems = static_cast<std::size_t>(dense_in) * layer.units;
-
-                    if (w_desc.num_elements != weight_elems || b_desc.num_elements != layer.units)
-                        return Fail(LoadStatus::SizeMismatch, "CNN dense tensor shape mismatch in .nk catalog");
-
-                    Tensor W = TensorFactory::View2D(weights + weight_offset, layer.units, dense_in);
-                    Tensor B = TensorFactory::View2D(biases + bias_offset, 1, layer.units);
-                    network->InitDenseLayer(i, W, B, ToMlpActivation(layer.activation), layer.alpha);
-                    weight_offset += weight_elems;
-                    bias_offset += layer.units;
-                    dense_in = layer.units;
-                    break;
-                }
-            }
-        }
-
-        if (!network->InitActivationBuffers(arena, input_shape[0], input_shape[1], input_shape[2]))
-            return Fail(LoadStatus::ArenaOverflow, "Arena out of memory while allocating CNN activation buffers");
-
-        return LoadResult{LoadStatus::Ok, NetworkKind::Cnn, nullptr};
+        return InstantiateCNN(parsed, weights, biases, arena, network, input_shape, input_rank);
     }
 
     LoadResult Load(const char* nk_path,
@@ -1024,6 +1358,35 @@ namespace NkLoader
         }
 
         const LoadResult result = LoadCNN(nk_path, arena, cnn, input_shape, input_rank);
+        kind = NetworkKind::Cnn;
+        return result;
+    }
+
+    LoadResult LoadFromBuffer(const uint8_t* data,
+                              std::size_t size,
+                              Arena& arena,
+                              NetworkKind& kind,
+                              MLPNetwork*& mlp,
+                              CNNNetwork*& cnn,
+                              std::array<uint32_t, kMaxTensorRank>& input_shape,
+                              uint32_t& input_rank)
+    {
+        mlp = nullptr;
+        cnn = nullptr;
+
+        ParsedModel parsed{};
+        LoadResult parse_result = ParseBuffer(data, size, parsed);
+        if (parse_result.status != LoadStatus::Ok)
+            return parse_result;
+
+        if (parsed.header.network_kind == NkFormat::NetworkKind::Mlp)
+        {
+            const LoadResult result = LoadMLPFromBuffer(data, size, arena, mlp, input_shape, input_rank);
+            kind = NetworkKind::Mlp;
+            return result;
+        }
+
+        const LoadResult result = LoadCNNFromBuffer(data, size, arena, cnn, input_shape, input_rank);
         kind = NetworkKind::Cnn;
         return result;
     }

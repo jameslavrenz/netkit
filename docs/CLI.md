@@ -10,7 +10,7 @@ make              # NETKIT_TARGET=cpu (default) — builds ./netkit
 
 A C API equivalent exists as `nk_cli_run(argc, argv)` for embedding the same command dispatch.
 
-Convert ONNX to `.nk` with the Python packager — see [python/README.md](../python/README.md) and [NK_FORMAT.md](NK_FORMAT.md).
+Convert ONNX to `.nk` with the Python packager — see [python/README.md](../python/README.md) and [NK_FORMAT.md](NK_FORMAT.md). Embed a `.nk` in firmware with `python -m netkit aot` — see [GETTING_STARTED.md](GETTING_STARTED.md#5-aot-compile-embed-nk-in-firmware).
 
 ## Global options
 
@@ -52,7 +52,7 @@ Exit code `0` if all cases pass, `1` if any fail.
 Prints per-case PASS/FAIL lines and a summary:
 
 ```
-Passed: 69
+Passed: 73
 Failed: 0
 ```
 

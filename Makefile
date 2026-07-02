@@ -277,7 +277,7 @@ endif
 
 test: test-cpp test-c test-python check-trim-lib
 
-test-python: $(TARGET) $(NK_INFER)
+test-python: lib $(TARGET) $(NK_INFER)
 	PYTHONPATH=python python3 -m unittest discover -s python/tests -p 'test_*.py'
 
 run: test

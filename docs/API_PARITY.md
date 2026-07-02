@@ -146,12 +146,16 @@ Both suites exercise the same **73 embedded `.nk` inference cases** (16 hand-che
 | C++ | C |
 |-----|---|
 | `ParseFile` + `FillArchInfo` | `nk_parse_architecture` |
+| `ParseBuffer` + `FillArchInfo` | `nk_parse_architecture_memory` |
 | `InputElements` / `OutputElements` | `nk_arch_info_t` via `nk_parse_architecture` / `nk_model_get_arch` |
 | `PrintHeader` | — (detailed binary dump only) |
 | `PrintNetworkSummary` | `nk_arch_print` |
 | `LoadMLP` | `nk_mlp_load` |
+| `LoadMLPFromBuffer` | (via `nk_model_load_memory` for MLP) |
 | `LoadCNN` | `nk_cnn_load` |
+| `LoadCNNFromBuffer` | (via `nk_model_load_memory` for CNN) |
 | `Load` | `nk_model_load_auto` |
+| `LoadFromBuffer` | `nk_model_load_memory` |
 | `ArchInfo` | `nk_arch_info_t` |
 
 High-level combined handle (C convenience):
@@ -159,6 +163,7 @@ High-level combined handle (C convenience):
 | C++ usage pattern | C |
 |-------------------|---|
 | Load + run inference | `nk_model_load`, `nk_model_run`, `nk_inspect_model` |
+| Load embedded `.nk` blob + run | `nk_model_load_memory`, `nk_model_run` |
 | Query loaded model | `nk_model_get_arch`, `nk_model_input_count`, `nk_model_output_count`, `nk_model_kind` |
 
 ### Intentional C++-only symbols

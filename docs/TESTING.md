@@ -10,7 +10,7 @@ make build-all    # cpu: netkit + examples + C API test binary; mcu/mpu: lib + e
 make test         # C++ embedded regression + Python ONNX parity (cpu only)
 make test-cpp     # ./netkit test only (73 embedded .nk cases)
 make test-c       # ./tests/test_c_api only
-make test-python  # .nk vs ONNX Runtime (69 cases; requires onnxruntime)
+make test-python  # ONNX parity (69) + AOT compile tests; requires libnetkit.a
 make clean        # remove objects and binaries
 make rebuild      # clean + make
 
@@ -47,10 +47,19 @@ These tests validate **`.nk` parsing, weight loading, and forward inference** ag
 
 `make test-python` runs `python/tests/test_onnx_parity.py`: replays embedded inputs through **`tools/nk_infer`** and **ONNX Runtime** on the matching `.onnx` file (69 cases).
 
+Requires **onnxruntime** for parity and **`make lib`** for AOT compile tests.
+
 ```bash
 pip install -e python   # adds onnxruntime
+make lib
 make test-python
 ```
+
+## AOT compile tests
+
+`python/tests/test_aot_compile.py` generates C++26 and C23 sources from hand `.nk` models, compiles them against `libnetkit.a`, and checks outputs against the NumPy reference forward pass (embedded TCAS inputs).
+
+Models exercised: `test_mlp.nk`, `cnn_4x4_single.nk`.
 
 ## Embedded smoke (MCU/MPU)
 
@@ -100,7 +109,7 @@ Sections printed in order:
 2. **CNN TESTS** — hand `.nk` models with embedded cases  
 3. **MNIST MLP TESTS** — `models/mnist_mlp.nk`  
 4. **MNIST CNN TESTS** — `models/mnist_cnn.nk`  
-5. **OP MATRIX TESTS** — `models/op_matrix_mlp.nk`, `models/op_matrix_cnn.nk`, `models/deep_mlp.nk`  
+5. **OP MATRIX TESTS** — `models/op_matrix_mlp.nk`, `models/op_matrix_cnn.nk`, `models/cnn_extended_ops.nk`, `models/deep_mlp.nk`  
 6. **FASHION-MNIST MLP TESTS** — `models/fashion_mnist_mlp.nk`  
 7. **FASHION-MNIST CNN TESTS** — `models/fashion_mnist_cnn.nk`
 
@@ -165,7 +174,7 @@ GitHub Actions (`.github/workflows/ci.yml`):
 2. `make` — default desktop build
 3. `make NETKIT_HOST_SMOKE=1 NETKIT_TARGET=mcu NETKIT_ARCH=CM4 NETKIT_CMSIS_NN=1 lib` — CMSIS-NN MCU link smoke
 4. `make NETKIT_CMSIS_DSP=1 test-cpp` — CMSIS-DSP parity
-5. `make test` — full C++ embedded + C API + Python ONNX parity + convert ops
+5. `make test` — full C++ embedded + C API + Python ONNX parity + AOT compile + convert ops + trim-lib check
 7. Example and CLI smoke tests
 8. CMake configure + build smoke test
 9. `./tools/run_embedded_smoke.sh` — MCU/MPU + `NETKIT_ARCH` + CMSIS smoke matrix (last; rebuilds lean profiles)

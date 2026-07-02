@@ -348,6 +348,9 @@ nk_status_t nk_cnn_forward(nk_cnn_t* cnn,
 /* -------------------------------------------------------------------------- */
 
 nk_status_t nk_parse_architecture(const char* nk_path, nk_arch_info_t* info);
+nk_status_t nk_parse_architecture_memory(const uint8_t* data,
+                                         size_t size,
+                                         nk_arch_info_t* info);
 nk_status_t nk_arch_print(const char* nk_path);
 
 nk_status_t nk_mlp_load(const char* nk_path,
@@ -369,6 +372,10 @@ nk_status_t nk_model_load_auto(const char* nk_path,
 
 /* High-level loaded model handle (combines MLP or CNN for inference) */
 nk_status_t nk_model_load(const char* nk_path, nk_arena_t* arena, nk_model_t* model);
+nk_status_t nk_model_load_memory(const uint8_t* data,
+                                 size_t size,
+                                 nk_arena_t* arena,
+                                 nk_model_t* model);
 nk_status_t nk_model_get_arch(const nk_model_t* model, nk_arch_info_t* info);
 uint32_t nk_model_input_count(const nk_model_t* model);
 uint32_t nk_model_output_count(const nk_model_t* model);
