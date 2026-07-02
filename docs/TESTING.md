@@ -66,7 +66,7 @@ make NETKIT_TARGET=mcu NETKIT_ARCH=CM4 NETKIT_CMSIS_NN=1 NETKIT_CMSIS_DSP=1 embe
 make test-embedded-smoke-matrix
 ```
 
-Host execution exercises linking and inference paths before on-device bring-up. On hardware, link the same `libnetkit.a` profile and call `nk_model_run` with models stored in flash.
+Host execution exercises linking and inference paths before on-device bring-up. The matrix sets `NETKIT_HOST_SMOKE=1` so CMSIS-DSP uses the portable `__GNUC_PYTHON__` path on the host (no CMSIS-Core headers). On hardware, link with your toolchain `-mcpu` flags and `NETKIT_ARCH=...` without `NETKIT_HOST_SMOKE`.
 
 This belongs in Python because ONNX is a host-side format only — the C++ runtime loads `.nk` exclusively.
 

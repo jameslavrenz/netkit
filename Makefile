@@ -67,6 +67,11 @@ RUNTIME_SOURCES = src/arena.cpp src/tensor_factory.cpp src/tensor_access.cpp src
 
 TARGET_CPPFLAGS = $(NETKIT_ARCH_CFLAGS)
 
+# Host embedded smoke (CI / desktop): portable CMSIS-DSP without CMSIS-Core headers.
+ifeq ($(NETKIT_HOST_SMOKE),1)
+  TARGET_CPPFLAGS += -D__GNUC_PYTHON__
+endif
+
 CMSIS_NN_OBJECTS =
 ifeq ($(NETKIT_CMSIS_NN),1)
   CMSIS_NN_DIR ?= third_party/CMSIS-NN

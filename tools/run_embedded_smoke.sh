@@ -29,7 +29,7 @@ run_profile() {
   echo "============================================================"
 
   make clean >/dev/null
-  make "$@" lib embedded-smoke
+  make NETKIT_HOST_SMOKE=1 "$@" lib embedded-smoke
   ./tests/embedded_smoke
 }
 
