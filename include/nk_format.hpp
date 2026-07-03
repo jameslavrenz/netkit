@@ -15,7 +15,7 @@ namespace NkFormat
     constexpr uint16_t kFlagHasTests = 0x0001;
     constexpr uint32_t kMaxTestCases = 16;
     constexpr uint32_t kMaxCaseNameLen = 127;
-    constexpr uint32_t kMaxCaseFloats = 1024;
+    constexpr uint32_t kMaxCaseFloats = 16384;
     constexpr int32_t kNoLabel = -1;
 
     constexpr std::size_t kHeaderBytes = 48;
@@ -25,8 +25,8 @@ namespace NkFormat
     constexpr std::size_t kLayerPoolBytes = 16;
     constexpr std::size_t kLayerFlattenBytes = 4;
 
-    constexpr uint32_t kMaxLayers = 16;
-    constexpr uint32_t kMaxTensorCatalog = 64;
+    constexpr uint32_t kMaxLayers = 100;
+    constexpr uint32_t kMaxTensorCatalog = 128;
     constexpr uint32_t kMaxInputRank = 4;
     constexpr uint32_t kMaxTensorRank = 4;
 
@@ -44,7 +44,11 @@ namespace NkFormat
         Flatten = 4,
         AvgPool2D = 5,
         BatchNorm2d = 6,
-        DepthwiseConv2D = 7
+        DepthwiseConv2D = 7,
+        ConvNeXtV2Block = 8,
+        MobilenetV4Uib = 9,
+        ResNetBasicBlock = 10,
+        LayerNorm2d = 11
     };
 
     enum class DType : uint8_t
@@ -129,6 +133,40 @@ namespace NkFormat
         uint16_t reserved = 0;
     };
 
+    struct ConvNeXtV2BlockLayerDesc
+    {
+        uint32_t channels = 0;
+        uint32_t reserved = 0;
+        float eps = 1e-6f;
+    };
+
+    struct MobilenetV4UibLayerDesc
+    {
+        uint32_t in_channels = 0;
+        uint32_t out_channels = 0;
+        uint8_t start_dw_kernel = 0;
+        uint8_t middle_dw_kernel = 0;
+        uint8_t stride = 1;
+        uint8_t middle_dw_downsample = 1;
+        float expand_ratio = 1.0f;
+        uint32_t reserved = 0;
+    };
+
+    struct ResNetBasicBlockLayerDesc
+    {
+        uint32_t in_channels = 0;
+        uint32_t out_channels = 0;
+        uint8_t stride = 1;
+        uint8_t reserved[3]{};
+    };
+
+    struct LayerNormLayerDesc
+    {
+        uint32_t channels = 0;
+        uint32_t reserved = 0;
+        float eps = 1e-6f;
+    };
+
     struct LayerDesc
     {
         LayerKind kind = LayerKind::Dense;
@@ -136,6 +174,10 @@ namespace NkFormat
         ConvLayerDesc conv{};
         PoolLayerDesc pool{};
         BatchNormLayerDesc batch_norm{};
+        ConvNeXtV2BlockLayerDesc convnextv2_block{};
+        MobilenetV4UibLayerDesc mobilenetv4_uib{};
+        ResNetBasicBlockLayerDesc resnet_basic_block{};
+        LayerNormLayerDesc layernorm2d{};
     };
 
     const char* NetworkKindName(NetworkKind kind);

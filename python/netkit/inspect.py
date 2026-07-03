@@ -75,6 +75,34 @@ def _read_layer_body(stream: io.BytesIO, kind: int) -> dict:
     if kind == LayerKind.BATCH_NORM2D:
         channels, _reserved = struct.unpack("<II", stream.read(8))
         return {"kind": "batch_norm2d", "channels": channels}
+    if kind == LayerKind.LAYERNORM2D:
+        channels, _reserved, eps = struct.unpack("<IIf", stream.read(12))
+        return {"kind": "layernorm2d", "channels": channels, "eps": eps}
+    if kind == LayerKind.CONVNEXTV2_BLOCK:
+        channels, _reserved, eps = struct.unpack("<IIf", stream.read(12))
+        return {"kind": "convnextv2_block", "channels": channels, "eps": eps}
+    if kind == LayerKind.MOBILENETV4_UIB:
+        in_ch, out_ch, start_dw, middle_dw, stride, middle_down, expand_ratio, _reserved = struct.unpack(
+            "<II4BfI", stream.read(20)
+        )
+        return {
+            "kind": "mobilenetv4_uib",
+            "in_channels": in_ch,
+            "out_channels": out_ch,
+            "start_dw_kernel": start_dw,
+            "middle_dw_kernel": middle_dw,
+            "stride": stride,
+            "middle_dw_downsample": middle_down,
+            "expand_ratio": expand_ratio,
+        }
+    if kind == LayerKind.RESNET_BASIC_BLOCK:
+        in_ch, out_ch, stride = struct.unpack("<IIB3x", stream.read(12))
+        return {
+            "kind": "resnet_basic_block",
+            "in_channels": in_ch,
+            "out_channels": out_ch,
+            "stride": stride,
+        }
     if kind == LayerKind.FLATTEN:
         return {"kind": "flatten"}
     raise ValueError(f"unsupported layer kind: {kind}")
@@ -91,6 +119,12 @@ def _layer_body_bytes(kind: int) -> int:
         return 12
     if kind == LayerKind.BATCH_NORM2D:
         return 8
+    if kind == LayerKind.CONVNEXTV2_BLOCK:
+        return 12
+    if kind == LayerKind.MOBILENETV4_UIB:
+        return 20
+    if kind == LayerKind.RESNET_BASIC_BLOCK:
+        return 12
     if kind == LayerKind.FLATTEN:
         return 0
     raise ValueError(f"unsupported layer kind: {kind}")

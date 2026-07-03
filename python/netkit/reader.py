@@ -68,6 +68,44 @@ def _layers_to_arch(network: str, input_shape: list[int], layers: list[dict]) ->
             arch_layers.append(entry)
         elif kind == "batch_norm2d":
             arch_layers.append({"type": "batch_norm2d", "channels": layer["channels"]})
+        elif kind == "layernorm2d":
+            arch_layers.append(
+                {
+                    "type": "layernorm2d",
+                    "channels": layer["channels"],
+                    "eps": float(layer.get("eps", 1e-6)),
+                }
+            )
+        elif kind == "convnextv2_block":
+            arch_layers.append(
+                {
+                    "type": "convnextv2_block",
+                    "channels": layer["channels"],
+                    "eps": float(layer.get("eps", 1e-6)),
+                }
+            )
+        elif kind == "mobilenetv4_uib":
+            arch_layers.append(
+                {
+                    "type": "mobilenetv4_uib",
+                    "in_channels": layer["in_channels"],
+                    "out_channels": layer["out_channels"],
+                    "start_dw_kernel": layer["start_dw_kernel"],
+                    "middle_dw_kernel": layer["middle_dw_kernel"],
+                    "stride": layer["stride"],
+                    "middle_dw_downsample": layer.get("middle_dw_downsample", 1),
+                    "expand_ratio": float(layer["expand_ratio"]),
+                }
+            )
+        elif kind == "resnet_basic_block":
+            arch_layers.append(
+                {
+                    "type": "resnet_basic_block",
+                    "in_channels": layer["in_channels"],
+                    "out_channels": layer["out_channels"],
+                    "stride": layer["stride"],
+                }
+            )
         elif kind == "flatten":
             arch_layers.append({"type": "flatten"})
         else:

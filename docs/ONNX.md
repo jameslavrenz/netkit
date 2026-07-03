@@ -56,7 +56,7 @@ PyTorch/TensorFlow exports often include `MatMul`, `Add`, `Reshape`, or extra `P
 
 | Suite | What it validates |
 |-------|-------------------|
-| C++ `make test-cpp` / `make test-c` | **`.nk` loader + inference** against embedded `TCAS` cases in each model (85 cases) |
+| C++ `make test-cpp` / `make test-c` | **`.nk` loader + inference** against embedded `TCAS` cases in each model (91 cases) |
 | Python `make test-python` | **`.nk` runtime vs ONNX Runtime** on embedded inputs (81 cases); **AOT compile** tests (C/C++ from `.nk`, requires `make lib`) |
 
 ```bash

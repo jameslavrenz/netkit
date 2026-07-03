@@ -47,14 +47,11 @@ namespace NkRegression
 
         std::size_t ArenaCapacityForModel(const NkLoader::ParsedModel& model)
         {
-            const uint32_t input_elements = NkLoader::InputElements(model);
-            if (input_elements >= 784)
-            {
-                if (model.header.network_kind == NkFormat::NetworkKind::Cnn)
-                    return kMnistCnnArenaCapacity;
-                return kMnistMlpArenaCapacity;
-            }
-            return kHandArenaCapacity;
+            const bool is_cnn = model.header.network_kind == NkFormat::NetworkKind::Cnn;
+            return ArenaUtil::CapacityForModel(NkLoader::InputElements(model),
+                                               is_cnn,
+                                               model.header.weights_bytes,
+                                               model.header.biases_bytes);
         }
 
 #if !defined(NETKIT_ARENA_HEAP)
@@ -71,13 +68,17 @@ namespace NkRegression
 #if defined(NETKIT_ARENA_HEAP)
         Arena g_regression_heap_arena{};
         bool g_regression_heap_ready = false;
+        std::size_t g_regression_heap_capacity = 0;
 
-        Arena& RegressionHeapArena()
+        Arena& RegressionHeapArena(std::size_t capacity)
         {
-            if (!g_regression_heap_ready)
+            if (!g_regression_heap_ready || g_regression_heap_capacity < capacity)
             {
+                if (g_regression_heap_ready)
+                    ArenaUtil::Release(g_regression_heap_arena);
+                g_regression_heap_capacity = capacity;
                 g_regression_heap_ready =
-                    ArenaUtil::Init(g_regression_heap_arena, kMnistCnnArenaCapacity, nullptr);
+                    ArenaUtil::Init(g_regression_heap_arena, capacity, nullptr);
             }
             g_regression_heap_arena.reset();
             return g_regression_heap_arena;
@@ -366,7 +367,7 @@ namespace NkRegression
             std::cout << "\nCase: " << test_case.name << "\n";
 
 #if defined(NETKIT_ARENA_HEAP)
-            Arena& arena = RegressionHeapArena();
+            Arena& arena = RegressionHeapArena(arena_capacity);
             if (!g_regression_heap_ready || !arena.base)
             {
                 std::cout << "FAIL " << test_case.name << ": arena init failed\n";
@@ -437,7 +438,7 @@ namespace NkRegression
     void BeginRegressionArena()
     {
 #if defined(NETKIT_ARENA_HEAP)
-        (void)RegressionHeapArena();
+        (void)RegressionHeapArena(kMnistCnnArenaCapacity);
 #endif
     }
 

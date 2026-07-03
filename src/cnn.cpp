@@ -43,6 +43,26 @@ void BatchNorm2DLayer::forward(const Tensor& input, Tensor& output)
     Kernels::BatchNorm2dForward(input, scale, bias, channels, output);
 }
 
+void LayerNorm2DLayer::forward(const Tensor& input, Tensor& output)
+{
+    Kernels::LayerNorm2dForward(input, weight, bias, channels, eps, output);
+}
+
+void ConvNeXtV2BlockLayer::forward(const Tensor& input, Tensor& output)
+{
+    block.forward(input, output);
+}
+
+void MobilenetV4UibLayer::forward(const Tensor& input, Tensor& output)
+{
+    block.forward(input, output);
+}
+
+void ResNetBasicBlockLayer::forward(const Tensor& input, Tensor& output)
+{
+    block.forward(input, output);
+}
+
 CNNNetwork::CNNNetwork(uint32_t num_layers, Arena& arena)
     : blocks(nullptr), num_layers(num_layers)
 {
@@ -171,6 +191,187 @@ void CNNNetwork::InitBatchNormLayer(uint32_t layer_idx, int channels, float* sca
     blocks[layer_idx].batch_norm.channels = channels;
     blocks[layer_idx].batch_norm.scale = scale;
     blocks[layer_idx].batch_norm.bias = bias;
+}
+
+void CNNNetwork::InitLayerNormLayer(uint32_t layer_idx,
+                                    int channels,
+                                    float eps,
+                                    float* weight,
+                                    float* bias)
+{
+    if (!blocks || layer_idx >= num_layers)
+        return;
+
+    blocks[layer_idx].type = CnnBlockType::LayerNorm2d;
+    blocks[layer_idx].layer_norm.channels = channels;
+    blocks[layer_idx].layer_norm.eps = eps;
+    blocks[layer_idx].layer_norm.weight = weight;
+    blocks[layer_idx].layer_norm.bias = bias;
+}
+
+void CNNNetwork::InitConvNeXtV2BlockLayer(uint32_t layer_idx,
+                                            Arena& arena,
+                                            uint32_t spatial_h,
+                                            uint32_t spatial_w,
+                                            int channels,
+                                            float eps,
+                                            float* dw_weights,
+                                            float* dw_bias,
+                                            float* ln_weight,
+                                            float* ln_bias,
+                                            float* pw1_weight,
+                                            float* pw1_bias,
+                                            float* grn_gamma,
+                                            float* grn_beta,
+                                            float* pw2_weight,
+                                            float* pw2_bias)
+{
+    if (!blocks || layer_idx >= num_layers)
+        return;
+
+    blocks[layer_idx].type = CnnBlockType::ConvNeXtV2Block;
+    ConvNeXtV2Block& block = blocks[layer_idx].convnextv2_block.block;
+    block.channels = channels;
+    block.eps = eps;
+    block.dw_weights = dw_weights;
+    block.dw_bias = dw_bias;
+    block.ln_weight = ln_weight;
+    block.ln_bias = ln_bias;
+    block.pw1_weight = pw1_weight;
+    block.pw1_bias = pw1_bias;
+    block.grn_gamma = grn_gamma;
+    block.grn_beta = grn_beta;
+    block.pw2_weight = pw2_weight;
+    block.pw2_bias = pw2_bias;
+
+    const uint32_t expanded =
+        static_cast<uint32_t>(channels) * static_cast<uint32_t>(ConvNeXtV2Block::kMlpRatio);
+    const uint32_t scratch_elems = spatial_h * spatial_w * expanded + expanded;
+    block.scratch =
+        static_cast<float*>(arena.alloc(static_cast<std::size_t>(scratch_elems) * sizeof(float),
+                                        alignof(float)));
+    block.scratch_elems = block.scratch ? scratch_elems : 0;
+}
+
+void CNNNetwork::InitMobilenetV4UibLayer(uint32_t layer_idx,
+                                         Arena& arena,
+                                         uint32_t spatial_h,
+                                         uint32_t spatial_w,
+                                         int in_channels,
+                                         int out_channels,
+                                         int start_dw_kernel,
+                                         int middle_dw_kernel,
+                                         int stride,
+                                         bool middle_dw_downsample,
+                                         float expand_ratio,
+                                         float* start_dw_weights,
+                                         float* start_dw_bias,
+                                         float* start_bn_scale,
+                                         float* start_bn_bias,
+                                         float* expand_weights,
+                                         float* expand_bias,
+                                         float* expand_bn_scale,
+                                         float* expand_bn_bias,
+                                         float* middle_dw_weights,
+                                         float* middle_dw_bias,
+                                         float* middle_bn_scale,
+                                         float* middle_bn_bias,
+                                         float* proj_weights,
+                                         float* proj_bias,
+                                         float* proj_bn_scale,
+                                         float* proj_bn_bias)
+{
+    if (!blocks || layer_idx >= num_layers)
+        return;
+
+    blocks[layer_idx].type = CnnBlockType::MobilenetV4Uib;
+    MobileNetV4Uib& block = blocks[layer_idx].mobilenetv4_uib.block;
+    block.in_channels = in_channels;
+    block.out_channels = out_channels;
+    block.start_dw_kernel = start_dw_kernel;
+    block.middle_dw_kernel = middle_dw_kernel;
+    block.stride = stride;
+    block.middle_dw_downsample = middle_dw_downsample;
+    block.expand_ratio = expand_ratio;
+    block.start_dw_weights = start_dw_weights;
+    block.start_dw_bias = start_dw_bias;
+    block.start_bn_scale = start_bn_scale;
+    block.start_bn_bias = start_bn_bias;
+    block.expand_weights = expand_weights;
+    block.expand_bias = expand_bias;
+    block.expand_bn_scale = expand_bn_scale;
+    block.expand_bn_bias = expand_bn_bias;
+    block.middle_dw_weights = middle_dw_weights;
+    block.middle_dw_bias = middle_dw_bias;
+    block.middle_bn_scale = middle_bn_scale;
+    block.middle_bn_bias = middle_bn_bias;
+    block.proj_weights = proj_weights;
+    block.proj_bias = proj_bias;
+    block.proj_bn_scale = proj_bn_scale;
+    block.proj_bn_bias = proj_bn_bias;
+
+    const uint32_t spatial = spatial_h * spatial_w;
+    const uint32_t expand_c = block.expanded_channels();
+    const uint32_t residual =
+        (stride == 1 && in_channels == out_channels) ? static_cast<uint32_t>(in_channels) : 0u;
+    const uint32_t scratch_elems = 2u * spatial * expand_c + spatial * residual;
+    block.scratch =
+        static_cast<float*>(arena.alloc(static_cast<std::size_t>(scratch_elems) * sizeof(float),
+                                        alignof(float)));
+    block.scratch_elems = block.scratch ? scratch_elems : 0;
+}
+
+void CNNNetwork::InitResNetBasicBlockLayer(uint32_t layer_idx,
+                                           Arena& arena,
+                                           uint32_t spatial_h,
+                                           uint32_t spatial_w,
+                                           int in_channels,
+                                           int out_channels,
+                                           int stride,
+                                           float* conv1_weights,
+                                           float* conv1_bias,
+                                           float* bn1_scale,
+                                           float* bn1_bias,
+                                           float* conv2_weights,
+                                           float* conv2_bias,
+                                           float* bn2_scale,
+                                           float* bn2_bias,
+                                           float* shortcut_weights,
+                                           float* shortcut_bias,
+                                           float* shortcut_bn_scale,
+                                           float* shortcut_bn_bias)
+{
+    if (!blocks || layer_idx >= num_layers)
+        return;
+
+    blocks[layer_idx].type = CnnBlockType::ResNetBasicBlock;
+    ResNetBasicBlock& block = blocks[layer_idx].resnet_basic_block.block;
+    block.in_channels = in_channels;
+    block.out_channels = out_channels;
+    block.stride = stride;
+    block.conv1_weights = conv1_weights;
+    block.conv1_bias = conv1_bias;
+    block.bn1_scale = bn1_scale;
+    block.bn1_bias = bn1_bias;
+    block.conv2_weights = conv2_weights;
+    block.conv2_bias = conv2_bias;
+    block.bn2_scale = bn2_scale;
+    block.bn2_bias = bn2_bias;
+    block.shortcut_weights = shortcut_weights;
+    block.shortcut_bias = shortcut_bias;
+    block.shortcut_bn_scale = shortcut_bn_scale;
+    block.shortcut_bn_bias = shortcut_bn_bias;
+
+    uint32_t out_h = spatial_h;
+    uint32_t out_w = spatial_w;
+    block.output_spatial(spatial_h, spatial_w, out_h, out_w);
+    const uint32_t out_elems = out_h * out_w * static_cast<uint32_t>(out_channels);
+    const uint32_t scratch_elems =
+        2u * out_elems + (block.has_identity_shortcut() ? 0u : out_elems);
+    block.scratch =
+        static_cast<float*>(arena.alloc(static_cast<std::size_t>(scratch_elems) * sizeof(float),
+                                        alignof(float)));
+    block.scratch_elems = block.scratch ? scratch_elems : 0;
 }
 
 void CNNNetwork::InitFlattenLayer(uint32_t layer_idx)

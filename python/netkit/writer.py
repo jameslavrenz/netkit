@@ -14,6 +14,10 @@ from .format import (
     NetworkKind,
     pack_avg_pool_layer,
     pack_batch_norm_layer,
+    pack_convnextv2_block_layer,
+    pack_layernorm2d_layer,
+    pack_mobilenetv4_uib_layer,
+    pack_resnet_basic_block_layer,
     pack_conv_layer,
     pack_depthwise_conv_layer,
     pack_dense_layer,
@@ -40,6 +44,13 @@ class LayerSpec:
     pad_w: int = 0
     pool_size: int = 2
     channels: int = 0
+    eps: float = 1e-6
+    in_channels: int = 0
+    out_channels: int = 0
+    start_dw_kernel: int = 0
+    middle_dw_kernel: int = 0
+    middle_dw_downsample: int = 1
+    expand_ratio: float = 1.0
 
 
 @dataclass
@@ -137,6 +148,26 @@ def write_nk_bytes(spec: ModelSpec) -> bytes:
             )
         elif layer.kind == "batch_norm2d":
             layer_bytes += pack_batch_norm_layer(channels=layer.channels)
+        elif layer.kind == "layernorm2d":
+            layer_bytes += pack_layernorm2d_layer(channels=layer.channels, eps=layer.eps)
+        elif layer.kind == "convnextv2_block":
+            layer_bytes += pack_convnextv2_block_layer(channels=layer.channels, eps=layer.eps)
+        elif layer.kind == "mobilenetv4_uib":
+            layer_bytes += pack_mobilenetv4_uib_layer(
+                in_channels=layer.in_channels,
+                out_channels=layer.out_channels,
+                start_dw_kernel=layer.start_dw_kernel,
+                middle_dw_kernel=layer.middle_dw_kernel,
+                stride=layer.stride,
+                expand_ratio=layer.expand_ratio,
+                middle_dw_downsample=layer.middle_dw_downsample,
+            )
+        elif layer.kind == "resnet_basic_block":
+            layer_bytes += pack_resnet_basic_block_layer(
+                in_channels=layer.in_channels,
+                out_channels=layer.out_channels,
+                stride=layer.stride,
+            )
         elif layer.kind == "flatten":
             layer_bytes += pack_flatten_layer()
         else:

@@ -25,6 +25,9 @@ Models are loaded from binary **`.nk`** files (single-file architecture + weight
 | **[MNIST MLP Test](docs/MNIST.md)** | Trained 784→128→10 MLP on handwritten digits |
 | **[MNIST CNN Test](docs/MNIST_CNN.md)** | Tutorial-style conv+pool CNN on MNIST |
 | **[Speech KWS fixture](docs/SPEECH_KWS.md)** | MCU-sized keyword-spotting CNN (`speech_kws.nk`) |
+| **[ResNet-18](docs/RESNET18.md)** | Fused BasicBlock + full ResNet-18 backbone fixture |
+| **[ConvNeXt V2](docs/CONVNEXTV2.md)** | Fused block + LayerNorm2d + full Atto backbone fixture |
+| **[MobileNetV4](docs/MOBILENETV4.md)** | Fused UIB block + full MNv4-Conv-Small backbone fixture |
 | **[MLP Background](docs/nn.md)** | Optional theory (training/backprop); netkit is inference-only |
 
 ## Language standards
@@ -42,7 +45,7 @@ Application code is C++26. C23 is limited to the C header, the `extern "C"` brid
 - **CLI** — `test`, `run`, and `inspect` commands for desktop development
 - **MLP & CNN** — conv (with padding), max/avg pool, batch norm, flatten, dense; `.nk` loading
 - **Arena allocator** — Bump-pointer memory with aligned allocation (no heap in layer paths)
-- **Regression tests** — 85 embedded `.nk` cases (C++/C) plus Python ONNX parity (81) and AOT compile tests via `make test`
+- **Regression tests** — 91 embedded `.nk` cases (C++/C) plus Python ONNX parity (81) and AOT compile tests via `make test`
 - **GitHub Actions CI** — manual `workflow_dispatch` only (`gh workflow run ci.yml`)
 - **Embedded smoke** — MCU/MPU + `NETKIT_ARCH` + CMSIS bring-up harness on host (`test_mlp`, `cnn_4x4_single`, `speech_kws`; `make test-embedded-smoke-matrix`; in manual CI job)
 - **Float32 inference** — all tensors, weights, and math use IEEE-754 single precision (`float`)
@@ -142,7 +145,7 @@ make NETKIT_TARGET=mpu lib   # lean embedded runtime
 make NETKIT_TARGET=cpu NETKIT_GLOBAL_ARENA=1 all   # desktop, static arena
 make build-all    # cpu: netkit + examples + C API test binary
 make test         # C++ embedded regression + Python ONNX parity (cpu only)
-make test-cpp     # C++ embedded .nk cases only (85)
+make test-cpp     # C++ embedded .nk cases only (91)
 make test-c       # C API regression only
 make test-python  # ONNX parity (81) + AOT compile tests (requires libnetkit.a)
 make test-embedded-smoke-matrix  # MCU/MPU + NETKIT_ARCH + CMSIS (host smoke; manual CI job)
@@ -195,8 +198,8 @@ make test-embedded-smoke-matrix   # lean MCU/MPU profiles (see docs/TESTING.md)
 
 | Suite | Language | Entry point | Cases |
 |-------|----------|-------------|-------|
-| C++ embedded | C++26 | `./netkit test` → `src/test.cpp` | 85 (16 hand + 12 speech KWS + 20 MNIST + 17 op matrix + 20 Fashion-MNIST) |
-| C API | C23 | `tests/test_c_api.c` | Same 85 + API smoke tests |
+| C++ embedded | C++26 | `./netkit test` → `src/test.cpp` | 91 (19 hand + 12 speech KWS + 20 MNIST + 17 op matrix + 20 Fashion-MNIST + 1 MobileNetV4 Small + 1 ResNet-18 + 1 ConvNeXt V2-Atto) |
+| C API | C23 | `tests/test_c_api.c` | Same 91 + API smoke tests |
 | ONNX parity | Python | `python/tests/test_onnx_parity.py` | 81 (.nk vs ONNX Runtime on bundled sidecars) |
 | AOT compile | Python | `python/tests/test_aot_compile.py` | Generates C/C++ from `.nk`, builds, runs vs reference |
 | Embedded smoke | C23 | `tests/embedded_smoke.c` | `test_mlp`, `cnn_4x4_single`, `speech_kws` load/run on 7 MCU/MPU host profiles (`make test-embedded-smoke-matrix`; in manual CI job) |

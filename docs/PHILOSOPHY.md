@@ -58,7 +58,7 @@ Full details: [BUILD_TARGETS.md](BUILD_TARGETS.md), [ARENA.md](ARENA.md).
 
 | Target | Role |
 |--------|------|
-| **CPU** | Desktop dev — CLI, embedded regression (85 cases), Python ONNX parity (81), AOT compile tests, embedded smoke orchestration on host (`test_mlp`, `cnn_4x4_single`, `speech_kws`) |
+| **CPU** | Desktop dev — CLI, embedded regression (91 cases), Python ONNX parity (81), AOT compile tests, embedded smoke orchestration on host (`test_mlp`, `cnn_4x4_single`, `speech_kws`) |
 | **MCU** | Lean runtime — `.nk` load + inference only |
 | **MPU** | Same lean runtime as MCU; slightly larger default static arena constant |
 

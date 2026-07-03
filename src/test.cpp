@@ -35,6 +35,32 @@ NkRegression::RunSummary run_all_tests()
     merge(NkRegression::RunModelTests("models/speech_kws.nk"));
 
     std::cout << "\n============================\n";
+    std::cout << " CONVNEXT V2 ATTO BLOCK TESTS\n";
+    std::cout << "============================\n";
+    merge(NkRegression::RunModelTests("models/convnextv2_atto_block.nk"));
+    merge(NkRegression::RunModelTests("models/convnextv2_atto.nk"));
+
+    std::cout << "\n============================\n";
+    std::cout << " RESNET-18 BASIC BLOCK TESTS\n";
+    std::cout << "============================\n";
+    merge(NkRegression::RunModelTests("models/resnet18_basic_block.nk"));
+
+    std::cout << "\n============================\n";
+    std::cout << " RESNET-18 TESTS\n";
+    std::cout << "============================\n";
+    merge(NkRegression::RunModelTests("models/resnet18.nk"));
+
+    std::cout << "\n============================\n";
+    std::cout << " MOBILENETV4 SMALL UIB TESTS\n";
+    std::cout << "============================\n";
+    merge(NkRegression::RunModelTests("models/mobilenetv4_small_uib.nk"));
+
+    std::cout << "\n============================\n";
+    std::cout << " MOBILENETV4 CONV-SMALL TESTS\n";
+    std::cout << "============================\n";
+    merge(NkRegression::RunModelTests("models/mobilenetv4_small.nk"));
+
+    std::cout << "\n============================\n";
     std::cout << " MNIST MLP TESTS\n";
     std::cout << "============================\n";
     merge(NkRegression::RunModelTests("models/mnist_mlp.nk"));

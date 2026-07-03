@@ -25,6 +25,10 @@ namespace NkFormat
             case LayerKind::AvgPool2D: return "avg_pool2d";
             case LayerKind::BatchNorm2d: return "batch_norm2d";
             case LayerKind::DepthwiseConv2D: return "depthwise_conv2d";
+            case LayerKind::ConvNeXtV2Block: return "convnextv2_block";
+            case LayerKind::MobilenetV4Uib: return "mobilenetv4_uib";
+            case LayerKind::ResNetBasicBlock: return "resnet_basic_block";
+            case LayerKind::LayerNorm2d: return "layernorm2d";
         }
         return "unknown";
     }

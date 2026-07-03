@@ -212,7 +212,7 @@ Weight matrix shape per layer: `[out_features, in_features]` row-major (CMSIS-NN
 
 ## CNNNetwork (`cnn.hpp`)
 
-CNN pipelines support mixed blocks: conv2d, max_pool2d, avg_pool2d, batch_norm2d, flatten, and dense (classification head). See [NK_FORMAT.md](NK_FORMAT.md).
+CNN pipelines support mixed blocks: conv2d, depthwise_conv2d, max_pool2d, avg_pool2d, batch_norm2d, convnextv2_block, mobilenetv4_uib, flatten, and dense (classification head). See [NK_FORMAT.md](NK_FORMAT.md), [CONVNEXTV2.md](CONVNEXTV2.md), and [MOBILENETV4.md](MOBILENETV4.md).
 
 ```cpp
 enum class CnnBlockType { Conv2D, MaxPool2D, AvgPool2D, BatchNorm2d, Flatten, Dense };

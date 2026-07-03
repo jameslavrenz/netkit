@@ -14,6 +14,9 @@ HEADER_BYTES = 48
 TENSOR_DESC_BYTES = 24
 FLAG_HAS_TESTS = 0x0001
 MAX_CASE_NAME_LEN = 127
+MAX_LAYERS = 100
+MAX_TENSOR_CATALOG = 128
+MAX_CASE_FLOATS = 16384
 
 
 class NetworkKind(IntEnum):
@@ -29,6 +32,10 @@ class LayerKind(IntEnum):
     AVG_POOL2D = 5
     BATCH_NORM2D = 6
     DEPTHWISE_CONV2D = 7
+    CONVNEXTV2_BLOCK = 8
+    MOBILENETV4_UIB = 9
+    RESNET_BASIC_BLOCK = 10
+    LAYERNORM2D = 11
 
 
 class DType(IntEnum):
@@ -148,6 +155,51 @@ def pack_avg_pool_layer(*, pool_size: int, stride: int, pad_h: int = 0, pad_w: i
 
 def pack_batch_norm_layer(*, channels: int) -> bytes:
     return pack_layer_kind(LayerKind.BATCH_NORM2D) + struct.pack("<II", channels, 0)
+
+
+def pack_convnextv2_block_layer(*, channels: int, eps: float = 1e-6) -> bytes:
+    return pack_layer_kind(LayerKind.CONVNEXTV2_BLOCK) + struct.pack("<IIf", channels, 0, eps)
+
+
+def pack_mobilenetv4_uib_layer(
+    *,
+    in_channels: int,
+    out_channels: int,
+    start_dw_kernel: int,
+    middle_dw_kernel: int,
+    stride: int,
+    expand_ratio: float,
+    middle_dw_downsample: int = 1,
+) -> bytes:
+    return pack_layer_kind(LayerKind.MOBILENETV4_UIB) + struct.pack(
+        "<II4BfI",
+        in_channels,
+        out_channels,
+        start_dw_kernel,
+        middle_dw_kernel,
+        stride,
+        middle_dw_downsample,
+        float(expand_ratio),
+        0,
+    )
+
+
+def pack_resnet_basic_block_layer(
+    *,
+    in_channels: int,
+    out_channels: int,
+    stride: int,
+) -> bytes:
+    return pack_layer_kind(LayerKind.RESNET_BASIC_BLOCK) + struct.pack(
+        "<IIB3x",
+        in_channels,
+        out_channels,
+        stride,
+    )
+
+
+def pack_layernorm2d_layer(*, channels: int, eps: float = 1e-6) -> bytes:
+    return pack_layer_kind(LayerKind.LAYERNORM2D) + struct.pack("<IIf", channels, 0, eps)
 
 
 def pack_flatten_layer() -> bytes:

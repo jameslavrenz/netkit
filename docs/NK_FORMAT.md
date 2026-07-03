@@ -7,7 +7,7 @@ Version **3** — single-file inference bundle for embedded runtimes. Produced b
 | Section | Contents |
 |---------|----------|
 | Header | Magic, version, network kind, input shape, layer/tensor counts, payload sizes |
-| Layer descriptors | One record per layer (dense, conv2d, max_pool2d, avg_pool2d, batch_norm2d, flatten) |
+| Layer descriptors | One record per layer (dense, conv2d, depthwise_conv2d, max_pool2d, avg_pool2d, batch_norm2d, convnextv2_block, flatten) |
 | Tensor catalog | Shape + dtype for each weight tensor, then each bias tensor |
 | Weight payload | All weight tensors concatenated (float32, little-endian) |
 | Bias payload | All bias tensors concatenated (float32, little-endian) |
@@ -15,6 +15,17 @@ Version **3** — single-file inference bundle for embedded runtimes. Produced b
 Weights and biases are **split into separate sections** within the `.nk` file (weights payload first, then biases payload).
 
 Optional **embedded regression tests** (flag `kFlagHasTests`) append a `TCAS` section after the bias payload so a single `.nk` file carries model weights and test cases.
+
+## Format limits (v3)
+
+| Constant | Value | Notes |
+|----------|------:|-------|
+| `kMaxLayers` | 100 | Layer descriptor array in loader and op list |
+| `kMaxTensorCatalog` | 128 | Weight + bias tensor descriptors |
+| `kMaxTestCases` | 16 | Embedded TCAS cases per file |
+| `kMaxCaseFloats` | 16384 | Max input or expected floats per TCAS case (e.g. 56×56×3 = 9408) |
+
+Python mirror: `python/netkit/format.py` (`MAX_LAYERS`, `MAX_TENSOR_CATALOG`, `MAX_CASE_FLOATS`).
 
 ## File layout
 
@@ -72,6 +83,18 @@ Each layer starts with **`uint8 kind` + 3 reserved bytes**, then kind-specific f
 | `flatten` | 4 | (none) |
 | `avg_pool2d` | 5 | `pool_size u32`, `stride u32`, `pad_h u8`, `pad_w u8`, `reserved u16` |
 | `batch_norm2d` | 6 | `channels u32`, `reserved u32` |
+| `convnextv2_block` | 8 | `channels u32`, `reserved u32`, `eps f32` |
+| `mobilenetv4_uib` | 9 | `in_channels u32`, `out_channels u32`, `start_dw u8`, `middle_dw u8`, `stride u8`, `middle_dw_downsample u8`, `expand_ratio f32`, `reserved u32` |
+
+See [CONVNEXTV2.md](CONVNEXTV2.md) and [MOBILENETV4.md](MOBILENETV4.md) for fused block details.
+
+Weight/bias tensor pairs (in layer order, W then B each):
+
+1. depthwise `[C,7,7]` + bias `[C]`
+2. LayerNorm scale `[C]` + bias `[C]`
+3. expand pointwise `[4C,C]` + bias `[4C]`
+4. GRN gamma `[4C]` + beta `[4C]`
+5. project pointwise `[C,4C]` + bias `[C]`
 
 ### Activation enum (`uint8`)
 

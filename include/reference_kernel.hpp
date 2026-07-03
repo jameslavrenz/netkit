@@ -59,6 +59,12 @@ struct ReferenceKernel : KernelBase<ReferenceKernel>
                                        const float* bias,
                                        int channels,
                                        Tensor& output);
+    static void LayerNorm2dForwardImpl(const Tensor& input,
+                                       const float* weight,
+                                       const float* bias,
+                                       int channels,
+                                       float eps,
+                                       Tensor& output);
 
     static bool FullyConnectedWithBiasImpl(const Tensor& input,
                                            const Tensor& weights,

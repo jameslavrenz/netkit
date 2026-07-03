@@ -432,3 +432,43 @@ void ReferenceKernel::BatchNorm2dForwardImpl(const Tensor& input,
         out[i] = in[i] * scale[c] + bias[c];
     }
 }
+
+void ReferenceKernel::LayerNorm2dForwardImpl(const Tensor& input,
+                                             const float* weight,
+                                             const float* bias,
+                                             int channels,
+                                             float eps,
+                                             Tensor& output)
+{
+    const float* in = tensor_data_f32(const_cast<Tensor&>(input));
+    float* out = tensor_data_f32(output);
+    const uint32_t height = input.shape[0];
+    const uint32_t width = input.shape[1];
+    const uint32_t channel_count = static_cast<uint32_t>(channels);
+
+    for (uint32_t oh = 0; oh < height; ++oh)
+    {
+        for (uint32_t ow = 0; ow < width; ++ow)
+        {
+            const float* pixel_in = in + (oh * width + ow) * channel_count;
+            float* pixel_out = out + (oh * width + ow) * channel_count;
+
+            float mean = 0.0f;
+            for (uint32_t c = 0; c < channel_count; ++c)
+                mean += pixel_in[c];
+            mean /= static_cast<float>(channel_count);
+
+            float variance = 0.0f;
+            for (uint32_t c = 0; c < channel_count; ++c)
+            {
+                const float delta = pixel_in[c] - mean;
+                variance += delta * delta;
+            }
+            variance /= static_cast<float>(channel_count);
+            const float inv_std = 1.0f / std::sqrt(variance + eps);
+
+            for (uint32_t c = 0; c < channel_count; ++c)
+                pixel_out[c] = (pixel_in[c] - mean) * inv_std * weight[c] + bias[c];
+        }
+    }
+}

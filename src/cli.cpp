@@ -23,7 +23,10 @@ namespace Cli
         std::size_t ArenaCapacityForModel(const NkLoader::ParsedModel& parsed)
         {
             const bool is_cnn = parsed.header.network_kind == NkFormat::NetworkKind::Cnn;
-            return ArenaUtil::CapacityForInputElements(NkLoader::InputElements(parsed), is_cnn);
+            return ArenaUtil::CapacityForModel(NkLoader::InputElements(parsed),
+                                               is_cnn,
+                                               parsed.header.weights_bytes,
+                                               parsed.header.biases_bytes);
         }
 
         void PrintHelp(const char* program)

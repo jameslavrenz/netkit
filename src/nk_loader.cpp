@@ -1,4 +1,6 @@
 #include "nk_loader.hpp"
+#include "mobilenetv4_uib.hpp"
+#include "resnet_basic_block.hpp"
 #include "tensor_factory.hpp"
 
 #include <cstdio>
@@ -86,6 +88,41 @@ namespace NkLoader
                     case NkFormat::LayerKind::BatchNorm2d:
                         features = h * w * c;
                         break;
+                    case NkFormat::LayerKind::LayerNorm2d:
+                        features = h * w * c;
+                        break;
+                    case NkFormat::LayerKind::ConvNeXtV2Block:
+                        features = h * w * c;
+                        break;
+                    case NkFormat::LayerKind::MobilenetV4Uib:
+                    {
+                        const NkFormat::MobilenetV4UibLayerDesc& layer = model.layers[i].mobilenetv4_uib;
+                        MobileNetV4Uib shape_probe{};
+                        shape_probe.in_channels = static_cast<int>(layer.in_channels);
+                        shape_probe.out_channels = static_cast<int>(layer.out_channels);
+                        shape_probe.start_dw_kernel = static_cast<int>(layer.start_dw_kernel);
+                        shape_probe.middle_dw_kernel = static_cast<int>(layer.middle_dw_kernel);
+                        shape_probe.stride = static_cast<int>(layer.stride);
+                        shape_probe.middle_dw_downsample = layer.middle_dw_downsample != 0;
+                        shape_probe.expand_ratio = layer.expand_ratio;
+                        shape_probe.output_spatial(h, w, h, w);
+                        c = layer.out_channels;
+                        features = h * w * c;
+                        break;
+                    }
+                    case NkFormat::LayerKind::ResNetBasicBlock:
+                    {
+                        const NkFormat::ResNetBasicBlockLayerDesc& layer =
+                            model.layers[i].resnet_basic_block;
+                        ResNetBasicBlock shape_probe{};
+                        shape_probe.in_channels = static_cast<int>(layer.in_channels);
+                        shape_probe.out_channels = static_cast<int>(layer.out_channels);
+                        shape_probe.stride = static_cast<int>(layer.stride);
+                        shape_probe.output_spatial(h, w, h, w);
+                        c = layer.out_channels;
+                        features = h * w * c;
+                        break;
+                    }
                     case NkFormat::LayerKind::Flatten:
                         flattened = true;
                         features = h * w * c;
@@ -268,6 +305,44 @@ namespace NkLoader
             return ReadU32(file, layer.batch_norm.channels) && ReadU32(file, layer.batch_norm.reserved);
         }
 
+        bool ReadConvNeXtV2BlockLayer(std::FILE* file, NkFormat::LayerDesc& layer)
+        {
+            layer.kind = NkFormat::LayerKind::ConvNeXtV2Block;
+            return ReadU32(file, layer.convnextv2_block.channels) &&
+                   ReadU32(file, layer.convnextv2_block.reserved) &&
+                   ReadF32(file, layer.convnextv2_block.eps);
+        }
+
+        bool ReadMobilenetV4UibLayer(std::FILE* file, NkFormat::LayerDesc& layer)
+        {
+            layer.kind = NkFormat::LayerKind::MobilenetV4Uib;
+            return ReadU32(file, layer.mobilenetv4_uib.in_channels) &&
+                   ReadU32(file, layer.mobilenetv4_uib.out_channels) &&
+                   ReadU8(file, layer.mobilenetv4_uib.start_dw_kernel) &&
+                   ReadU8(file, layer.mobilenetv4_uib.middle_dw_kernel) &&
+                   ReadU8(file, layer.mobilenetv4_uib.stride) &&
+                   ReadU8(file, layer.mobilenetv4_uib.middle_dw_downsample) &&
+                   ReadF32(file, layer.mobilenetv4_uib.expand_ratio) &&
+                   ReadU32(file, layer.mobilenetv4_uib.reserved);
+        }
+
+        bool ReadResNetBasicBlockLayer(std::FILE* file, NkFormat::LayerDesc& layer)
+        {
+            layer.kind = NkFormat::LayerKind::ResNetBasicBlock;
+            return ReadU32(file, layer.resnet_basic_block.in_channels) &&
+                   ReadU32(file, layer.resnet_basic_block.out_channels) &&
+                   ReadU8(file, layer.resnet_basic_block.stride) &&
+                   ReadExact(file, layer.resnet_basic_block.reserved, sizeof(layer.resnet_basic_block.reserved));
+        }
+
+        bool ReadLayerNormLayer(std::FILE* file, NkFormat::LayerDesc& layer)
+        {
+            layer.kind = NkFormat::LayerKind::LayerNorm2d;
+            return ReadU32(file, layer.layernorm2d.channels) &&
+                   ReadU32(file, layer.layernorm2d.reserved) &&
+                   ReadF32(file, layer.layernorm2d.eps);
+        }
+
         bool ReadFlattenLayer(std::FILE* file, NkFormat::LayerDesc& layer)
         {
             layer.kind = NkFormat::LayerKind::Flatten;
@@ -296,6 +371,14 @@ namespace NkLoader
                     return ReadAvgPoolLayer(file, layer);
                 case NkFormat::LayerKind::BatchNorm2d:
                     return ReadBatchNormLayer(file, layer);
+                case NkFormat::LayerKind::ConvNeXtV2Block:
+                    return ReadConvNeXtV2BlockLayer(file, layer);
+                case NkFormat::LayerKind::MobilenetV4Uib:
+                    return ReadMobilenetV4UibLayer(file, layer);
+                case NkFormat::LayerKind::ResNetBasicBlock:
+                    return ReadResNetBasicBlockLayer(file, layer);
+                case NkFormat::LayerKind::LayerNorm2d:
+                    return ReadLayerNormLayer(file, layer);
                 case NkFormat::LayerKind::Flatten:
                     return ReadFlattenLayer(file, layer);
                 default:
@@ -460,6 +543,45 @@ namespace NkLoader
                    CursorReadU32(cursor, layer.batch_norm.reserved);
         }
 
+        bool ReadConvNeXtV2BlockLayerCursor(ByteCursor& cursor, NkFormat::LayerDesc& layer)
+        {
+            layer.kind = NkFormat::LayerKind::ConvNeXtV2Block;
+            return CursorReadU32(cursor, layer.convnextv2_block.channels) &&
+                   CursorReadU32(cursor, layer.convnextv2_block.reserved) &&
+                   CursorReadF32(cursor, layer.convnextv2_block.eps);
+        }
+
+        bool ReadMobilenetV4UibLayerCursor(ByteCursor& cursor, NkFormat::LayerDesc& layer)
+        {
+            layer.kind = NkFormat::LayerKind::MobilenetV4Uib;
+            return CursorReadU32(cursor, layer.mobilenetv4_uib.in_channels) &&
+                   CursorReadU32(cursor, layer.mobilenetv4_uib.out_channels) &&
+                   CursorReadU8(cursor, layer.mobilenetv4_uib.start_dw_kernel) &&
+                   CursorReadU8(cursor, layer.mobilenetv4_uib.middle_dw_kernel) &&
+                   CursorReadU8(cursor, layer.mobilenetv4_uib.stride) &&
+                   CursorReadU8(cursor, layer.mobilenetv4_uib.middle_dw_downsample) &&
+                   CursorReadF32(cursor, layer.mobilenetv4_uib.expand_ratio) &&
+                   CursorReadU32(cursor, layer.mobilenetv4_uib.reserved);
+        }
+
+        bool ReadResNetBasicBlockLayerCursor(ByteCursor& cursor, NkFormat::LayerDesc& layer)
+        {
+            layer.kind = NkFormat::LayerKind::ResNetBasicBlock;
+            return CursorReadU32(cursor, layer.resnet_basic_block.in_channels) &&
+                   CursorReadU32(cursor, layer.resnet_basic_block.out_channels) &&
+                   CursorReadU8(cursor, layer.resnet_basic_block.stride) &&
+                   CursorReadExact(cursor, layer.resnet_basic_block.reserved,
+                                   sizeof(layer.resnet_basic_block.reserved));
+        }
+
+        bool ReadLayerNormLayerCursor(ByteCursor& cursor, NkFormat::LayerDesc& layer)
+        {
+            layer.kind = NkFormat::LayerKind::LayerNorm2d;
+            return CursorReadU32(cursor, layer.layernorm2d.channels) &&
+                   CursorReadU32(cursor, layer.layernorm2d.reserved) &&
+                   CursorReadF32(cursor, layer.layernorm2d.eps);
+        }
+
         bool ReadFlattenLayerCursor(ByteCursor& cursor, NkFormat::LayerDesc& layer)
         {
             layer.kind = NkFormat::LayerKind::Flatten;
@@ -488,6 +610,14 @@ namespace NkLoader
                     return ReadAvgPoolLayerCursor(cursor, layer);
                 case NkFormat::LayerKind::BatchNorm2d:
                     return ReadBatchNormLayerCursor(cursor, layer);
+                case NkFormat::LayerKind::ConvNeXtV2Block:
+                    return ReadConvNeXtV2BlockLayerCursor(cursor, layer);
+                case NkFormat::LayerKind::MobilenetV4Uib:
+                    return ReadMobilenetV4UibLayerCursor(cursor, layer);
+                case NkFormat::LayerKind::ResNetBasicBlock:
+                    return ReadResNetBasicBlockLayerCursor(cursor, layer);
+                case NkFormat::LayerKind::LayerNorm2d:
+                    return ReadLayerNormLayerCursor(cursor, layer);
                 case NkFormat::LayerKind::Flatten:
                     return ReadFlattenLayerCursor(cursor, layer);
                 default:
@@ -758,6 +888,286 @@ namespace NkLoader
                                                     biases + bias_offset);
                         weight_offset += layer.channels;
                         bias_offset += layer.channels;
+                        break;
+                    }
+                    case NkFormat::LayerKind::LayerNorm2d:
+                    {
+                        const NkFormat::LayerNormLayerDesc& layer = parsed.layers[i].layernorm2d;
+                        const NkFormat::TensorDesc& w_desc = parsed.weight_tensors[weight_index++];
+                        const NkFormat::TensorDesc& b_desc = parsed.bias_tensors[bias_index++];
+
+                        if (w_desc.num_elements != layer.channels || b_desc.num_elements != layer.channels)
+                            return Fail(LoadStatus::SizeMismatch, "CNN layer norm tensor shape mismatch in .nk catalog");
+
+                        if (layer.channels != in_channels)
+                            return Fail(LoadStatus::SizeMismatch,
+                                          "LayerNorm2d channels must match input channels in .nk");
+
+                        network->InitLayerNormLayer(i,
+                                                    static_cast<int>(layer.channels),
+                                                    layer.eps,
+                                                    weights + weight_offset,
+                                                    biases + bias_offset);
+                        weight_offset += layer.channels;
+                        bias_offset += layer.channels;
+                        break;
+                    }
+                    case NkFormat::LayerKind::ConvNeXtV2Block:
+                    {
+                        const NkFormat::ConvNeXtV2BlockLayerDesc& layer = parsed.layers[i].convnextv2_block;
+                        const uint32_t channels = layer.channels;
+                        const uint32_t expanded = channels * 4u;
+                        const std::size_t dw_w_elems = static_cast<std::size_t>(channels) * 49u;
+                        const std::size_t pw1_w_elems = static_cast<std::size_t>(expanded) * channels;
+                        const std::size_t pw2_w_elems = static_cast<std::size_t>(channels) * expanded;
+
+                        auto take_pair = [&](std::size_t expected_w,
+                                             std::size_t expected_b) -> std::pair<float*, float*>
+                        {
+                            const NkFormat::TensorDesc& w_desc = parsed.weight_tensors[weight_index++];
+                            const NkFormat::TensorDesc& b_desc = parsed.bias_tensors[bias_index++];
+                            if (w_desc.num_elements != expected_w || b_desc.num_elements != expected_b)
+                                return {nullptr, nullptr};
+                            float* w_ptr = weights + weight_offset;
+                            float* b_ptr = biases + bias_offset;
+                            weight_offset += expected_w;
+                            bias_offset += expected_b;
+                            return {w_ptr, b_ptr};
+                        };
+
+                        const auto [dw_w, dw_b] = take_pair(dw_w_elems, channels);
+                        const auto [ln_w, ln_b] = take_pair(channels, channels);
+                        const auto [pw1_w, pw1_b] = take_pair(pw1_w_elems, expanded);
+                        const auto [grn_gamma, grn_beta] = take_pair(expanded, expanded);
+                        const auto [pw2_w, pw2_b] = take_pair(pw2_w_elems, channels);
+
+                        if (!dw_w || !ln_w || !pw1_w || !grn_gamma || !pw2_w)
+                            return Fail(LoadStatus::SizeMismatch,
+                                          "ConvNeXt V2 block tensor shape mismatch in .nk catalog");
+
+                        if (channels != in_channels)
+                            return Fail(LoadStatus::SizeMismatch,
+                                          "ConvNeXt V2 block channels must match input channels in .nk");
+
+                        network->InitConvNeXtV2BlockLayer(i,
+                                                        arena,
+                                                        h,
+                                                        w,
+                                                        static_cast<int>(channels),
+                                                        layer.eps,
+                                                        dw_w,
+                                                        dw_b,
+                                                        ln_w,
+                                                        ln_b,
+                                                        pw1_w,
+                                                        pw1_b,
+                                                        grn_gamma,
+                                                        grn_beta,
+                                                        pw2_w,
+                                                        pw2_b);
+                        break;
+                    }
+                    case NkFormat::LayerKind::MobilenetV4Uib:
+                    {
+                        const NkFormat::MobilenetV4UibLayerDesc& layer = parsed.layers[i].mobilenetv4_uib;
+                        const uint32_t in_c = layer.in_channels;
+                        const uint32_t out_c = layer.out_channels;
+                        const uint32_t start_k = layer.start_dw_kernel;
+                        const uint32_t middle_k = layer.middle_dw_kernel;
+                        const uint32_t expand_c =
+                            MobileNetV4Uib::MakeDivisible(static_cast<float>(in_c) * layer.expand_ratio, 8);
+
+                        auto take_pair = [&](std::size_t expected_w,
+                                             std::size_t expected_b) -> std::pair<float*, float*>
+                        {
+                            const NkFormat::TensorDesc& w_desc = parsed.weight_tensors[weight_index++];
+                            const NkFormat::TensorDesc& b_desc = parsed.bias_tensors[bias_index++];
+                            if (w_desc.num_elements != expected_w || b_desc.num_elements != expected_b)
+                                return {nullptr, nullptr};
+                            float* w_ptr = weights + weight_offset;
+                            float* b_ptr = biases + bias_offset;
+                            weight_offset += expected_w;
+                            bias_offset += expected_b;
+                            return {w_ptr, b_ptr};
+                        };
+
+                        float* start_dw_w = nullptr;
+                        float* start_dw_b = nullptr;
+                        float* start_bn_s = nullptr;
+                        float* start_bn_b = nullptr;
+                        if (start_k > 0)
+                        {
+                            const std::size_t dw_elems =
+                                static_cast<std::size_t>(start_k) * start_k * in_c;
+                            const auto [dw_w, dw_b] = take_pair(dw_elems, in_c);
+                            const auto [bn_s, bn_b] = take_pair(in_c, in_c);
+                            if (!dw_w || !bn_s)
+                                return Fail(LoadStatus::SizeMismatch,
+                                              "MobileNetV4 UIB start depthwise tensor shape mismatch in .nk catalog");
+                            start_dw_w = dw_w;
+                            start_dw_b = dw_b;
+                            start_bn_s = bn_s;
+                            start_bn_b = bn_b;
+                        }
+
+                        const auto [expand_w, expand_b] = take_pair(
+                            static_cast<std::size_t>(expand_c) * in_c, expand_c);
+                        const auto [expand_bn_s, expand_bn_b] = take_pair(expand_c, expand_c);
+
+                        float* middle_dw_w = nullptr;
+                        float* middle_dw_b = nullptr;
+                        float* middle_bn_s = nullptr;
+                        float* middle_bn_b = nullptr;
+                        if (middle_k > 0)
+                        {
+                            const std::size_t dw_elems =
+                                static_cast<std::size_t>(middle_k) * middle_k * expand_c;
+                            const auto [dw_w, dw_b] = take_pair(dw_elems, expand_c);
+                            const auto [bn_s, bn_b] = take_pair(expand_c, expand_c);
+                            if (!dw_w || !bn_s)
+                                return Fail(LoadStatus::SizeMismatch,
+                                              "MobileNetV4 UIB middle depthwise tensor shape mismatch in .nk catalog");
+                            middle_dw_w = dw_w;
+                            middle_dw_b = dw_b;
+                            middle_bn_s = bn_s;
+                            middle_bn_b = bn_b;
+                        }
+
+                        const auto [proj_w, proj_b] =
+                            take_pair(static_cast<std::size_t>(out_c) * expand_c, out_c);
+                        const auto [proj_bn_s, proj_bn_b] = take_pair(out_c, out_c);
+
+                        if (!expand_w || !proj_w || !proj_bn_s)
+                            return Fail(LoadStatus::SizeMismatch,
+                                          "MobileNetV4 UIB tensor shape mismatch in .nk catalog");
+
+                        if (in_c != in_channels)
+                            return Fail(LoadStatus::SizeMismatch,
+                                          "MobileNetV4 UIB in_channels must match input channels in .nk");
+
+                        network->InitMobilenetV4UibLayer(i,
+                                                         arena,
+                                                         h,
+                                                         w,
+                                                         static_cast<int>(in_c),
+                                                         static_cast<int>(out_c),
+                                                         static_cast<int>(start_k),
+                                                         static_cast<int>(middle_k),
+                                                         static_cast<int>(layer.stride),
+                                                         layer.middle_dw_downsample != 0,
+                                                         layer.expand_ratio,
+                                                         start_dw_w,
+                                                         start_dw_b,
+                                                         start_bn_s,
+                                                         start_bn_b,
+                                                         expand_w,
+                                                         expand_b,
+                                                         expand_bn_s,
+                                                         expand_bn_b,
+                                                         middle_dw_w,
+                                                         middle_dw_b,
+                                                         middle_bn_s,
+                                                         middle_bn_b,
+                                                         proj_w,
+                                                         proj_b,
+                                                         proj_bn_s,
+                                                         proj_bn_b);
+
+                        MobileNetV4Uib shape_probe{};
+                        shape_probe.in_channels = static_cast<int>(in_c);
+                        shape_probe.out_channels = static_cast<int>(out_c);
+                        shape_probe.start_dw_kernel = static_cast<int>(start_k);
+                        shape_probe.middle_dw_kernel = static_cast<int>(middle_k);
+                        shape_probe.stride = static_cast<int>(layer.stride);
+                        shape_probe.middle_dw_downsample = layer.middle_dw_downsample != 0;
+                        shape_probe.expand_ratio = layer.expand_ratio;
+                        shape_probe.output_spatial(h, w, h, w);
+                        in_channels = out_c;
+                        break;
+                    }
+                    case NkFormat::LayerKind::ResNetBasicBlock:
+                    {
+                        const NkFormat::ResNetBasicBlockLayerDesc& layer = parsed.layers[i].resnet_basic_block;
+                        const uint32_t in_c = layer.in_channels;
+                        const uint32_t out_c = layer.out_channels;
+                        const bool identity = layer.stride == 1 && in_c == out_c;
+
+                        auto take_pair = [&](std::size_t expected_w,
+                                             std::size_t expected_b) -> std::pair<float*, float*>
+                        {
+                            const NkFormat::TensorDesc& w_desc = parsed.weight_tensors[weight_index++];
+                            const NkFormat::TensorDesc& b_desc = parsed.bias_tensors[bias_index++];
+                            if (w_desc.num_elements != expected_w || b_desc.num_elements != expected_b)
+                                return {nullptr, nullptr};
+                            float* w_ptr = weights + weight_offset;
+                            float* b_ptr = biases + bias_offset;
+                            weight_offset += expected_w;
+                            bias_offset += expected_b;
+                            return {w_ptr, b_ptr};
+                        };
+
+                        const std::size_t conv1_w_elems =
+                            static_cast<std::size_t>(out_c) * 3u * 3u * in_c;
+                        const auto [conv1_w, conv1_b] = take_pair(conv1_w_elems, out_c);
+                        const auto [bn1_s, bn1_b] = take_pair(out_c, out_c);
+                        const std::size_t conv2_w_elems =
+                            static_cast<std::size_t>(out_c) * 3u * 3u * out_c;
+                        const auto [conv2_w, conv2_b] = take_pair(conv2_w_elems, out_c);
+                        const auto [bn2_s, bn2_b] = take_pair(out_c, out_c);
+
+                        float* shortcut_w = nullptr;
+                        float* shortcut_b = nullptr;
+                        float* shortcut_bn_s = nullptr;
+                        float* shortcut_bn_b = nullptr;
+                        if (!identity)
+                        {
+                            const std::size_t shortcut_w_elems =
+                                static_cast<std::size_t>(out_c) * in_c;
+                            const auto [sc_w, sc_b] = take_pair(shortcut_w_elems, out_c);
+                            const auto [sc_bn_s, sc_bn_b] = take_pair(out_c, out_c);
+                            if (!sc_w || !sc_bn_s)
+                                return Fail(LoadStatus::SizeMismatch,
+                                              "ResNet basic block shortcut tensor shape mismatch in .nk catalog");
+                            shortcut_w = sc_w;
+                            shortcut_b = sc_b;
+                            shortcut_bn_s = sc_bn_s;
+                            shortcut_bn_b = sc_bn_b;
+                        }
+
+                        if (!conv1_w || !bn1_s || !conv2_w || !bn2_s)
+                            return Fail(LoadStatus::SizeMismatch,
+                                          "ResNet basic block tensor shape mismatch in .nk catalog");
+
+                        if (in_c != in_channels)
+                            return Fail(LoadStatus::SizeMismatch,
+                                          "ResNet basic block in_channels must match input channels in .nk");
+
+                        network->InitResNetBasicBlockLayer(i,
+                                                           arena,
+                                                           h,
+                                                           w,
+                                                           static_cast<int>(in_c),
+                                                           static_cast<int>(out_c),
+                                                           static_cast<int>(layer.stride),
+                                                           conv1_w,
+                                                           conv1_b,
+                                                           bn1_s,
+                                                           bn1_b,
+                                                           conv2_w,
+                                                           conv2_b,
+                                                           bn2_s,
+                                                           bn2_b,
+                                                           shortcut_w,
+                                                           shortcut_b,
+                                                           shortcut_bn_s,
+                                                           shortcut_bn_b);
+
+                        ResNetBasicBlock shape_probe{};
+                        shape_probe.in_channels = static_cast<int>(in_c);
+                        shape_probe.out_channels = static_cast<int>(out_c);
+                        shape_probe.stride = static_cast<int>(layer.stride);
+                        shape_probe.output_spatial(h, w, h, w);
+                        in_channels = out_c;
                         break;
                     }
                     case NkFormat::LayerKind::Flatten:
@@ -1185,6 +1595,28 @@ namespace NkLoader
                 case NkFormat::LayerKind::BatchNorm2d:
                     std::cout << "BatchNorm2d channels=" << layer.batch_norm.channels;
                     break;
+                case NkFormat::LayerKind::LayerNorm2d:
+                    std::cout << "LayerNorm2d channels=" << layer.layernorm2d.channels
+                              << " eps=" << layer.layernorm2d.eps;
+                    break;
+                case NkFormat::LayerKind::ConvNeXtV2Block:
+                    std::cout << "ConvNeXtV2Block channels=" << layer.convnextv2_block.channels
+                              << " eps=" << layer.convnextv2_block.eps;
+                    break;
+                case NkFormat::LayerKind::MobilenetV4Uib:
+                    std::cout << "MobilenetV4Uib in=" << layer.mobilenetv4_uib.in_channels
+                              << " out=" << layer.mobilenetv4_uib.out_channels
+                              << " start_dw=" << static_cast<uint32_t>(layer.mobilenetv4_uib.start_dw_kernel)
+                              << " middle_dw="
+                              << static_cast<uint32_t>(layer.mobilenetv4_uib.middle_dw_kernel)
+                              << " stride=" << static_cast<uint32_t>(layer.mobilenetv4_uib.stride)
+                              << " expand=" << layer.mobilenetv4_uib.expand_ratio;
+                    break;
+                case NkFormat::LayerKind::ResNetBasicBlock:
+                    std::cout << "ResNetBasicBlock in=" << layer.resnet_basic_block.in_channels
+                              << " out=" << layer.resnet_basic_block.out_channels
+                              << " stride=" << static_cast<uint32_t>(layer.resnet_basic_block.stride);
+                    break;
                 case NkFormat::LayerKind::Flatten:
                     std::cout << "Flatten";
                     break;
@@ -1265,6 +1697,29 @@ namespace NkLoader
                     break;
                 case NkFormat::LayerKind::BatchNorm2d:
                     std::cout << " channels=" << layer.batch_norm.channels;
+                    break;
+                case NkFormat::LayerKind::LayerNorm2d:
+                    std::cout << " channels=" << layer.layernorm2d.channels
+                              << " eps=" << layer.layernorm2d.eps;
+                    break;
+                case NkFormat::LayerKind::ConvNeXtV2Block:
+                    std::cout << " channels=" << layer.convnextv2_block.channels
+                              << " eps=" << layer.convnextv2_block.eps;
+                    break;
+                case NkFormat::LayerKind::MobilenetV4Uib:
+                    std::cout << " in=" << layer.mobilenetv4_uib.in_channels
+                              << " out=" << layer.mobilenetv4_uib.out_channels
+                              << " start_dw="
+                              << static_cast<uint32_t>(layer.mobilenetv4_uib.start_dw_kernel)
+                              << " middle_dw="
+                              << static_cast<uint32_t>(layer.mobilenetv4_uib.middle_dw_kernel)
+                              << " stride=" << static_cast<uint32_t>(layer.mobilenetv4_uib.stride)
+                              << " expand=" << layer.mobilenetv4_uib.expand_ratio;
+                    break;
+                case NkFormat::LayerKind::ResNetBasicBlock:
+                    std::cout << " in=" << layer.resnet_basic_block.in_channels
+                              << " out=" << layer.resnet_basic_block.out_channels
+                              << " stride=" << static_cast<uint32_t>(layer.resnet_basic_block.stride);
                     break;
                 case NkFormat::LayerKind::Flatten:
                     break;

@@ -10,7 +10,7 @@ netkit uses **GNU Make** as the primary build and test driver. **CMake** is opti
 make              # NETKIT_TARGET=cpu (default): netkit CLI + libnetkit.a
 make build-all    # cpu: netkit + examples + C API test binary; mcu/mpu: lib + examples + embedded_smoke
 make test         # C++ embedded regression + Python ONNX parity (cpu only)
-make test-cpp     # ./netkit test only (85 embedded .nk cases)
+make test-cpp     # ./netkit test only (91 embedded .nk cases)
 make test-c       # ./tests/test_c_api only
 make test-python  # ONNX parity (81) + AOT compile tests; requires libnetkit.a
 make clean        # remove objects and binaries
@@ -29,20 +29,23 @@ Embedded runtime-only builds: `make NETKIT_TARGET=mcu lib` or `make NETKIT_TARGE
 
 ## C++ regression (`.nk` loader + inference)
 
-Both `make test-cpp` and `make test-c` exercise the **same 85 embedded cases** via `run_all_tests()` / `nk_run_all_tests()`:
+Both `make test-cpp` and `make test-c` exercise the **same 91 embedded cases** via `run_all_tests()` / `nk_run_all_tests()`:
 
 | Suite | Cases | Source | Description |
 |-------|------:|--------|-------------|
 | Hand MLP | 9 | `models/test_mlp.nk`, `models/mlp_hand.nk` | Small hand-checked MLP forwards |
-| Hand CNN | 7 | `models/test_cnn.nk`, `models/cnn_4x4_single.nk`, `models/cnn_hand.nk` | Small hand-checked CNN forwards |
+| Hand CNN | 10 | `models/test_cnn.nk`, `models/cnn_4x4_single.nk`, `models/cnn_hand.nk`, `models/convnextv2_atto_block.nk`, `models/mobilenetv4_small_uib.nk`, `models/resnet18_basic_block.nk` | Hand-checked CNN + ConvNeXt V2 block + MobileNetV4 UIB + ResNet BasicBlock — [CONVNEXTV2.md](CONVNEXTV2.md), [MOBILENETV4.md](MOBILENETV4.md), [RESNET18.md](RESNET18.md) |
 | Speech KWS | 12 | `models/speech_kws.nk` | Trained Speech Commands CNN on 16×10 mel features — [SPEECH_KWS.md](SPEECH_KWS.md) |
 | MNIST MLP | 10 | `models/mnist_mlp.nk` | Trained 784→128→10 MLP (98.06% test acc) |
 | MNIST CNN | 10 | `models/mnist_cnn.nk` | Conv+pool+flatten+dense CNN (99.02% test acc) |
 | Op matrix | 17 | `models/op_matrix_mlp.nk`, `models/op_matrix_cnn.nk`, `models/cnn_extended_ops.nk`, `models/deep_mlp.nk` | Activation sweep, padded conv/pool, avg pool, batch norm |
+| MobileNetV4 Small | 1 | `models/mobilenetv4_small.nk` | Full MNv4-Conv-Small backbone (22 layers, 56×56×3) — [MOBILENETV4.md](MOBILENETV4.md) |
+| ResNet-18 | 1 | `models/resnet18.nk` | Full ResNet-18 backbone (13 layers, 56×56×3) — [RESNET18.md](RESNET18.md) |
+| ConvNeXt V2-Atto | 1 | `models/convnextv2_atto.nk` | Full ConvNeXt V2-Atto backbone (24 layers, 32×32×3) — [CONVNEXTV2.md](CONVNEXTV2.md) |
 | Fashion-MNIST MLP | 10 | `models/fashion_mnist_mlp.nk` | Trained 784→128→10 MLP |
 | Fashion-MNIST CNN | 10 | `models/fashion_mnist_cnn.nk` | Conv+pool+flatten+dense CNN |
 
-**Total: 85 passed** when healthy (`16` hand + `12` speech KWS + `10` MNIST MLP + `10` MNIST CNN + `17` op matrix + `20` Fashion-MNIST).
+**Total: 91 passed** when healthy (`19` hand + `12` speech KWS + `10` MNIST MLP + `10` MNIST CNN + `17` op matrix + `20` Fashion-MNIST + `1` MobileNetV4 Small + `1` ResNet-18 + `1` ConvNeXt V2-Atto).
 
 These tests validate **`.nk` parsing, weight loading, and forward inference** against reference outputs embedded in each file (`TCAS` section). See [NK_FORMAT.md](NK_FORMAT.md).
 
@@ -70,7 +73,7 @@ Models exercised: `test_mlp.nk`, `cnn_4x4_single.nk`, `mlp_hand.nk`, `cnn_hand.n
 
 | Harness | In CI job? | Models | What it checks |
 |---------|:----------:|--------|----------------|
-| `make test` / `make test-cpp` | Yes | `test_mlp.nk`, `mlp_hand.nk`, `test_cnn.nk`, `cnn_4x4_single.nk`, `cnn_hand.nk`, `speech_kws.nk` (+ MNIST / op-matrix / Fashion-MNIST) | Full `.nk` load + forward vs embedded TCAS expected outputs (**85 cases**) |
+| `make test` / `make test-cpp` | Yes | hand + speech KWS + MNIST + op-matrix + Fashion-MNIST + MobileNetV4 / ResNet-18 / ConvNeXt V2 backbones | Full `.nk` load + forward vs embedded TCAS expected outputs (**91 cases**) |
 | `make test-c` | Yes | same via `nk_run_all_tests()` | C API parity with C++ regression |
 | `tests/embedded_smoke` / `make test-embedded-smoke-matrix` | Yes | `test_mlp.nk`, `cnn_4x4_single.nk`, `speech_kws.nk` | Lean MCU/MPU runtime on host (`NETKIT_HOST_SMOKE=1`); CI job runs `./tools/run_embedded_smoke.sh` |
 
@@ -99,6 +102,9 @@ Host execution exercises linking and inference paths before on-device bring-up. 
 | [ONNX.md](ONNX.md) | Python converter + parity testing |
 | [MNIST.md](MNIST.md) | MNIST MLP model |
 | [MNIST_CNN.md](MNIST_CNN.md) | MNIST CNN model |
+| [RESNET18.md](RESNET18.md) | ResNet BasicBlock + full ResNet-18 backbone |
+| [CONVNEXTV2.md](CONVNEXTV2.md) | ConvNeXt V2 block + LayerNorm2d + full Atto backbone |
+| [MOBILENETV4.md](MOBILENETV4.md) | MobileNetV4 UIB + full MNv4-Conv-Small backbone |
 
 ## Arena buffers in tests
 
@@ -145,7 +151,7 @@ Entry: `./tests/test_c_api` (C23).
 | Parse architecture | MLP and CNN `.nk` metadata |
 | Model load / run | `nk_model_load` + `nk_model_run` on hand MLP/CNN |
 | Hybrid CNN | `nk_parse_architecture` + `nk_cnn_load` on `mnist_cnn.nk` |
-| Full regression | `nk_run_all_tests()` — same **85** embedded cases as C++ |
+| Full regression | `nk_run_all_tests()` — same **91** embedded cases as C++ |
 
 The C API regression path uses the same C++ runner internally (`nk_run_all_tests` → `run_all_tests`).
 

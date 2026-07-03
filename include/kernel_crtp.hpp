@@ -149,6 +149,16 @@ struct KernelBase
         Derived::BatchNorm2dForwardImpl(input, scale, bias, channels, output);
     }
 
+    static void LayerNorm2dForward(const Tensor& input,
+                                   const float* weight,
+                                   const float* bias,
+                                   int channels,
+                                   float eps,
+                                   Tensor& output)
+    {
+        Derived::LayerNorm2dForwardImpl(input, weight, bias, channels, eps, output);
+    }
+
     static bool FullyConnectedWithBias(const Tensor& input,
                                        const Tensor& weights,
                                        const Tensor& bias,

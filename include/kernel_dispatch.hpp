@@ -409,6 +409,18 @@ namespace detail
                 ReferenceKernel::BatchNorm2dForwardImpl(input, scale, bias, channels, output);
         }
 
+        static void LayerNorm2dForwardImpl(const Tensor& input,
+                                           const float* weight,
+                                           const float* bias,
+                                           int channels,
+                                           float eps,
+                                           Tensor& output)
+        {
+            (void)LayerFast{};
+            (void)VectorFast{};
+            ReferenceKernel::LayerNorm2dForwardImpl(input, weight, bias, channels, eps, output);
+        }
+
         static bool FullyConnectedWithBiasImpl(const Tensor& input,
                                                const Tensor& weights,
                                                const Tensor& bias,
