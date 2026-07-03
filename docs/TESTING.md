@@ -75,7 +75,9 @@ Models exercised: `test_mlp.nk`, `cnn_4x4_single.nk`. With `--optimize` / `optim
 
 Hand-checked models (`mlp_hand`, `cnn_hand`) are fully validated in **`make test`**. Embedded smoke uses the smaller `test_mlp` / `cnn_4x4_single` fixtures for fast firmware bring-up.
 
-## Hand FVP benchmarks (Cortex-M4F, optional)
+## Hand FVP benchmarks (Cortex-M4F, local only)
+
+**Not run in CI.** Optional bare-metal timing for `mlp_hand.nk` / `cnn_hand.nk` on your machine with an Arm FVP. Correctness is covered by **`make test`** (embedded TCAS cases).
 
 **Firmware (Arm FVP, DWT cycle counter):**
 
@@ -123,6 +125,23 @@ Builds four bare-metal images under `benchmarks/fvp/` (one model per ELF):
 Models: `mlp_hand.nk`, `cnn_hand.nk`. Compares generic reference kernels vs CMSIS-NN + CMSIS-DSP on Cortex-M4F.
 
 Toolchain CPU flags: `-mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard`.
+
+**Compile-only (no FVP run):**
+
+```bash
+./tools/compile_hand_fvp_firmware.sh   # builds four hand_fvp_bench_*.elf images
+```
+
+## Local firmware tooling (not CI)
+
+| Tool | Purpose |
+|------|---------|
+| `make test-embedded-smoke-matrix` | Host smoke for MCU/MPU + CMSIS profiles (**in CI**) |
+| `./tools/compile_cm4_cross.sh` | Local `arm-none-eabi-gcc` cross-compile of `libnetkit.a` (CM4 + CMSIS-NN) |
+| `./tools/compile_hand_fvp_firmware.sh` | Local cross-compile of hand FVP benchmark ELFs (reference + CMSIS, mlp + cnn) |
+| `make bench-hand-fvp` | Build + run hand FVP benchmark under `benchmarks/fvp/` (requires FVP binary) |
+
+There is **no** host MNIST kernel benchmark (`bench-mnist-kernels` was removed). There is **no** GitHub Actions FVP or `arm-none-eabi` cross-compile job — use the scripts above locally when bringing up firmware.
 
 ## Embedded smoke (MCU/MPU)
 
@@ -233,15 +252,17 @@ Requires **PyTorch** for training scripts (`pip install -e "python[train]"`). Nu
 
 ## CI
 
-GitHub Actions (`.github/workflows/ci.yml`):
+GitHub Actions runs a single **`build-and-test`** job on `ubuntu-latest` (`.github/workflows/ci.yml`). It uses the **host Clang** toolchain only — no Arm FVP simulation and no `arm-none-eabi` cross-compile.
+
+Steps (in order):
 
 1. `make cmsis-init` — fetch CMSIS-NN and CMSIS-DSP (submodule pins)
 2. `make` — default desktop build
-3. `make NETKIT_HOST_SMOKE=1 NETKIT_TARGET=mcu NETKIT_ARCH=CM4 NETKIT_CMSIS_NN=1 lib` — CMSIS-NN MCU link smoke
+3. `make NETKIT_HOST_SMOKE=1 NETKIT_TARGET=mcu NETKIT_ARCH=CM4 NETKIT_CMSIS_NN=1 NETKIT_CMSIS_DSP=1 lib` — CMSIS-NN + DSP MCU link smoke (host)
 4. `make NETKIT_CMSIS_DSP=1 test-cpp` — CMSIS-DSP parity
 5. `make test` — full C++ embedded + C API + Python ONNX parity + AOT compile + convert ops + trim-lib check
 6. Example and CLI smoke tests
-7. CMake configure + build smoke test
-8. `./tools/run_embedded_smoke.sh` — MCU/MPU + `NETKIT_ARCH` + CMSIS smoke matrix (last; rebuilds lean profiles)
+7. CMake configure + build smoke test (`./cmake-build/netkit test`)
+8. `./tools/run_embedded_smoke.sh` — MCU/MPU + `NETKIT_ARCH` + CMSIS host smoke matrix (last; rebuilds lean profiles)
 
-Model weights and embedded test cases are in the repo — no training in CI.
+Model weights and embedded test cases are in the repo — no training in CI. For local FVP timing or `arm-none-eabi` firmware builds, see [Local firmware tooling (not CI)](#local-firmware-tooling-not-ci).

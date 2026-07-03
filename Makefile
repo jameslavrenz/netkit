@@ -33,7 +33,8 @@
 #   make test-cpp     — ./netkit test (cpu only)
 #   make test-c       — ./tests/test_c_api (cpu only)
 #   make embedded-smoke — lean MCU/MPU smoke binary
-#   make test-embedded-smoke-matrix — MCU/MPU + NETKIT_ARCH + CMSIS profiles
+#   make test-embedded-smoke-matrix — MCU/MPU + NETKIT_ARCH + CMSIS profiles (host; in CI)
+#   make bench-hand-fvp — optional local FVP cycle timing (hand models; not CI)
 #   make examples     — infer_cpp + infer_c
 #   make export-mnist — regenerate MNIST model + cases (requires numpy)
 #   make clean        — remove build products

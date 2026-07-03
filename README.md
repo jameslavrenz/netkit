@@ -102,7 +102,9 @@ netkit/
 ├── tools/
 │   ├── export_mnist_mlp.py
 │   ├── export_mnist_cnn.py
-│   └── run_embedded_smoke.sh  # MCU/MPU + CMSIS profile matrix
+│   ├── run_embedded_smoke.sh       # MCU/MPU + CMSIS host smoke (CI)
+│   ├── compile_cm4_cross.sh        # local arm-none-eabi cross-compile
+│   └── compile_hand_fvp_firmware.sh # local FVP benchmark ELFs (compile-only)
 └── docs/                   # Guides and API reference
     ├── TESTING.md
     ├── GETTING_STARTED.md
@@ -143,7 +145,8 @@ make test         # C++ embedded regression + Python ONNX parity (cpu only)
 make test-cpp     # C++ embedded .nk cases only (73)
 make test-c       # C API regression only
 make test-python  # ONNX parity (69) + AOT compile tests (requires libnetkit.a)
-make test-embedded-smoke-matrix  # MCU/MPU + NETKIT_ARCH + CMSIS (host smoke)
+make test-embedded-smoke-matrix  # MCU/MPU + NETKIT_ARCH + CMSIS (host smoke; in CI)
+make bench-hand-fvp              # optional local FVP cycle timing (hand models; not CI)
 make example-cpp  # C++26 usage demo
 make example-c    # C23 usage demo
 make cmsis-init   # fetch CMSIS-NN + CMSIS-DSP (optional backends)
@@ -197,7 +200,9 @@ make test-embedded-smoke-matrix   # lean MCU/MPU profiles (see docs/TESTING.md)
 | C API | C23 | `tests/test_c_api.c` | Same 73 + API smoke tests |
 | ONNX parity | Python | `python/tests/test_onnx_parity.py` | 69 (.nk vs ONNX Runtime on bundled sidecars) |
 | AOT compile | Python | `python/tests/test_aot_compile.py` | Generates C/C++ from `.nk`, builds, runs vs reference |
-| Embedded smoke | C23 | `tests/embedded_smoke.c` | MCU/MPU load/run on hand MLP + CNN (`make test-embedded-smoke-matrix`) |
+| Embedded smoke | C23 | `tests/embedded_smoke.c` | MCU/MPU load/run on host (`make test-embedded-smoke-matrix`; in CI) |
+
+CI is a single GitHub Actions **`build-and-test`** job (host Clang only). FVP timing and `arm-none-eabi` cross-compile are **local** — see [TESTING.md](docs/TESTING.md).
 
 Regression cases are embedded in each bundled `.nk` file ([NK_FORMAT.md](docs/NK_FORMAT.md)).  
 MNIST MLP: [MNIST.md](docs/MNIST.md). MNIST CNN: [MNIST_CNN.md](docs/MNIST_CNN.md).
