@@ -53,6 +53,16 @@ python tools/write_resnet18_fixture.py
 
 Builder: `python/netkit/resnet18.py` (`build_resnet18_arch`). Embedded TCAS tolerance **1e-4** (deep-network float accumulation).
 
+### Pack PyTorch checkpoint
+
+```bash
+python -m netkit pack --arch resnet18 -o models/my_resnet18.nk --height 56 --width 56 --num-classes 10
+# or
+python tools/pack_resnet18_checkpoint.py -o models/my_resnet18.nk
+```
+
+Uses `python/netkit/torch_backbone_pack.py` to fold BatchNorm and map torchvision weights into composite BasicBlock tensors.
+
 ## Python
 
 ```python

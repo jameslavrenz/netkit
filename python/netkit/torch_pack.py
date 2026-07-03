@@ -30,7 +30,10 @@ def pack_conv2d(conv: nn.Conv2d) -> tuple[np.ndarray, np.ndarray]:
     """PyTorch Conv2d OIHW -> netkit [out, kh, kw, in] + bias [out]."""
     w = conv.weight.detach().cpu().numpy()
     w_nk = np.transpose(w, (0, 2, 3, 1)).astype(np.float32)
-    b = conv.bias.detach().cpu().numpy().astype(np.float32)
+    if conv.bias is not None:
+        b = conv.bias.detach().cpu().numpy().astype(np.float32)
+    else:
+        b = np.zeros(conv.out_channels, dtype=np.float32)
     return w_nk, b
 
 

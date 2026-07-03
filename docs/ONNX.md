@@ -46,11 +46,27 @@ At inference time, feed CNN inputs in **NHWC flatten order** (same as existing n
 
 - **Float32 only** — other ONNX `TensorProto` types are rejected
 - **No external data** — weights must be embedded in the `.onnx` file (`raw_data` or `float_data`)
-- **Linear graphs** — no branches, skip connections, or subgraphs
+- **Linear graphs** — no branches, skip connections, or subgraphs (unless **composite fusion** recognizes ResNet BasicBlock `Add` patterns; see below)
 - **Symmetric conv and pool padding only** — `pads` must match top/bottom and left/right
 - **Square kernels** — `Conv` / pool ops use one `kernel_shape` value for height and width
 
 PyTorch/TensorFlow exports often include `MatMul`, `Add`, `Reshape`, or extra `Pad` nodes — re-export or simplify the graph (e.g. `torch.onnx.export` on an `nn.Sequential`) or extend the converter.
+
+### Composite block fusion (ResNet BasicBlock)
+
+When `Add` nodes are present, `python -m netkit convert` (default) walks the ONNX graph in topological order and fuses matching **ResNet BasicBlock** subgraphs into layer kind `10` (`resnet_basic_block`). This unlocks residual CNNs without a primitive `Add` layer in `.nk`.
+
+Disable with:
+
+```bash
+python -m netkit convert model.onnx --no-fuse
+```
+
+Pack a torchvision checkpoint directly (no ONNX round-trip):
+
+```bash
+python -m netkit pack --arch resnet18 -o models/my_resnet18.nk --height 56 --width 56 --num-classes 10
+```
 
 ## Testing
 

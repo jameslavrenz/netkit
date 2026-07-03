@@ -18,6 +18,18 @@ def main(argv: list[str] | None = None) -> int:
     convert = sub.add_parser("convert", help="Convert ONNX to .nk")
     convert.add_argument("input", help="Path to .onnx model")
     convert.add_argument("-o", "--output", help="Output .nk path")
+    convert.add_argument(
+        "--no-fuse",
+        action="store_true",
+        help="Disable composite block fusion (ResNet BasicBlock from Add nodes)",
+    )
+
+    pack = sub.add_parser("pack", help="Pack PyTorch backbone checkpoint to .nk")
+    pack.add_argument("--arch", choices=("resnet18",), required=True)
+    pack.add_argument("-o", "--output", required=True, help="Output .nk path")
+    pack.add_argument("--height", type=int, default=56)
+    pack.add_argument("--width", type=int, default=56)
+    pack.add_argument("--num-classes", type=int, default=10)
 
     inspect = sub.add_parser("inspect", help="Print .nk header and tensor catalog")
     inspect.add_argument("input", help="Path to .nk model")
@@ -63,8 +75,61 @@ def main(argv: list[str] | None = None) -> int:
         if input_path.suffix.lower() != ".onnx":
             print(f"Unsupported input type: {input_path.suffix} (expected .onnx)", file=sys.stderr)
             return 1
-        out = convert_onnx_to_nk(input_path, args.output)
+        out = convert_onnx_to_nk(input_path, args.output, fuse_composite=not args.no_fuse)
         print(f"Wrote {out}")
+        return 0
+
+    if args.command == "pack":
+        try:
+            import torch
+            from torchvision.models import resnet18
+        except ImportError:
+            print('pack requires torch/torchvision: pip install -e "python[train]" torchvision', file=sys.stderr)
+            return 1
+        import numpy as np
+        from .arch_writer import write_nk_from_arch
+        from .reference_forward import forward_cnn
+        from .torch_backbone_pack import pack_resnet18_from_torch
+        from .torch_pack import assert_packed_matches_reference
+        from .writer import RegressionCase, RegressionSuite
+
+        if args.arch != "resnet18":
+            print(f"unsupported arch: {args.arch}", file=sys.stderr)
+            return 1
+        model = resnet18(weights=None)
+        model.eval()
+        if args.num_classes != model.fc.out_features:
+            model.fc = torch.nn.Linear(model.fc.in_features, args.num_classes)
+        arch, weights = pack_resnet18_from_torch(
+            model,
+            height=args.height,
+            width=args.width,
+            num_classes=args.num_classes,
+        )
+
+        def torch_forward(inp: np.ndarray) -> np.ndarray:
+            x = torch.from_numpy(
+                inp.reshape(1, args.height, args.width, 3).transpose(0, 3, 1, 2).copy()
+            )
+            with torch.no_grad():
+                logits = model(x)
+            return logits.cpu().numpy().reshape(-1)
+
+        assert_packed_matches_reference(arch, weights, torch_forward, seed=42, atol=1e-4)
+        rng = np.random.default_rng(0)
+        inp = rng.standard_normal(args.height * args.width * 3, dtype=np.float32) * 0.1
+        expected = forward_cnn(inp, arch, weights)
+        out = Path(args.output)
+        write_nk_from_arch(
+            arch,
+            weights,
+            out,
+            RegressionSuite(
+                tolerance=1e-4,
+                cases=[RegressionCase(name="ResNet-18 packed checkpoint", input=inp, expected=expected)],
+            ),
+        )
+        print(f"Wrote {out} ({len(arch['layers'])} layers, {weights.nbytes} bytes)")
         return 0
 
     if args.command == "inspect":
