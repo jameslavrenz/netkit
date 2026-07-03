@@ -607,6 +607,35 @@ nk_status_t nk_cnn_init_conv_layer(nk_cnn_t* cnn,
     return NK_OK;
 }
 
+nk_status_t nk_cnn_init_depthwise_conv_layer(nk_cnn_t* cnn,
+                                             uint32_t layer_idx,
+                                             int kernel_h,
+                                             int kernel_w,
+                                             int stride,
+                                             int channels,
+                                             float* weights,
+                                             float* bias,
+                                             nk_conv_activation_t activation,
+                                             float leaky_alpha,
+                                             int pad_h,
+                                             int pad_w)
+{
+    if (!nk_cnn_is_valid(cnn))
+        return NK_ERR_NOT_INITIALIZED;
+    CnnPtr(cnn)->net->InitDepthwiseConvLayer(layer_idx,
+                                             kernel_h,
+                                             kernel_w,
+                                             stride,
+                                             channels,
+                                             weights,
+                                             bias,
+                                             ToCnnActivation(activation),
+                                             leaky_alpha,
+                                             pad_h,
+                                             pad_w);
+    return NK_OK;
+}
+
 nk_status_t nk_cnn_init_pool_layer(nk_cnn_t* cnn,
                                    uint32_t layer_idx,
                                    int pool_size,
@@ -642,6 +671,164 @@ nk_status_t nk_cnn_init_batch_norm_layer(nk_cnn_t* cnn,
     if (!nk_cnn_is_valid(cnn))
         return NK_ERR_NOT_INITIALIZED;
     CnnPtr(cnn)->net->InitBatchNormLayer(layer_idx, channels, scale, bias);
+    return NK_OK;
+}
+
+nk_status_t nk_cnn_init_layernorm_layer(nk_cnn_t* cnn,
+                                        uint32_t layer_idx,
+                                        int channels,
+                                        float eps,
+                                        float* weight,
+                                        float* bias)
+{
+    if (!nk_cnn_is_valid(cnn))
+        return NK_ERR_NOT_INITIALIZED;
+    CnnPtr(cnn)->net->InitLayerNormLayer(layer_idx, channels, eps, weight, bias);
+    return NK_OK;
+}
+
+nk_status_t nk_cnn_init_convnextv2_block_layer(nk_cnn_t* cnn,
+                                                 nk_arena_t* arena,
+                                                 uint32_t layer_idx,
+                                                 uint32_t spatial_h,
+                                                 uint32_t spatial_w,
+                                                 int channels,
+                                                 float eps,
+                                                 float* dw_weights,
+                                                 float* dw_bias,
+                                                 float* ln_weight,
+                                                 float* ln_bias,
+                                                 float* pw1_weight,
+                                                 float* pw1_bias,
+                                                 float* grn_gamma,
+                                                 float* grn_beta,
+                                                 float* pw2_weight,
+                                                 float* pw2_bias)
+{
+    if (!nk_cnn_is_valid(cnn) || !arena)
+        return NK_ERR_INVALID_ARGUMENT;
+    CnnPtr(cnn)->net->InitConvNeXtV2BlockLayer(layer_idx,
+                                               *ArenaPtr(arena),
+                                               spatial_h,
+                                               spatial_w,
+                                               channels,
+                                               eps,
+                                               dw_weights,
+                                               dw_bias,
+                                               ln_weight,
+                                               ln_bias,
+                                               pw1_weight,
+                                               pw1_bias,
+                                               grn_gamma,
+                                               grn_beta,
+                                               pw2_weight,
+                                               pw2_bias);
+    return NK_OK;
+}
+
+nk_status_t nk_cnn_init_mobilenetv4_uib_layer(nk_cnn_t* cnn,
+                                              nk_arena_t* arena,
+                                              uint32_t layer_idx,
+                                              uint32_t spatial_h,
+                                              uint32_t spatial_w,
+                                              int in_channels,
+                                              int out_channels,
+                                              int start_dw_kernel,
+                                              int middle_dw_kernel,
+                                              int stride,
+                                              int middle_dw_downsample,
+                                              float expand_ratio,
+                                              float* start_dw_weights,
+                                              float* start_dw_bias,
+                                              float* start_bn_scale,
+                                              float* start_bn_bias,
+                                              float* expand_weights,
+                                              float* expand_bias,
+                                              float* expand_bn_scale,
+                                              float* expand_bn_bias,
+                                              float* middle_dw_weights,
+                                              float* middle_dw_bias,
+                                              float* middle_bn_scale,
+                                              float* middle_bn_bias,
+                                              float* proj_weights,
+                                              float* proj_bias,
+                                              float* proj_bn_scale,
+                                              float* proj_bn_bias)
+{
+    if (!nk_cnn_is_valid(cnn) || !arena)
+        return NK_ERR_INVALID_ARGUMENT;
+    CnnPtr(cnn)->net->InitMobilenetV4UibLayer(layer_idx,
+                                              *ArenaPtr(arena),
+                                              spatial_h,
+                                              spatial_w,
+                                              in_channels,
+                                              out_channels,
+                                              start_dw_kernel,
+                                              middle_dw_kernel,
+                                              stride,
+                                              middle_dw_downsample != 0,
+                                              expand_ratio,
+                                              start_dw_weights,
+                                              start_dw_bias,
+                                              start_bn_scale,
+                                              start_bn_bias,
+                                              expand_weights,
+                                              expand_bias,
+                                              expand_bn_scale,
+                                              expand_bn_bias,
+                                              middle_dw_weights,
+                                              middle_dw_bias,
+                                              middle_bn_scale,
+                                              middle_bn_bias,
+                                              proj_weights,
+                                              proj_bias,
+                                              proj_bn_scale,
+                                              proj_bn_bias);
+    return NK_OK;
+}
+
+nk_status_t nk_cnn_init_resnet_basic_block_layer(nk_cnn_t* cnn,
+                                                 nk_arena_t* arena,
+                                                 uint32_t layer_idx,
+                                                 uint32_t spatial_h,
+                                                 uint32_t spatial_w,
+                                                 int in_channels,
+                                                 int out_channels,
+                                                 int stride,
+                                                 float* conv1_weights,
+                                                 float* conv1_bias,
+                                                 float* bn1_scale,
+                                                 float* bn1_bias,
+                                                 float* conv2_weights,
+                                                 float* conv2_bias,
+                                                 float* bn2_scale,
+                                                 float* bn2_bias,
+                                                 float* shortcut_weights,
+                                                 float* shortcut_bias,
+                                                 float* shortcut_bn_scale,
+                                                 float* shortcut_bn_bias)
+{
+    if (!nk_cnn_is_valid(cnn) || !arena)
+        return NK_ERR_INVALID_ARGUMENT;
+    CnnPtr(cnn)->net->InitResNetBasicBlockLayer(layer_idx,
+                                               *ArenaPtr(arena),
+                                               spatial_h,
+                                               spatial_w,
+                                               in_channels,
+                                               out_channels,
+                                               stride,
+                                               conv1_weights,
+                                               conv1_bias,
+                                               bn1_scale,
+                                               bn1_bias,
+                                               conv2_weights,
+                                               conv2_bias,
+                                               bn2_scale,
+                                               bn2_bias,
+                                               shortcut_weights,
+                                               shortcut_bias,
+                                               shortcut_bn_scale,
+                                               shortcut_bn_bias);
     return NK_OK;
 }
 

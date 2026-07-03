@@ -131,9 +131,14 @@ Both suites exercise the same **91 embedded `.nk` inference cases** (19 hand-che
 | `CNNNetwork::IsValid` | `nk_cnn_is_valid` |
 | `CNNNetwork` constructor | `nk_cnn_create` |
 | `InitConvLayer` | `nk_cnn_init_conv_layer` |
+| `InitDepthwiseConvLayer` | `nk_cnn_init_depthwise_conv_layer` |
 | `InitPoolLayer` | `nk_cnn_init_pool_layer` |
 | `InitAvgPoolLayer` | `nk_cnn_init_avg_pool_layer` |
 | `InitBatchNormLayer` | `nk_cnn_init_batch_norm_layer` |
+| `InitLayerNormLayer` | `nk_cnn_init_layernorm_layer` |
+| `InitConvNeXtV2BlockLayer` | `nk_cnn_init_convnextv2_block_layer` |
+| `InitMobilenetV4UibLayer` | `nk_cnn_init_mobilenetv4_uib_layer` |
+| `InitResNetBasicBlockLayer` | `nk_cnn_init_resnet_basic_block_layer` |
 | `InitFlattenLayer` | `nk_cnn_init_flatten_layer` |
 | `InitDenseLayer` | `nk_cnn_init_dense_layer` |
 | `InitActivationBuffers` | `nk_cnn_init_activation_buffers` |

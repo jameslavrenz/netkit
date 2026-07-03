@@ -212,10 +212,13 @@ Weight matrix shape per layer: `[out_features, in_features]` row-major (CMSIS-NN
 
 ## CNNNetwork (`cnn.hpp`)
 
-CNN pipelines support mixed blocks: conv2d, depthwise_conv2d, max_pool2d, avg_pool2d, batch_norm2d, convnextv2_block, mobilenetv4_uib, flatten, and dense (classification head). See [NK_FORMAT.md](NK_FORMAT.md), [CONVNEXTV2.md](CONVNEXTV2.md), and [MOBILENETV4.md](MOBILENETV4.md).
+CNN pipelines support mixed blocks: conv2d, depthwise_conv2d, max_pool2d, avg_pool2d, batch_norm2d, layernorm2d, convnextv2_block, mobilenetv4_uib, resnet_basic_block, flatten, and dense (classification head). See [NK_FORMAT.md](NK_FORMAT.md), [CONVNEXTV2.md](CONVNEXTV2.md), [MOBILENETV4.md](MOBILENETV4.md), and [RESNET18.md](RESNET18.md).
 
 ```cpp
-enum class CnnBlockType { Conv2D, MaxPool2D, AvgPool2D, BatchNorm2d, Flatten, Dense };
+enum class CnnBlockType {
+    Conv2D, DepthwiseConv2D, MaxPool2D, AvgPool2D, BatchNorm2d, LayerNorm2d,
+    Flatten, Dense, ConvNeXtV2Block, MobilenetV4Uib, ResNetBasicBlock
+};
 
 class CNNNetwork {
 public:
@@ -236,9 +239,27 @@ public:
                        float leaky_alpha = 0.01f,
                        int pad_h = 0,
                        int pad_w = 0);
+    void InitDepthwiseConvLayer(uint32_t layer_idx,
+                                int kernel_h,
+                                int kernel_w,
+                                int stride,
+                                int channels,
+                                float* weights,
+                                float* bias,
+                                ConvActivationType activation,
+                                float leaky_alpha = 0.01f,
+                                int pad_h = 0,
+                                int pad_w = 0);
     void InitPoolLayer(uint32_t layer_idx, int pool_size, int stride, int pad_h = 0, int pad_w = 0);
     void InitAvgPoolLayer(uint32_t layer_idx, int pool_size, int stride, int pad_h = 0, int pad_w = 0);
     void InitBatchNormLayer(uint32_t layer_idx, int channels, float* scale, float* bias);
+    void InitLayerNormLayer(uint32_t layer_idx, int channels, float eps, float* weight, float* bias);
+    void InitConvNeXtV2BlockLayer(uint32_t layer_idx, Arena& arena, uint32_t spatial_h, uint32_t spatial_w,
+                                  int channels, float eps, /* weight pointers */);
+    void InitMobilenetV4UibLayer(uint32_t layer_idx, Arena& arena, uint32_t spatial_h, uint32_t spatial_w,
+                                 int in_channels, int out_channels, /* UIB config + weights */);
+    void InitResNetBasicBlockLayer(uint32_t layer_idx, Arena& arena, uint32_t spatial_h, uint32_t spatial_w,
+                                   int in_channels, int out_channels, int stride, /* conv/BN weights */);
     void InitFlattenLayer(uint32_t layer_idx);
     void InitDenseLayer(uint32_t layer_idx, const Tensor& W, const Tensor& b,
                         ActivationType activation, float leaky_alpha = 0.01f);

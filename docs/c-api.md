@@ -113,6 +113,11 @@ Mirror C++ `DataType`, `ActivationType`, and `ConvActivationType`. **Only `NK_DT
 | `NK_CNN_BLOCK_DENSE` | `Dense` |
 | `NK_CNN_BLOCK_AVG_POOL2D` | `AvgPool2D` |
 | `NK_CNN_BLOCK_BATCH_NORM2D` | `BatchNorm2d` |
+| `NK_CNN_BLOCK_DEPTHWISE_CONV2D` | `DepthwiseConv2D` |
+| `NK_CNN_BLOCK_LAYERNORM2D` | `LayerNorm2d` |
+| `NK_CNN_BLOCK_CONVNEXTV2_BLOCK` | `ConvNeXtV2Block` |
+| `NK_CNN_BLOCK_MOBILENETV4_UIB` | `MobilenetV4Uib` |
+| `NK_CNN_BLOCK_RESNET_BASIC_BLOCK` | `ResNetBasicBlock` |
 
 Used when building CNN pipelines manually. File-loaded models (`nk_cnn_load`) configure blocks from the `.nk` layer list.
 
@@ -283,9 +288,14 @@ Full signatures are in [`netkit.h`](../include/netkit.h). Each group mirrors the
 | `nk_cnn_create` | `CNNNetwork` constructor |
 | `nk_cnn_is_valid` | `CNNNetwork::IsValid` |
 | `nk_cnn_init_conv_layer` | `CNNNetwork::InitConvLayer` |
+| `nk_cnn_init_depthwise_conv_layer` | `CNNNetwork::InitDepthwiseConvLayer` |
 | `nk_cnn_init_pool_layer` | `CNNNetwork::InitPoolLayer` |
 | `nk_cnn_init_avg_pool_layer` | `CNNNetwork::InitAvgPoolLayer` |
 | `nk_cnn_init_batch_norm_layer` | `CNNNetwork::InitBatchNormLayer` |
+| `nk_cnn_init_layernorm_layer` | `CNNNetwork::InitLayerNormLayer` |
+| `nk_cnn_init_convnextv2_block_layer` | `CNNNetwork::InitConvNeXtV2BlockLayer` |
+| `nk_cnn_init_mobilenetv4_uib_layer` | `CNNNetwork::InitMobilenetV4UibLayer` |
+| `nk_cnn_init_resnet_basic_block_layer` | `CNNNetwork::InitResNetBasicBlockLayer` |
 | `nk_cnn_init_flatten_layer` | `CNNNetwork::InitFlattenLayer` |
 | `nk_cnn_init_dense_layer` | `CNNNetwork::InitDenseLayer` |
 | `nk_cnn_init_activation_buffers` | `CNNNetwork::InitActivationBuffers` |
@@ -336,7 +346,7 @@ For **embedded** models (AOT firmware), pass the static `.nk` byte array to `nk_
 | `nk_parse_architecture_memory` | `NkLoader::ParseBuffer` + `FillArchInfo` | Parse embedded blob without a file |
 | `nk_arch_print` | `NkLoader::PrintNetworkSummary` | Boxed summary to stdout |
 | `nk_mlp_load` | `NkLoader::LoadMLP` | |
-| `nk_cnn_load` | `NkLoader::LoadCNN` | Conv / max & avg pool / batch norm / flatten / dense |
+| `nk_cnn_load` | `NkLoader::LoadCNN` | All layer kinds including composite blocks |
 | `nk_model_load_auto` | `NkLoader::Load` | Dispatches by network kind |
 
 ```c

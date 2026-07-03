@@ -372,6 +372,15 @@ static void TestCnnExtendedOpsLoad(void)
     ExpectTrue(output_count == 2, "cnn extended ops output count");
 }
 
+static void TestCompositeBlockLoad(void)
+{
+    printf("\n--- composite block load (C API) ---\n");
+
+    const nk_test_summary_t summary = nk_run_model_tests("models/resnet18_basic_block.nk");
+    ExpectTrue(summary.failed == 0, "resnet basic block regression via C API");
+    ExpectTrue(summary.passed >= 1, "resnet basic block passed count");
+}
+
 static void TestRegression(void)
 {
 #if defined(NETKIT_DESKTOP)
@@ -409,6 +418,7 @@ int main(void)
     TestManualMlpActivationBuffers();
     TestCnnLoadHasBuffers();
     TestCnnExtendedOpsLoad();
+    TestCompositeBlockLoad();
     TestRegression();
 
     printf("\n============================\n");
