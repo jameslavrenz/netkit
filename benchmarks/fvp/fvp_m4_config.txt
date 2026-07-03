@@ -1,0 +1,12 @@
+# FVP config for hand_fvp_bench (semihosting + quiet telnet).
+fvp_mps2.mps2_visualisation.disable-visualisation=1
+fvp_mps2.telnetterminal0.start_telnet=0
+fvp_mps2.telnetterminal1.start_telnet=0
+fvp_mps2.telnetterminal2.start_telnet=0
+armcortexm4ct.semihosting-enable=1
+armcortexm4ct.semihosting-Thumb_SVC=0xAB
+# Match linker_cm4.ld (512 KiB RAM @ 0x20000000, _estack = 0x20080000).
+armcortexm4ct.semihosting-heap_base=0x0
+armcortexm4ct.semihosting-heap_limit=0x20077000
+armcortexm4ct.semihosting-stack_base=0x20080000
+armcortexm4ct.semihosting-stack_limit=0x20078000

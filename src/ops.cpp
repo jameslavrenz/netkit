@@ -21,7 +21,7 @@ namespace Ops
     {
         if (!IsElementwiseValid(A, B))
         {
-            std::cout << "Mul error: shape mismatch\n";
+            NETKIT_LOG("Mul error: shape mismatch\n");
             return;
         }
 
@@ -51,7 +51,7 @@ namespace Ops
     {
         if (!CheckSameShape2D(A, B, C))
         {
-            std::cout << "Shape mismatch in Add()\n";
+            NETKIT_LOG("Shape mismatch in Add()\n");
             return;
         }
 
@@ -76,7 +76,7 @@ namespace Ops
     {
         if (!CheckSameShapeND(A, B, C))
         {
-            std::cout << "Shape mismatch in AddND()\n";
+            NETKIT_LOG("Shape mismatch in AddND()\n");
             return;
         }
 
@@ -93,7 +93,7 @@ namespace Ops
     {
         if (!IsMatMulValid(A, B, C))
         {
-            std::cout << "MatMul shape mismatch\n";
+            NETKIT_LOG("MatMul shape mismatch\n");
             return;
         }
 
@@ -118,7 +118,7 @@ namespace Ops
     {
         if (!IsElementwiseValidND(A, B, C))
         {
-            std::cout << "MulND shape mismatch\n";
+            NETKIT_LOG("MulND shape mismatch\n");
             return;
         }
 
@@ -143,7 +143,7 @@ namespace Ops
     {
         if (!IsUnaryOpValid(A, C))
         {
-            std::cout << "ReLU shape mismatch\n";
+            NETKIT_LOG("ReLU shape mismatch\n");
             return;
         }
 
@@ -154,7 +154,7 @@ namespace Ops
     {
         if (!IsUnaryOpValid(A, C))
         {
-            std::cout << "Sigmoid shape mismatch\n";
+            NETKIT_LOG("Sigmoid shape mismatch\n");
             return;
         }
 
@@ -165,7 +165,7 @@ namespace Ops
     {
         if (!IsUnaryOpValid(A, C))
         {
-            std::cout << "Tanh shape mismatch\n";
+            NETKIT_LOG("Tanh shape mismatch\n");
             return;
         }
 
@@ -176,7 +176,7 @@ namespace Ops
     {
         if (!IsUnaryOpValid(A, C))
         {
-            std::cout << "LeakyReLU shape mismatch\n";
+            NETKIT_LOG("LeakyReLU shape mismatch\n");
             return;
         }
 
@@ -187,7 +187,7 @@ namespace Ops
     {
         if (!IsUnaryOpValid(A, C))
         {
-            std::cout << "ReLU6 shape mismatch\n";
+            NETKIT_LOG("ReLU6 shape mismatch\n");
             return;
         }
 

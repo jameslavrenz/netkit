@@ -83,3 +83,9 @@ jobs:
 
       - name: CM4 compile-only (CMSIS-NN)
         run: ./tools/compile_cm4_cross.sh
+
+      - name: CM4 FVP benchmark firmware (compile-only)
+        run: |
+          make cmsis-init
+          PYTHONPATH=python python3 tools/embed_hand_fvp_data.py
+          make -C benchmarks/fvp all-models

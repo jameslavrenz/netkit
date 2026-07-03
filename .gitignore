@@ -32,4 +32,9 @@ cmake-build/
 cmake-build-*/
 build/
 
+# FVP benchmark generated artifacts
+benchmarks/fvp/hand_fvp_embedded.c
+benchmarks/fvp/*.elf
+fvp-bench-results.txt
+
 /data/

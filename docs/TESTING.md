@@ -63,6 +63,65 @@ Models exercised: `test_mlp.nk`, `cnn_4x4_single.nk`. With `--optimize` / `optim
 
 `python/tests/test_nk_optimize.py` covers individual graph passes (BN folding, conv+BN fusion, linear dense merge) with numeric checks against the reference forward pass.
 
+## MNIST kernel benchmarks
+
+**Desktop (host CPU, `-O2`):**
+
+```bash
+make bench-mnist-kernels
+```
+
+Compares reference kernels vs CMSIS-DSP vector/matrix ops on `models/mnist_mlp.nk` and `models/mnist_cnn.nk` (milliseconds, host timer).
+
+**Cortex-M4F firmware (Arm FVP, DWT cycle counter):**
+
+```bash
+make bench-hand-fvp
+```
+
+Requires `gcc-arm-none-eabi` with C++ support, hand models (`make export-nk`), and an Arm **Cortex-M FVP** binary (e.g. `FVP_MPS2_Cortex-M4`). Set `NETKIT_FVP=/path/to/FVP_MPS2_Cortex-M4` if it is not on `PATH`.
+
+**Per-run wall clock:** `NETKIT_FVP_HAND_TIMELIMIT` (default **60** seconds). This is separate from `NETKIT_FVP_TIMELIMIT` so a stray local export does not override the cap.
+
+**GitHub Actions (recommended):** The `Hand FVP Benchmark` workflow (`.github/workflows/fvp-bench.yml`) runs on `ubuntu-latest` with native Linux FVP via Arm cmsis-actions (vcpkg + MDK Community license). Trigger manually from the Actions tab or push changes under `benchmarks/fvp/`. Results are uploaded as an artifact (`fvp-bench-results`).
+
+**macOS toolchain (recommended):** Homebrew’s `arm-none-eabi-gcc` formula lacks a full bare-metal C++ stdlib — use Arm’s official package instead:
+
+```bash
+brew install --cask gcc-arm-embedded
+export PATH="/Applications/ArmGNUToolchain/15.2.rel1/arm-none-eabi/bin:$PATH"
+```
+
+(Adjust the version directory if the cask installs a newer release.)
+
+**macOS FVP:** Arm FVPs are Linux/Windows native. On Mac, use Docker via [Arm-Examples/FVPs-on-Mac](https://github.com/Arm-Examples/FVPs-on-Mac):
+
+```bash
+# 1) Start Docker Desktop
+open -a Docker
+
+# 2) Build FVP wrappers (one-time)
+git clone https://github.com/Arm-Examples/FVPs-on-Mac.git ~/FVPs-on-Mac
+cd ~/FVPs-on-Mac && ./build.sh
+
+# 3) Add wrappers to PATH (also add to ~/.zshrc)
+export PATH="$HOME/FVPs-on-Mac/bin:$PATH"
+export NETKIT_FVP="$HOME/FVPs-on-Mac/bin/FVP_MPS2_Cortex-M4"
+```
+
+Then from the netkit repo: `make bench-hand-fvp`.
+
+Builds two bare-metal images under `benchmarks/fvp/`:
+
+| Image | Flags |
+|-------|--------|
+| `hand_fvp_bench_ref.elf` | `NETKIT_TARGET=mcu`, `NETKIT_ARCH=CM4`, reference kernels, 64 KiB arena |
+| `hand_fvp_bench_cmsis.elf` | same + `NETKIT_CMSIS_NN=1`, `NETKIT_CMSIS_DSP=1` |
+
+Models: `mlp_hand.nk`, `cnn_hand.nk`. Compares generic reference kernels vs CMSIS-NN + CMSIS-DSP on Cortex-M4F.
+
+Toolchain CPU flags: `-mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard`. CI cross-compiles both ELFs in the `cm4-cross-compile` job (FVP run is optional locally).
+
 ## Embedded smoke (MCU/MPU)
 
 `tests/embedded_smoke.c` validates the **lean firmware runtime** without `NETKIT_DESKTOP` APIs (`nk_run_all_tests`, CLI, etc.). It uses a caller-owned static arena (`NK_ARENA_DEFAULT_CAPACITY`), parses two hand models, and runs `nk_model_load` + `nk_model_run` on `test_mlp.nk` and `cnn_4x4_single.nk`.

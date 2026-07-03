@@ -3,7 +3,9 @@
 
 #include <cstdio>
 #include <cstring>
+#ifndef NETKIT_DISABLE_IOSTREAM
 #include <iostream>
+#endif
 
 namespace NkLoader
 {
@@ -715,6 +717,7 @@ namespace NkLoader
 
         void PrintTensorDesc(const char* label, const NkFormat::TensorDesc& desc)
         {
+#ifndef NETKIT_DISABLE_IOSTREAM
             std::cout << "  " << label << ": rank=" << static_cast<uint32_t>(desc.rank)
                       << " dtype=" << NkFormat::DTypeName(desc.dtype) << " shape=[";
             for (uint32_t i = 0; i < desc.rank; ++i)
@@ -724,6 +727,10 @@ namespace NkLoader
                     std::cout << ", ";
             }
             std::cout << "] elements=" << desc.num_elements << "\n";
+#else
+            (void)label;
+            (void)desc;
+#endif
         }
     }
 
@@ -1040,6 +1047,7 @@ namespace NkLoader
 
     void PrintNetworkSummary(const char* nk_path, const ParsedModel& model)
     {
+#ifndef NETKIT_DISABLE_IOSTREAM
         char name[kMaxPathLen] = {};
         ModelNameFromPath(nk_path, name, sizeof(name));
 
@@ -1101,10 +1109,15 @@ namespace NkLoader
         std::cout << "Weight floats  : " << (model.header.weights_bytes + model.header.biases_bytes) / sizeof(float)
                   << "\n";
         std::cout << "=====================================================\n";
+#else
+        (void)nk_path;
+        (void)model;
+#endif
     }
 
     void PrintHeader(const char* nk_path, const ParsedModel& model)
     {
+#ifndef NETKIT_DISABLE_IOSTREAM
         const NkFormat::FileHeader& header = model.header;
 
         std::cout << "netkit binary model (.nk)\n";
@@ -1180,6 +1193,10 @@ namespace NkLoader
                 PrintTensorDesc(label, model.bias_tensors[i]);
             }
         }
+#else
+        (void)nk_path;
+        (void)model;
+#endif
     }
 
     LoadResult LoadMLP(const char* nk_path,

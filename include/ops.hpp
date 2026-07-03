@@ -1,7 +1,7 @@
 #pragma once
 #include <cstdint>
-#include <iostream>
 #include <cmath>
+#include "netkit_log.hpp"
 #include "tensor.hpp"
 
 namespace Ops

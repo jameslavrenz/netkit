@@ -2,7 +2,7 @@
 #include "arena.hpp"
 #include "tensor.hpp"
 #include <initializer_list>
-#include <iostream>
+#include "netkit_log.hpp"
 #include <span>
 
 namespace TensorFactory

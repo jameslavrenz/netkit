@@ -1,15 +1,22 @@
 #include "tensor_factory.hpp"
+#ifndef NETKIT_DISABLE_IOSTREAM
 #include <iomanip>
+#endif
 
 namespace TensorFactory
 {
     void Print(const Tensor& t)
     {
+#ifndef NETKIT_DISABLE_IOSTREAM
         PrintLabeled("Tensor", t);
+#else
+        (void)t;
+#endif
     }
 
     void PrintLabeled(const char* label, const Tensor& t)
     {
+#ifndef NETKIT_DISABLE_IOSTREAM
         std::cout << label << ": shape=[";
 
         for (uint32_t i = 0; i < t.rank; i++)
@@ -39,6 +46,10 @@ namespace TensorFactory
         }
 
         std::cout << "]\n" << std::flush;
+#else
+        (void)label;
+        (void)t;
+#endif
     }
 
     Tensor Create2D(Arena& arena, uint32_t rows, uint32_t cols)

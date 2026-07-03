@@ -1,0 +1,78 @@
+# Hand MLP/CNN FVP benchmark on native Linux (reference vs CMSIS-NN + CMSIS-DSP).
+# macOS developers: use Docker FVP locally; this workflow runs on ubuntu-latest.
+name: Hand FVP Benchmark
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "benchmarks/fvp/**"
+      - "tools/run_hand_fvp_bench.sh"
+      - "tools/embed_hand_fvp_data.py"
+      - "vcpkg-configuration.json"
+      - ".github/workflows/fvp-bench.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "benchmarks/fvp/**"
+      - "tools/run_hand_fvp_bench.sh"
+      - "tools/embed_hand_fvp_data.py"
+      - "vcpkg-configuration.json"
+      - ".github/workflows/fvp-bench.yml"
+
+jobs:
+  hand-fvp-bench:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies
+        run: pip install -e python
+
+      - name: Install Arm GNU Toolchain (arm-none-eabi, C++)
+        run: |
+          VERSION=14.2.rel1
+          ARCHIVE="arm-gnu-toolchain-${VERSION}-x86_64-arm-none-eabi.tar.xz"
+          URL="https://developer.arm.com/-/media/Files/downloads/gnu/${VERSION}/binrel/${ARCHIVE}"
+          curl -fsSL "${URL}" -o "${ARCHIVE}"
+          tar xf "${ARCHIVE}"
+          echo "${GITHUB_WORKSPACE}/arm-gnu-toolchain-${VERSION}-x86_64-arm-none-eabi/bin" >> "${GITHUB_PATH}"
+
+      - name: Install vcpkg
+        uses: ARM-software/cmsis-actions/setup-vcpkg@v1
+
+      - name: Install Arm FVP models
+        uses: ARM-software/cmsis-actions/vcpkg@v1
+        with:
+          config: "./vcpkg-configuration.json"
+          vcpkg-downloads: "${{ github.workspace }}/.vcpkg/downloads"
+          cache: "fvp-bench-vcpkg"
+
+      - name: Activate Arm license (MDK Community)
+        uses: ARM-software/cmsis-actions/armlm@v1
+
+      - name: Run hand FVP benchmark
+        run: |
+          chmod +x tools/run_hand_fvp_bench.sh
+          ./tools/run_hand_fvp_bench.sh | tee fvp-bench-results.txt
+        env:
+          NETKIT_FVP_HAND_TIMELIMIT: "120"
+          NETKIT_FVP_SKIP_DOCKER: "1"
+
+      - name: Upload benchmark log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fvp-bench-results
+          path: fvp-bench-results.txt
