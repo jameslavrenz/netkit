@@ -134,7 +134,8 @@ public:
                        int pad_w = 0);
 
     void InitDepthwiseConvLayer(uint32_t layer_idx,
-                                int kernel_size,
+                                int kernel_h,
+                                int kernel_w,
                                 int stride,
                                 int channels,
                                 float* weights,

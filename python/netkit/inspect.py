@@ -39,11 +39,12 @@ def _read_layer_body(stream: io.BytesIO, kind: int) -> dict:
             "alpha": alpha,
         }
     if kind == LayerKind.DEPTHWISE_CONV2D:
-        kernel, stride, channels = struct.unpack("<III", stream.read(12))
-        activation, pad_h, pad_w, _reserved, alpha = struct.unpack("<BBBBf", stream.read(8))
+        kernel_h, stride, channels = struct.unpack("<III", stream.read(12))
+        activation, pad_h, pad_w, kernel_w, alpha = struct.unpack("<BBBBf", stream.read(8))
         return {
             "kind": "depthwise_conv2d",
-            "kernel_size": kernel,
+            "kernel_h": kernel_h,
+            "kernel_w": kernel_w,
             "stride": stride,
             "filters": channels,
             "pad_h": pad_h,

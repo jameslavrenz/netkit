@@ -40,10 +40,10 @@ ARCH = {
     "input": [IMG_H, IMG_W, 1],
     "layers": [
         {"type": "conv2d", "kernel_size": 3, "stride": 1, "filters": 8, "pad_h": 1, "pad_w": 1, "activation": "relu"},
-        {"type": "depthwise_conv2d", "kernel_size": 3, "stride": 1, "filters": 8, "pad_h": 1, "pad_w": 1, "activation": "relu"},
+        {"type": "depthwise_conv2d", "kernel_h": 3, "kernel_w": 3, "stride": 1, "filters": 8, "pad_h": 1, "pad_w": 1, "activation": "relu"},
         {"type": "conv2d", "kernel_size": 1, "stride": 1, "filters": 16, "activation": "relu"},
         {"type": "max_pool2d", "pool_size": 2, "stride": 2},
-        {"type": "depthwise_conv2d", "kernel_size": 3, "stride": 1, "filters": 16, "pad_h": 1, "pad_w": 1, "activation": "relu"},
+        {"type": "depthwise_conv2d", "kernel_h": 3, "kernel_w": 3, "stride": 1, "filters": 16, "pad_h": 1, "pad_w": 1, "activation": "relu"},
         {"type": "conv2d", "kernel_size": 1, "stride": 1, "filters": 24, "activation": "relu"},
         {"type": "max_pool2d", "pool_size": 2, "stride": 2},
         {"type": "flatten"},

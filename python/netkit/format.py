@@ -116,7 +116,8 @@ def pack_conv_layer(
 
 def pack_depthwise_conv_layer(
     *,
-    kernel_size: int,
+    kernel_h: int,
+    kernel_w: int,
     stride: int,
     channels: int,
     activation: Activation,
@@ -124,9 +125,13 @@ def pack_depthwise_conv_layer(
     pad_h: int = 0,
     pad_w: int = 0,
 ) -> bytes:
+    if kernel_w <= 0 or kernel_w > 255:
+        raise ValueError(f"depthwise kernel_w must be in 1..255, got {kernel_w}")
+    if kernel_h <= 0:
+        raise ValueError(f"depthwise kernel_h must be positive, got {kernel_h}")
     return pack_layer_kind(LayerKind.DEPTHWISE_CONV2D) + struct.pack(
-        "<III", kernel_size, stride, channels
-    ) + struct.pack("<BBBBf", int(activation), pad_h, pad_w, 0, alpha)
+        "<III", kernel_h, stride, channels
+    ) + struct.pack("<BBBBf", int(activation), pad_h, pad_w, kernel_w, alpha)
 
 
 def pack_pool_layer(*, pool_size: int, stride: int, pad_h: int = 0, pad_w: int = 0) -> bytes:

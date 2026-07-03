@@ -94,15 +94,25 @@ namespace NkFormat
 
     struct ConvLayerDesc
     {
-        uint32_t kernel_size = 0;
+        uint32_t kernel_size = 0; // conv2d: square kernel; depthwise: kernel_h
         uint32_t stride = 1;
         uint32_t filters = 0;
         Activation activation = Activation::None;
         uint8_t pad_h = 0;
         uint8_t pad_w = 0;
-        uint8_t reserved = 0;
+        uint8_t kernel_w = 0; // depthwise only; conv2d leaves zero
         float alpha = 0.01f;
     };
+
+    inline uint32_t DepthwiseKernelH(const ConvLayerDesc& layer)
+    {
+        return layer.kernel_size;
+    }
+
+    inline uint32_t DepthwiseKernelW(const ConvLayerDesc& layer)
+    {
+        return layer.kernel_w;
+    }
 
     struct BatchNormLayerDesc
     {

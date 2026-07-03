@@ -32,6 +32,8 @@ class LayerSpec:
     activation: Activation = Activation.NONE
     alpha: float = 0.01
     kernel_size: int = 1
+    kernel_h: int = 1
+    kernel_w: int = 1
     stride: int = 1
     filters: int = 0
     pad_h: int = 0
@@ -110,7 +112,8 @@ def write_nk_bytes(spec: ModelSpec) -> bytes:
             )
         elif layer.kind == "depthwise_conv2d":
             layer_bytes += pack_depthwise_conv_layer(
-                kernel_size=layer.kernel_size,
+                kernel_h=layer.kernel_h,
+                kernel_w=layer.kernel_w,
                 stride=layer.stride,
                 channels=layer.filters,
                 activation=layer.activation,

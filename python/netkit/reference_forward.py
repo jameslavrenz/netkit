@@ -6,6 +6,8 @@ from typing import Any
 
 import numpy as np
 
+from .cnn_layers import depthwise_kernel_hw
+
 
 def _activate(x: np.ndarray, activation: str, *, alpha: float = 0.01) -> np.ndarray:
     if activation == "relu":
@@ -88,18 +90,18 @@ def _depthwise_conv_nhwc(
     pad_h: int = 0,
     pad_w: int = 0,
 ) -> np.ndarray:
-    """kernel shape (channels, k, k); inp (H, W, C)."""
+    """kernel shape (channels, kh, kw); inp (H, W, C)."""
     h, w, channels = inp.shape
-    _, k, _ = kernel.shape
-    out_h = _out_dim(h, k, stride, pad_h)
-    out_w = _out_dim(w, k, stride, pad_w)
+    _, kernel_h, kernel_w = kernel.shape
+    out_h = _out_dim(h, kernel_h, stride, pad_h)
+    out_w = _out_dim(w, kernel_w, stride, pad_w)
     out = np.zeros((out_h, out_w, channels), dtype=np.float32)
     for c in range(channels):
         for oh in range(out_h):
             for ow in range(out_w):
                 total = float(bias[c])
-                for kh in range(k):
-                    for kw in range(k):
+                for kh in range(kernel_h):
+                    for kw in range(kernel_w):
                         ih = oh * stride + kh - pad_h
                         iw = ow * stride + kw - pad_w
                         if ih < 0 or iw < 0 or ih >= h or iw >= w:
@@ -217,13 +219,13 @@ def forward_cnn(flat_input: np.ndarray, arch: dict[str, Any], weights: np.ndarra
             x = _activate(x, layer.get("activation", "none"), alpha=float(layer.get("alpha", 0.01)))
             h, w, channels = x.shape
         elif layer_type == "depthwise_conv2d":
-            k = layer["kernel_size"]
+            kh, kw = depthwise_kernel_hw(layer)
             stride = layer.get("stride", 1)
             pad_h = layer.get("pad_h", 0)
             pad_w = layer.get("pad_w", 0)
             ch = layer["filters"]
-            kernel_elems = k * k * ch
-            kernel = weights[offset : offset + kernel_elems].reshape(ch, k, k)
+            kernel_elems = kh * kw * ch
+            kernel = weights[offset : offset + kernel_elems].reshape(ch, kh, kw)
             offset += kernel_elems
             bias = weights[offset : offset + ch]
             offset += ch

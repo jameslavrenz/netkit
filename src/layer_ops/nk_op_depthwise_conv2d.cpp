@@ -10,15 +10,10 @@ using namespace nk_op_detail;
 
 bool NkPlanDepthwiseConv2D(CnnBlock& block, NkCnnSpatialPlan& plan)
 {
-    const uint32_t out_h = CalcOutputDim(plan.h,
-                                         block.depthwise_conv.depthwise.kernel_size,
-                                         block.depthwise_conv.depthwise.stride,
-                                         block.depthwise_conv.depthwise.pad_h);
-    const uint32_t out_w = CalcOutputDim(plan.w,
-                                         block.depthwise_conv.depthwise.kernel_size,
-                                         block.depthwise_conv.depthwise.stride,
-                                         block.depthwise_conv.depthwise.pad_w);
-    const uint32_t out_c = static_cast<uint32_t>(block.depthwise_conv.depthwise.channels);
+    const auto& dw = block.depthwise_conv.depthwise;
+    const uint32_t out_h = CalcOutputDim(plan.h, dw.kernel_h, dw.stride, dw.pad_h);
+    const uint32_t out_w = CalcOutputDim(plan.w, dw.kernel_w, dw.stride, dw.pad_w);
+    const uint32_t out_c = static_cast<uint32_t>(dw.channels);
     BumpMaxActivation(plan, out_h * out_w * out_c);
     plan.h = out_h;
     plan.w = out_w;
@@ -28,15 +23,10 @@ bool NkPlanDepthwiseConv2D(CnnBlock& block, NkCnnSpatialPlan& plan)
 
 bool NkPrepareDepthwiseConv2D(const NkCnnOpContext& ctx)
 {
-    const uint32_t out_h = CalcOutputDim(ctx.input.shape[0],
-                                         ctx.block.depthwise_conv.depthwise.kernel_size,
-                                         ctx.block.depthwise_conv.depthwise.stride,
-                                         ctx.block.depthwise_conv.depthwise.pad_h);
-    const uint32_t out_w = CalcOutputDim(ctx.input.shape[1],
-                                         ctx.block.depthwise_conv.depthwise.kernel_size,
-                                         ctx.block.depthwise_conv.depthwise.stride,
-                                         ctx.block.depthwise_conv.depthwise.pad_w);
-    const uint32_t out_c = static_cast<uint32_t>(ctx.block.depthwise_conv.depthwise.channels);
+    const auto& dw = ctx.block.depthwise_conv.depthwise;
+    const uint32_t out_h = CalcOutputDim(ctx.input.shape[0], dw.kernel_h, dw.stride, dw.pad_h);
+    const uint32_t out_w = CalcOutputDim(ctx.input.shape[1], dw.kernel_w, dw.stride, dw.pad_w);
+    const uint32_t out_c = static_cast<uint32_t>(dw.channels);
     const std::array<uint32_t, 3> shape = {out_h, out_w, out_c};
     ctx.output = ViewND(ctx.write_buffer, 3, shape);
     return ctx.output.data != nullptr && ctx.output.num_elements <= ctx.max_activation_elements;

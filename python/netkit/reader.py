@@ -8,6 +8,7 @@ from pathlib import Path
 
 import numpy as np
 
+from .cnn_layers import depthwise_arch_entry
 from .format import HEADER_BYTES, Activation, LayerKind, NetworkKind, FLAG_HAS_TESTS, TEST_MAGIC, unpack_header
 from .inspect import _read_layer_body, _read_tensor_desc
 from .writer import RegressionCase, RegressionSuite
@@ -42,20 +43,7 @@ def _layers_to_arch(network: str, input_shape: list[int], layers: list[dict]) ->
                 entry["alpha"] = float(layer.get("alpha", 0.01))
             arch_layers.append(entry)
         elif kind == "depthwise_conv2d":
-            entry = {
-                "type": "depthwise_conv2d",
-                "kernel_size": layer["kernel_size"],
-                "stride": layer["stride"],
-                "filters": layer["filters"],
-                "activation": layer["activation"],
-            }
-            if layer.get("pad_h", 0):
-                entry["pad_h"] = layer["pad_h"]
-            if layer.get("pad_w", 0):
-                entry["pad_w"] = layer["pad_w"]
-            if layer.get("activation") == "leaky_relu":
-                entry["alpha"] = float(layer.get("alpha", 0.01))
-            arch_layers.append(entry)
+            arch_layers.append(depthwise_arch_entry(layer))
         elif kind == "max_pool2d":
             entry = {
                 "type": "max_pool2d",

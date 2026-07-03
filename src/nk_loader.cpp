@@ -67,8 +67,10 @@ namespace NkLoader
                     case NkFormat::LayerKind::DepthwiseConv2D:
                     {
                         const NkFormat::ConvLayerDesc& layer = model.layers[i].conv;
-                        h = (h + 2 * layer.pad_h - layer.kernel_size) / layer.stride + 1;
-                        w = (w + 2 * layer.pad_w - layer.kernel_size) / layer.stride + 1;
+                        const uint32_t kernel_h = NkFormat::DepthwiseKernelH(layer);
+                        const uint32_t kernel_w = NkFormat::DepthwiseKernelW(layer);
+                        h = (h + 2 * layer.pad_h - kernel_h) / layer.stride + 1;
+                        w = (w + 2 * layer.pad_w - kernel_w) / layer.stride + 1;
                         features = h * w * c;
                         break;
                     }
@@ -223,7 +225,7 @@ namespace NkLoader
             if (!ReadU32(file, layer.conv.kernel_size) || !ReadU32(file, layer.conv.stride) ||
                 !ReadU32(file, layer.conv.filters) || !ReadU8(file, activation) ||
                 !ReadU8(file, layer.conv.pad_h) || !ReadU8(file, layer.conv.pad_w) ||
-                !ReadU8(file, layer.conv.reserved) || !ReadF32(file, layer.conv.alpha))
+                !ReadU8(file, layer.conv.kernel_w) || !ReadF32(file, layer.conv.alpha))
                 return false;
 
             layer.conv.activation = static_cast<NkFormat::Activation>(activation);
@@ -237,7 +239,7 @@ namespace NkLoader
             if (!ReadU32(file, layer.conv.kernel_size) || !ReadU32(file, layer.conv.stride) ||
                 !ReadU32(file, layer.conv.filters) || !ReadU8(file, activation) ||
                 !ReadU8(file, layer.conv.pad_h) || !ReadU8(file, layer.conv.pad_w) ||
-                !ReadU8(file, layer.conv.reserved) || !ReadF32(file, layer.conv.alpha))
+                !ReadU8(file, layer.conv.kernel_w) || !ReadF32(file, layer.conv.alpha))
                 return false;
 
             layer.conv.activation = static_cast<NkFormat::Activation>(activation);
@@ -420,7 +422,7 @@ namespace NkLoader
             return CursorReadU32(cursor, layer.conv.kernel_size) && CursorReadU32(cursor, layer.conv.stride) &&
                    CursorReadU32(cursor, layer.conv.filters) && CursorReadU8(cursor, activation) &&
                    CursorReadU8(cursor, layer.conv.pad_h) && CursorReadU8(cursor, layer.conv.pad_w) &&
-                   CursorReadU8(cursor, layer.conv.reserved) && CursorReadF32(cursor, layer.conv.alpha) &&
+                   CursorReadU8(cursor, layer.conv.kernel_w) && CursorReadF32(cursor, layer.conv.alpha) &&
                    (layer.conv.activation = static_cast<NkFormat::Activation>(activation), true);
         }
 
@@ -431,7 +433,7 @@ namespace NkLoader
             return CursorReadU32(cursor, layer.conv.kernel_size) && CursorReadU32(cursor, layer.conv.stride) &&
                    CursorReadU32(cursor, layer.conv.filters) && CursorReadU8(cursor, activation) &&
                    CursorReadU8(cursor, layer.conv.pad_h) && CursorReadU8(cursor, layer.conv.pad_w) &&
-                   CursorReadU8(cursor, layer.conv.reserved) && CursorReadF32(cursor, layer.conv.alpha) &&
+                   CursorReadU8(cursor, layer.conv.kernel_w) && CursorReadF32(cursor, layer.conv.alpha) &&
                    (layer.conv.activation = static_cast<NkFormat::Activation>(activation), true);
         }
 
@@ -683,8 +685,14 @@ namespace NkLoader
                         const NkFormat::TensorDesc& w_desc = parsed.weight_tensors[weight_index++];
                         const NkFormat::TensorDesc& b_desc = parsed.bias_tensors[bias_index++];
 
+                        const uint32_t kernel_h = NkFormat::DepthwiseKernelH(layer);
+                        const uint32_t kernel_w = NkFormat::DepthwiseKernelW(layer);
+                        if (kernel_w == 0)
+                            return Fail(LoadStatus::SizeMismatch,
+                                          "Depthwise conv kernel_w must be non-zero in .nk");
+
                         const std::size_t weight_elems =
-                            static_cast<std::size_t>(layer.kernel_size) * layer.kernel_size * layer.filters;
+                            static_cast<std::size_t>(kernel_h) * kernel_w * layer.filters;
 
                         if (layer.filters != in_channels)
                             return Fail(LoadStatus::SizeMismatch,
@@ -695,7 +703,8 @@ namespace NkLoader
                                           "CNN depthwise conv tensor shape mismatch in .nk catalog");
 
                         network->InitDepthwiseConvLayer(i,
-                                                      static_cast<int>(layer.kernel_size),
+                                                      static_cast<int>(kernel_h),
+                                                      static_cast<int>(kernel_w),
                                                       static_cast<int>(layer.stride),
                                                       static_cast<int>(layer.filters),
                                                       weights + weight_offset,
@@ -706,8 +715,8 @@ namespace NkLoader
                                                       static_cast<int>(layer.pad_w));
                         weight_offset += weight_elems;
                         bias_offset += layer.filters;
-                        h = (h + 2 * layer.pad_h - layer.kernel_size) / layer.stride + 1;
-                        w = (w + 2 * layer.pad_w - layer.kernel_size) / layer.stride + 1;
+                        h = (h + 2 * layer.pad_h - kernel_h) / layer.stride + 1;
+                        w = (w + 2 * layer.pad_w - kernel_w) / layer.stride + 1;
                         break;
                     }
                     case NkFormat::LayerKind::MaxPool2D:
@@ -1156,12 +1165,15 @@ namespace NkLoader
                               << " activation=" << NkFormat::ActivationName(layer.conv.activation);
                     break;
                 case NkFormat::LayerKind::DepthwiseConv2D:
-                    std::cout << "DepthwiseConv2D kernel=" << layer.conv.kernel_size
+                {
+                    const uint32_t kernel_w = NkFormat::DepthwiseKernelW(layer.conv);
+                    std::cout << "DepthwiseConv2D kernel=" << layer.conv.kernel_size << "x" << kernel_w
                               << " stride=" << layer.conv.stride << " channels=" << layer.conv.filters
                               << " pad=" << static_cast<uint32_t>(layer.conv.pad_h) << ","
                               << static_cast<uint32_t>(layer.conv.pad_w)
                               << " activation=" << NkFormat::ActivationName(layer.conv.activation);
                     break;
+                }
                 case NkFormat::LayerKind::MaxPool2D:
                     std::cout << "MaxPool2D pool=" << layer.pool.pool_size
                               << " stride=" << layer.pool.stride;
@@ -1235,12 +1247,16 @@ namespace NkLoader
                               << " activation=" << NkFormat::ActivationName(layer.conv.activation);
                     break;
                 case NkFormat::LayerKind::DepthwiseConv2D:
-                    std::cout << " kernel=" << layer.conv.kernel_size << " stride=" << layer.conv.stride
+                {
+                    const uint32_t kernel_w = NkFormat::DepthwiseKernelW(layer.conv);
+                    std::cout << " kernel=" << layer.conv.kernel_size << "x" << kernel_w
+                              << " stride=" << layer.conv.stride
                               << " channels=" << layer.conv.filters
                               << " pad=" << static_cast<uint32_t>(layer.conv.pad_h) << ","
                               << static_cast<uint32_t>(layer.conv.pad_w)
                               << " activation=" << NkFormat::ActivationName(layer.conv.activation);
                     break;
+                }
                 case NkFormat::LayerKind::MaxPool2D:
                     std::cout << " pool=" << layer.pool.pool_size << " stride=" << layer.pool.stride;
                     break;

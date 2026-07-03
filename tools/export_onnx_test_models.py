@@ -24,6 +24,7 @@ except ImportError as exc:  # pragma: no cover
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "python"))
 from netkit import read_nk
+from netkit.cnn_layers import depthwise_kernel_hw
 
 MODELS = ROOT / "models"
 
@@ -228,12 +229,12 @@ def export_cnn(arch: dict, weights: np.ndarray, graph_name: str) -> onnx.ModelPr
             continue
 
         if layer_type == "depthwise_conv2d":
-            kernel = layer["kernel_size"]
+            kh, kw = depthwise_kernel_hw(layer)
             stride = layer.get("stride", 1)
             pad_h = layer.get("pad_h", 0)
             pad_w = layer.get("pad_w", 0)
             ch = layer["filters"]
-            kernel_elems = kernel * kernel * ch
+            kernel_elems = kh * kw * ch
             w_flat = weights[offset : offset + kernel_elems]
             offset += kernel_elems
             b = weights[offset : offset + ch]
@@ -241,7 +242,7 @@ def export_cnn(arch: dict, weights: np.ndarray, graph_name: str) -> onnx.ModelPr
 
             w_name = f"dwconv{layer_idx}_W"
             b_name = f"dwconv{layer_idx}_B"
-            w_onnx = netkit_depthwise_conv_to_onnx(w_flat, ch, kernel, kernel)
+            w_onnx = netkit_depthwise_conv_to_onnx(w_flat, ch, kh, kw)
             initializers.append(numpy_helper.from_array(w_onnx, w_name))
             initializers.append(numpy_helper.from_array(b.astype(np.float32), b_name))
 
@@ -251,7 +252,7 @@ def export_cnn(arch: dict, weights: np.ndarray, graph_name: str) -> onnx.ModelPr
                     "Conv",
                     [tensor, w_name, b_name],
                     [gemm_out],
-                    kernel_shape=[kernel, kernel],
+                    kernel_shape=[kh, kw],
                     strides=[stride, stride],
                     pads=[pad_h, pad_w, pad_h, pad_w],
                     group=ch,
@@ -265,8 +266,8 @@ def export_cnn(arch: dict, weights: np.ndarray, graph_name: str) -> onnx.ModelPr
                 alpha=float(layer.get("alpha", 0.01)),
                 initializers=initializers,
             )
-            spatial_h = _spatial_out(spatial_h, kernel, stride, pad_h)
-            spatial_w = _spatial_out(spatial_w, kernel, stride, pad_w)
+            spatial_h = _spatial_out(spatial_h, kh, stride, pad_h)
+            spatial_w = _spatial_out(spatial_w, kw, stride, pad_w)
             layer_idx += 1
             continue
 
@@ -403,14 +404,14 @@ def expected_weight_floats(arch: dict) -> int:
             w = _spatial_out(w, k, stride, pad_w)
             channels = f
         elif layer["type"] == "depthwise_conv2d":
-            k = layer["kernel_size"]
+            kh, kw = depthwise_kernel_hw(layer)
             ch = layer["filters"]
             pad_h = layer.get("pad_h", 0)
             pad_w = layer.get("pad_w", 0)
-            total += k * k * ch + ch
+            total += kh * kw * ch + ch
             stride = layer.get("stride", 1)
-            h = _spatial_out(h, k, stride, pad_h)
-            w = _spatial_out(w, k, stride, pad_w)
+            h = _spatial_out(h, kh, stride, pad_h)
+            w = _spatial_out(w, kw, stride, pad_w)
         elif layer["type"] == "max_pool2d":
             pool = layer["pool_size"]
             stride = layer.get("stride", pool)

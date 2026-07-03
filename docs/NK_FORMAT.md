@@ -67,6 +67,7 @@ Each layer starts with **`uint8 kind` + 3 reserved bytes**, then kind-specific f
 |------|------:|--------------|
 | `dense` | 1 | `units u32`, `activation u8`, pad×3, `alpha f32` |
 | `conv2d` | 2 | `kernel u32`, `stride u32`, `filters u32`, `activation u8`, `pad_h u8`, `pad_w u8`, `reserved u8`, `alpha f32` |
+| `depthwise_conv2d` | 7 | `kernel_h u32`, `stride u32`, `channels u32`, `activation u8`, `pad_h u8`, `pad_w u8`, `kernel_w u8`, `alpha f32` |
 | `max_pool2d` | 3 | `pool_size u32`, `stride u32`, `pad_h u8`, `pad_w u8`, `reserved u16` |
 | `flatten` | 4 | (none) |
 | `avg_pool2d` | 5 | `pool_size u32`, `stride u32`, `pad_h u8`, `pad_w u8`, `reserved u16` |
@@ -87,6 +88,8 @@ Each layer starts with **`uint8 kind` + 3 reserved bytes**, then kind-specific f
 | `num_elements` | `uint32` |
 
 Example MLP first-layer weight with `2 → 2` units: `rank=2`, `dtype=float32`, `dims=[2,2]` (`[out_features, in_features]`), `num_elements=4`.
+
+Example depthwise conv weight: `rank=3`, `dims=[C,Kh,Kw]` per channel.
 
 Example conv weight: `rank=4`, `dims=[O,Kh,Kw,I]` in **netkit** layout `[out, kernel, kernel, in_channels]`.
 

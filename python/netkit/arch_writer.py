@@ -6,6 +6,7 @@ from pathlib import Path
 
 import numpy as np
 
+from .cnn_layers import depthwise_arch_entry, depthwise_kernel_hw
 from .format import activation_from_name
 from .writer import LayerSpec, ModelSpec, RegressionCase, RegressionSuite, write_nk, write_nk_bytes
 
@@ -61,21 +62,21 @@ def _split_cnn_weights(arch: dict, weights: np.ndarray) -> tuple[list[np.ndarray
             width = _out_dim(width, k, stride, pad_w)
             channels = out_c
         elif layer_type == "depthwise_conv2d":
-            k = layer["kernel_size"]
+            kh, kw = depthwise_kernel_hw(layer)
             stride = layer.get("stride", 1)
             pad_h = layer.get("pad_h", 0)
             pad_w = layer.get("pad_w", 0)
             ch = layer["filters"]
-            kernel_elems = k * k * ch
+            kernel_elems = kh * kw * ch
             w_flat = weights[offset : offset + kernel_elems]
             offset += kernel_elems
             b = weights[offset : offset + ch]
             offset += ch
-            kernel = w_flat.reshape(ch, k, k)
+            kernel = w_flat.reshape(ch, kh, kw)
             weight_tensors.append(kernel.astype(np.float32))
             bias_tensors.append(b.astype(np.float32))
-            height = _out_dim(height, k, stride, pad_h)
-            width = _out_dim(width, k, stride, pad_w)
+            height = _out_dim(height, kh, stride, pad_h)
+            width = _out_dim(width, kw, stride, pad_w)
         elif layer_type == "max_pool2d":
             pool = layer["pool_size"]
             stride = layer.get("stride", pool)
@@ -139,10 +140,12 @@ def _arch_to_spec(arch: dict, weights: np.ndarray) -> ModelSpec:
                 )
             )
         elif layer_type == "depthwise_conv2d":
+            kh, kw = depthwise_kernel_hw(layer)
             layers.append(
                 LayerSpec(
                     kind="depthwise_conv2d",
-                    kernel_size=layer["kernel_size"],
+                    kernel_h=kh,
+                    kernel_w=kw,
                     stride=layer.get("stride", 1),
                     filters=layer["filters"],
                     activation=act,

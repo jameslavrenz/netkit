@@ -218,7 +218,8 @@ def onnx_to_spec(onnx_path: str | Path) -> ModelSpec:
             group = _attr_int(node, "group", 1)
             kernel_shape = _attr_ints(node, "kernel_shape")
             strides = _attr_ints(node, "strides")
-            kernel = int(kernel_shape[0]) if kernel_shape else int(weight.shape[2])
+            kh = int(kernel_shape[0]) if kernel_shape else int(weight.shape[2])
+            kw = int(kernel_shape[1]) if len(kernel_shape) > 1 else int(weight.shape[3])
             stride = int(strides[0]) if strides else 1
             pad_h, pad_w = _symmetric_conv_pads(node)
             out_c = int(weight.shape[0])
@@ -227,7 +228,8 @@ def onnx_to_spec(onnx_path: str | Path) -> ModelSpec:
                 layers.append(
                     LayerSpec(
                         kind="depthwise_conv2d",
-                        kernel_size=kernel,
+                        kernel_h=kh,
+                        kernel_w=kw,
                         stride=stride,
                         filters=out_c,
                         activation=activation,
@@ -241,7 +243,7 @@ def onnx_to_spec(onnx_path: str | Path) -> ModelSpec:
                 layers.append(
                     LayerSpec(
                         kind="conv2d",
-                        kernel_size=kernel,
+                        kernel_size=kh,
                         stride=stride,
                         filters=out_c,
                         activation=activation,
@@ -256,8 +258,8 @@ def onnx_to_spec(onnx_path: str | Path) -> ModelSpec:
             bias_tensors.append(
                 (bias.astype(np.float32) if bias is not None else np.zeros(out_c, dtype=np.float32))
             )
-            spatial_h = _conv_output_dim(spatial_h, kernel, stride, pad_h)
-            spatial_w = _conv_output_dim(spatial_w, kernel, stride, pad_w)
+            spatial_h = _conv_output_dim(spatial_h, kh, stride, pad_h)
+            spatial_w = _conv_output_dim(spatial_w, kw, stride, pad_w)
             if group == 1:
                 channels = out_c
             i += 1 + skip

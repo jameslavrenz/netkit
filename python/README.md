@@ -79,3 +79,7 @@ See [docs/TESTING.md](../docs/TESTING.md) and [docs/ONNX.md](../docs/ONNX.md).
 ```
 
 See [docs/NK_FORMAT.md](../docs/NK_FORMAT.md) for the binary layout. Getting started: [docs/GETTING_STARTED.md](../docs/GETTING_STARTED.md).
+
+### Depthwise conv
+
+`depthwise_conv2d` layers require explicit `kernel_h` and `kernel_w` (weights `[C, Kh, Kw]`). For 1D along time on `[T, 1, C]` NHWC input, use e.g. `kernel_h=5`, `kernel_w=1`, `pad_h=2`, `pad_w=0`.

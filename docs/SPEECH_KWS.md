@@ -33,8 +33,6 @@ python3 tools/export_speech_kws.py
 python3 tools/export_onnx_test_models.py   # writes speech_kws.onnx for ONNX parity
 ```
 
-The legacy hand-authored writer `tools/write_speech_kws_model.py` remains for reference but is no longer used by the Makefile.
-
 ## Tests
 
 | Harness | Cases |

@@ -267,7 +267,8 @@ bool ReferenceKernel::Conv2dForwardImpl(const Tensor& input,
 bool ReferenceKernel::DepthwiseConv2dForwardImpl(const Tensor& input,
                                                  float* weights,
                                                  float* bias,
-                                                 int kernel_size,
+                                                 int kernel_h,
+                                                 int kernel_w,
                                                  int stride,
                                                  int pad_h,
                                                  int pad_w,
@@ -289,9 +290,9 @@ bool ReferenceKernel::DepthwiseConv2dForwardImpl(const Tensor& input,
             {
                 float sum = bias ? bias[c] : 0.0f;
 
-                for (int kh = 0; kh < kernel_size; ++kh)
+                for (int kh = 0; kh < kernel_h; ++kh)
                 {
-                    for (int kw = 0; kw < kernel_size; ++kw)
+                    for (int kw = 0; kw < kernel_w; ++kw)
                     {
                         const int ih = static_cast<int>(oh) * stride + kh - pad_h;
                         const int iw = static_cast<int>(ow) * stride + kw - pad_w;
@@ -302,9 +303,9 @@ bool ReferenceKernel::DepthwiseConv2dForwardImpl(const Tensor& input,
                         const uint32_t in_idx =
                             index_nhwc(input, static_cast<uint32_t>(ih), static_cast<uint32_t>(iw), c);
                         const uint32_t w_idx =
-                            (static_cast<uint32_t>(c) * static_cast<uint32_t>(kernel_size) +
+                            (static_cast<uint32_t>(c) * static_cast<uint32_t>(kernel_h) +
                              static_cast<uint32_t>(kh)) *
-                                static_cast<uint32_t>(kernel_size) +
+                                static_cast<uint32_t>(kernel_w) +
                             static_cast<uint32_t>(kw);
                         sum += in[in_idx] * weights[w_idx];
                     }

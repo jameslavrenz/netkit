@@ -5,7 +5,8 @@
 
 struct DepthwiseConv2D
 {
-    int kernel_size = 3;
+    int kernel_h = 3;
+    int kernel_w = 3;
     int stride = 1;
     int pad_h = 0;
     int pad_w = 0;

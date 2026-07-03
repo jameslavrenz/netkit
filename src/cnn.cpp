@@ -111,7 +111,8 @@ void CNNNetwork::InitConvLayer(uint32_t layer_idx,
 }
 
 void CNNNetwork::InitDepthwiseConvLayer(uint32_t layer_idx,
-                                        int kernel_size,
+                                        int kernel_h,
+                                        int kernel_w,
                                         int stride,
                                         int channels,
                                         float* weights,
@@ -125,7 +126,8 @@ void CNNNetwork::InitDepthwiseConvLayer(uint32_t layer_idx,
         return;
 
     blocks[layer_idx].type = CnnBlockType::DepthwiseConv2D;
-    blocks[layer_idx].depthwise_conv.depthwise.kernel_size = kernel_size;
+    blocks[layer_idx].depthwise_conv.depthwise.kernel_h = kernel_h;
+    blocks[layer_idx].depthwise_conv.depthwise.kernel_w = kernel_w;
     blocks[layer_idx].depthwise_conv.depthwise.stride = stride;
     blocks[layer_idx].depthwise_conv.depthwise.pad_h = pad_h;
     blocks[layer_idx].depthwise_conv.depthwise.pad_w = pad_w;
