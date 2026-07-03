@@ -116,6 +116,16 @@ namespace NkRegression
             }
         }
 
+        constexpr uint32_t kRegressionMaxInputPrint = 256;
+
+        void PrintRegressionInput(const Tensor& input)
+        {
+            if (input.num_elements <= kRegressionMaxInputPrint)
+                TensorFactory::PrintLabeled("Input", input);
+            else
+                TensorFactory::PrintLabeled("Input", input, kRegressionMaxInputPrint);
+        }
+
         void PrintClassificationSummary(const float* actual,
                                         const float* expected,
                                         uint32_t output_count,
@@ -210,7 +220,7 @@ namespace NkRegression
                 return false;
             }
 
-            TensorFactory::PrintLabeled("Input", input);
+            PrintRegressionInput(input);
             network.forward(input, output, arena);
 
             const float* actual = static_cast<const float*>(output.data);
@@ -272,8 +282,9 @@ namespace NkRegression
                 input_buffer[i] = test_case.input[i];
 
             Tensor input = MakeNhwcInput(input_buffer, input_shape[0], input_shape[1], input_shape[2]);
-            TensorFactory::PrintLabeled("Input", input);
+            PrintRegressionInput(input);
 
+            std::cout << "  running forward...\n" << std::flush;
             Tensor& output = network.forward(input, arena);
             if (!output.data)
             {
@@ -411,6 +422,7 @@ namespace NkRegression
                 std::array<uint32_t, kMaxTensorRank> input_shape{};
                 uint32_t input_rank = 0;
 
+                std::cout << "  loading weights...\n" << std::flush;
                 if (NkLoader::LoadCNN(resolved, arena, network, input_shape, input_rank).status !=
                         NkLoader::LoadStatus::Ok ||
                     !network || !network->IsValid())

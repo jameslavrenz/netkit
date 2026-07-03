@@ -1,5 +1,6 @@
 #include "tensor_factory.hpp"
 #ifndef NETKIT_DISABLE_IOSTREAM
+#include <algorithm>
 #include <iomanip>
 #endif
 
@@ -14,7 +15,7 @@ namespace TensorFactory
 #endif
     }
 
-    void PrintLabeled(const char* label, const Tensor& t)
+    void PrintLabeled(const char* label, const Tensor& t, uint32_t max_values)
     {
 #ifndef NETKIT_DISABLE_IOSTREAM
         std::cout << label << ": shape=[";
@@ -37,12 +38,16 @@ namespace TensorFactory
             const float* p = static_cast<const float*>(t.data);
             std::cout << std::fixed << std::setprecision(4);
 
-            for (uint32_t i = 0; i < t.num_elements; i++)
+            const uint32_t print_count =
+                max_values == 0 ? t.num_elements : std::min(t.num_elements, max_values);
+            for (uint32_t i = 0; i < print_count; i++)
             {
                 if (i > 0)
                     std::cout << ", ";
                 std::cout << p[i];
             }
+            if (print_count < t.num_elements)
+                std::cout << ", ... (" << t.num_elements << " total)";
         }
 
         std::cout << "]\n" << std::flush;

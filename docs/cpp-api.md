@@ -131,7 +131,8 @@ namespace TensorFactory {
     Tensor ViewND(float* data, uint32_t rank, std::span<const uint32_t> shape);
     void Fill(Tensor& t, std::initializer_list<float> values);
     void Print(const Tensor& t);
-    void PrintLabeled(const char* label, const Tensor& t);
+    void PrintLabeled(const char* label, const Tensor& t, uint32_t max_values = 0);
+    // max_values == 0 prints every element; otherwise prints the first max_values plus a total count.
 }
 ```
 

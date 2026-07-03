@@ -204,8 +204,14 @@ The **`build-and-test`** job on `ubuntu-latest` uses **host Clang** only:
 4. `./tools/run_cmsis_dsp_smoke.sh` — CMSIS-DSP build + forward smoke (hand models only)
 5. `make NETKIT_CMSIS_DSP=0 rebuild test` — full C++ embedded + C API + Python suite (reference kernels)
 6. Example and CLI smoke tests
-7. CMake configure + build smoke test (`./cmake-build/netkit test`)
+7. CMake configure + build smoke test (`./cmake-build/netkit test`, Release build)
 8. `./tools/run_embedded_smoke.sh` — MCU/MPU + `NETKIT_ARCH` + CMSIS host smoke matrix
+
+**CI build notes**
+
+- When `GITHUB_ACTIONS=true`, the Makefile adds `-O2` so full-backbone C++ regression (ResNet-18, MobileNetV4, ConvNeXt V2-Atto) finishes in reasonable time on Linux runners. Local `make test` stays debug-oriented (`-g`, no default `-O2`).
+- The job timeout is 45 minutes.
+- C++ regression truncates large embedded-case input dumps to 256 values and prints load/forward progress lines so long-running cases stay visible in logs.
 
 Model weights and embedded test cases are in the repo — no training in CI.
 

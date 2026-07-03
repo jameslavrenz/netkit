@@ -148,6 +148,12 @@ endif
 CFLAGS += $(TARGET_CPPFLAGS)
 CXXFLAGS += $(TARGET_CPPFLAGS)
 
+# GitHub Actions: unoptimized debug builds make full-backbone regression very slow.
+ifeq ($(GITHUB_ACTIONS),true)
+  CFLAGS += -O2
+  CXXFLAGS += -O2
+endif
+
 CLI_SOURCES = src/main.cpp
 
 CORE_OBJECTS = $(CORE_SOURCES:.cpp=.o)

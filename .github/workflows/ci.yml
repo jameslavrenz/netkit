@@ -6,6 +6,7 @@ on:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
 
     steps:
       - name: Checkout
@@ -43,7 +44,7 @@ jobs:
 
       - name: CMake configure and build
         run: |
-          cmake -B cmake-build -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
+          cmake -B cmake-build -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
           cmake --build cmake-build
           ./cmake-build/netkit test
 
