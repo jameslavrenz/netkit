@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import os
 import re
+import shutil
+import subprocess
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -35,6 +38,9 @@ class AotCompileResult:
     output_elements: int
     network: str
     nk_bytes: int
+    arena_bytes_after_load: int
+    arena_bytes_after_forward: int
+    arena_bytes_recommended: int
     optimized: bool = False
     optimizations_applied: tuple[str, ...] = ()
 
@@ -75,6 +81,74 @@ def _format_byte_array(data: bytes, indent: str = "    ", width: int = 12) -> st
     return "\n".join(lines)
 
 
+def _round_up(value: int, alignment: int) -> int:
+    return ((value + alignment - 1) // alignment) * alignment
+
+
+def _recommend_arena_bytes(after_forward: int, *, headroom_percent: int) -> int:
+    headroom = max(0, headroom_percent)
+    bumped = after_forward + (after_forward * headroom + 99) // 100
+    return _round_up(bumped, 64)
+
+
+def _find_netkit_binary(nk_path: Path) -> Path | None:
+    found = shutil.which("netkit")
+    if found:
+        return Path(found)
+    resolved = nk_path.resolve()
+    for parent in resolved.parents:
+        candidate = parent / "netkit"
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return candidate
+    return None
+
+
+def _estimate_arena_bytes(
+    nk_bytes: int, input_elements: int, output_elements: int
+) -> tuple[int, int]:
+    """Conservative fallback when ./netkit inspect is unavailable."""
+    weight_guess = max(nk_bytes, input_elements * 4 + output_elements * 4)
+    after_load = weight_guess + 256
+    io_scratch = (input_elements + output_elements) * 4 * 4
+    after_forward = after_load + io_scratch
+    return after_load, after_forward
+
+
+def _probe_arena_bytes(nk_path: Path) -> tuple[int, int]:
+    binary = _find_netkit_binary(nk_path)
+    if binary is None:
+        return (0, 0)
+    proc = subprocess.run(
+        [str(binary), "inspect", str(nk_path), "--full"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        return (0, 0)
+    text = proc.stdout
+    load_match = re.search(r"after load:\s+(\d+) bytes", text)
+    forward_match = re.search(r"after forward \(zero\):\s+(\d+) bytes", text)
+    if not load_match or not forward_match:
+        return (0, 0)
+    return int(load_match.group(1)), int(forward_match.group(1))
+
+
+def _resolve_arena_bytes(
+    nk_path: Path,
+    nk_bytes: int,
+    input_elements: int,
+    output_elements: int,
+    *,
+    headroom_percent: int,
+) -> tuple[int, int, int]:
+    after_load, after_forward = _probe_arena_bytes(nk_path)
+    if after_forward <= 0:
+        after_load, after_forward = _estimate_arena_bytes(nk_bytes, input_elements, output_elements)
+    recommended = _recommend_arena_bytes(after_forward, headroom_percent=headroom_percent)
+    return after_load, after_forward, recommended
+
+
 def compile_aot(
     nk_path: str | Path,
     output_dir: str | Path,
@@ -84,6 +158,8 @@ def compile_aot(
     include_main: bool = False,
     optimize: bool = False,
     optimize_options: OptimizeOptions | None = None,
+    arena_headroom_percent: int = 12,
+    flash_section: bool = True,
 ) -> AotCompileResult:
     """Compile a .nk model into embeddable C or C++ source files.
 
@@ -91,6 +167,10 @@ def compile_aot(
     Set ``optimize=True`` to apply stable graph optimizations (BN folding, linear dense
     merge) before embedding — fewer runtime layer dispatches, verified against the
     original model numerically.
+
+    Emits measured arena sizing constants for MCU firmware (static buffer allocation).
+    When ``./netkit inspect --full`` is available, arena bytes come from a probe load +
+    zero-input forward; otherwise a conservative estimate is used.
     """
     path = Path(nk_path)
     out_dir = Path(output_dir)
@@ -112,6 +192,13 @@ def compile_aot(
     input_elements, output_elements = _compute_io(arch, weights)
     network = arch["network"]
     input_shape = arch["input"]
+    after_load, after_forward, arena_recommended = _resolve_arena_bytes(
+        path,
+        len(nk_bytes),
+        input_elements,
+        output_elements,
+        headroom_percent=arena_headroom_percent,
+    )
 
     blob_lines = _format_byte_array(nk_bytes)
 
@@ -124,7 +211,16 @@ def compile_aot(
         header_path = out_dir / f"{symbol}_aot.hpp"
         source_path = out_dir / f"{symbol}_aot.cpp"
         header_path.write_text(
-            _render_cpp_header(symbol, network, input_elements, output_elements, input_shape),
+            _render_cpp_header(
+                symbol,
+                network,
+                input_elements,
+                output_elements,
+                input_shape,
+                after_load,
+                after_forward,
+                arena_recommended,
+            ),
             encoding="utf-8",
         )
         source_path.write_text(
@@ -138,6 +234,7 @@ def compile_aot(
                 len(nk_bytes),
                 blob_lines,
                 include_main,
+                flash_section,
             ),
             encoding="utf-8",
         )
@@ -145,7 +242,14 @@ def compile_aot(
         header_path = out_dir / f"{symbol}_aot.h"
         source_path = out_dir / f"{symbol}_aot.c"
         header_path.write_text(
-            _render_c_header(symbol, input_elements, output_elements),
+            _render_c_header(
+                symbol,
+                input_elements,
+                output_elements,
+                after_load,
+                after_forward,
+                arena_recommended,
+            ),
             encoding="utf-8",
         )
         source_path.write_text(
@@ -157,6 +261,7 @@ def compile_aot(
                 len(nk_bytes),
                 blob_lines,
                 include_main,
+                flash_section,
             ),
             encoding="utf-8",
         )
@@ -170,17 +275,27 @@ def compile_aot(
         output_elements=output_elements,
         network=network,
         nk_bytes=len(nk_bytes),
+        arena_bytes_after_load=after_load,
+        arena_bytes_after_forward=after_forward,
+        arena_bytes_recommended=arena_recommended,
         optimized=bool(optimizations_applied),
         optimizations_applied=optimizations_applied,
     )
 
 
 def _render_cpp_header(
-    symbol: str, network: str, input_elements: int, output_elements: int, input_shape: list[int]
+    symbol: str,
+    network: str,
+    input_elements: int,
+    output_elements: int,
+    input_shape: list[int],
+    arena_after_load: int,
+    arena_after_forward: int,
+    arena_recommended: int,
 ) -> str:
     shape_literals = ", ".join(str(v) for v in input_shape)
     return f"""#pragma once
-/* Generated by netkit AOT compiler — C++26, links against libnetkit.a */
+/* Generated by netkit AOT compiler — C++26 firmware-ready, links against libnetkit.a */
 
 #include "arena.hpp"
 
@@ -195,9 +310,20 @@ inline constexpr std::uint32_t kInputElements = {input_elements}u;
 inline constexpr std::uint32_t kOutputElements = {output_elements}u;
 inline constexpr std::uint32_t kInputShape[] = {{{shape_literals}}};
 inline constexpr std::uint32_t kInputRank = {len(input_shape)}u;
+inline constexpr std::size_t kArenaBytesAfterLoad = {arena_after_load}u;
+inline constexpr std::size_t kArenaBytesAfterForward = {arena_after_forward}u;
+inline constexpr std::size_t kArenaBytesRecommended = {arena_recommended}u;
 
 extern const unsigned char kNkBlob[];
 extern const std::size_t kNkBytes;
+
+inline bool InitArena(Arena& arena, void* memory, std::size_t capacity)
+{{
+    if (!memory || capacity < kArenaBytesRecommended)
+        return false;
+    arena.init(memory, capacity);
+    return true;
+}}
 
 class Model {{
 public:
@@ -225,6 +351,7 @@ def _render_cpp_source(
     nk_size: int,
     blob_lines: str,
     include_main: bool,
+    flash_section: bool,
 ) -> str:
     if network == "mlp":
         batch, features = input_shape
@@ -292,21 +419,22 @@ def _render_cpp_source(
 #ifdef NETKIT_AOT_MAIN
 #include "arena_util.hpp"
 #include <cstdio>
+#include <stdalign.h>
 
 int main(void)
 {{
-    alignas(std::max_align_t) static unsigned char arena_mem[Arena::kDefaultCapacity];
-    ArenaUtil::Scoped arena_scope(Arena::kDefaultCapacity, arena_mem);
-    if (!arena_scope)
+    alignas(std::max_align_t) static unsigned char arena_mem[netkit::aot::{symbol}::kArenaBytesRecommended];
+    Arena arena;
+    if (!netkit::aot::{symbol}::InitArena(arena, arena_mem, sizeof(arena_mem)))
         return 1;
 
     netkit::aot::{symbol}::Model model;
-    if (!model.load(arena_scope.Get()))
+    if (!model.load(arena))
         return 1;
 
     float input[netkit::aot::{symbol}::kInputElements] = {{0.0f}};
     float output[netkit::aot::{symbol}::kOutputElements] = {{0.0f}};
-    if (!model.forward(arena_scope.Get(), input, output))
+    if (!model.forward(arena, input, output))
         return 1;
 
     for (std::uint32_t i = 0; i < netkit::aot::{symbol}::kOutputElements; ++i)
@@ -317,8 +445,24 @@ int main(void)
 #endif
 """
 
-    return f"""/* Generated by netkit AOT compiler — compile with -std=c++26 */
+    flash_attr = ""
+    if flash_section:
+        flash_attr = (
+            "\n#if defined(__GNUC__)\n"
+            "#if defined(__ELF__)\n"
+            "#define NETKIT_AOT_FLASH_CONST __attribute__((section(\".rodata\"), aligned(8)))\n"
+            "#else\n"
+            "#define NETKIT_AOT_FLASH_CONST __attribute__((aligned(8)))\n"
+            "#endif\n"
+            "#else\n"
+            "#define NETKIT_AOT_FLASH_CONST\n"
+            "#endif\n"
+        )
+    else:
+        flash_attr = "\n#define NETKIT_AOT_FLASH_CONST\n"
 
+    return f"""/* Generated by netkit AOT compiler — compile with -std=c++26 for firmware */
+{flash_attr}
 #include "{symbol}_aot.hpp"
 
 #include "arena.hpp"
@@ -333,7 +477,7 @@ namespace netkit::aot::{symbol} {{
 
 const std::size_t kNkBytes = {nk_size};
 
-const unsigned char kNkBlob[kNkBytes] = {{
+NETKIT_AOT_FLASH_CONST const unsigned char kNkBlob[kNkBytes] = {{
 {blob_lines}
 }};
 
@@ -356,12 +500,19 @@ bool Model::forward(Arena& arena, const float* input, float* output) const
 """
 
 
-def _render_c_header(symbol: str, input_elements: int, output_elements: int) -> str:
+def _render_c_header(
+    symbol: str,
+    input_elements: int,
+    output_elements: int,
+    arena_after_load: int,
+    arena_after_forward: int,
+    arena_recommended: int,
+) -> str:
     guard = f"NETKIT_{symbol.upper()}_AOT_H"
     prefix = symbol.upper()
     return f"""#ifndef {guard}
 #define {guard}
-/* Generated by netkit AOT compiler — C23, links against libnetkit.a */
+/* Generated by netkit AOT compiler — C23 firmware-ready, links against libnetkit.a */
 
 #include <stddef.h>
 #include <stdint.h>
@@ -370,9 +521,20 @@ def _render_c_header(symbol: str, input_elements: int, output_elements: int) -> 
 
 #define {prefix}_AOT_INPUT_ELEMENTS {input_elements}u
 #define {prefix}_AOT_OUTPUT_ELEMENTS {output_elements}u
+#define {prefix}_AOT_ARENA_BYTES_AFTER_LOAD {arena_after_load}u
+#define {prefix}_AOT_ARENA_BYTES_AFTER_FORWARD {arena_after_forward}u
+#define {prefix}_AOT_ARENA_BYTES_RECOMMENDED {arena_recommended}u
 
 extern const unsigned char {symbol}_aot_nk[];
 extern const size_t {symbol}_aot_nk_size;
+
+static inline nk_status_t {symbol}_aot_init_arena(nk_arena_t* arena, void* memory, size_t capacity)
+{{
+    if (!arena || !memory || capacity < {prefix}_AOT_ARENA_BYTES_RECOMMENDED)
+        return NK_ERR_INVALID_ARGUMENT;
+    nk_arena_init(arena, memory, capacity);
+    return NK_OK;
+}}
 
 nk_status_t {symbol}_aot_load(nk_arena_t* arena, nk_model_t* model);
 nk_status_t {symbol}_aot_run(const nk_model_t* model,
@@ -392,6 +554,7 @@ def _render_c_source(
     nk_size: int,
     blob_lines: str,
     include_main: bool,
+    flash_section: bool,
 ) -> str:
     main_block = ""
     if include_main:
@@ -403,14 +566,10 @@ def _render_c_source(
 
 int main(void)
 {{
-    alignas(max_align_t) static unsigned char arena_mem[NK_ARENA_DEFAULT_CAPACITY];
+    alignas(max_align_t) static unsigned char arena_mem[{symbol.upper()}_AOT_ARENA_BYTES_RECOMMENDED];
     nk_arena_t arena;
-#if defined(NETKIT_ARENA_HEAP)
-    if (nk_arena_init_heap(&arena, NK_ARENA_DEFAULT_CAPACITY) != NK_OK)
+    if ({symbol}_aot_init_arena(&arena, arena_mem, sizeof(arena_mem)) != NK_OK)
         return 1;
-#else
-    nk_arena_init(&arena, arena_mem, sizeof(arena_mem));
-#endif
 
     nk_model_t model;
     if ({symbol}_aot_load(&arena, &model) != NK_OK)
@@ -425,20 +584,32 @@ int main(void)
     for (uint32_t i = 0; i < output_count; ++i)
         printf(i ? ",%.6f" : "%.6f", output[i]);
     printf("\\n");
-
-#if defined(NETKIT_ARENA_HEAP)
-    nk_arena_destroy_heap(&arena);
-#endif
     return 0;
 }}
 #endif
 """
 
-    return f"""/* Generated by netkit AOT compiler — compile with -std=c23 */
+    flash_attr = ""
+    if flash_section:
+        flash_attr = (
+            "\n#if defined(__GNUC__)\n"
+            "#if defined(__ELF__)\n"
+            "#define NETKIT_AOT_FLASH_CONST __attribute__((section(\".rodata\"), aligned(8)))\n"
+            "#else\n"
+            "#define NETKIT_AOT_FLASH_CONST __attribute__((aligned(8)))\n"
+            "#endif\n"
+            "#else\n"
+            "#define NETKIT_AOT_FLASH_CONST\n"
+            "#endif\n"
+        )
+    else:
+        flash_attr = "\n#define NETKIT_AOT_FLASH_CONST\n"
 
+    return f"""/* Generated by netkit AOT compiler — compile with -std=c23 for firmware */
+{flash_attr}
 #include "{symbol}_aot.h"
 
-const unsigned char {symbol}_aot_nk[] = {{
+NETKIT_AOT_FLASH_CONST const unsigned char {symbol}_aot_nk[] = {{
 {blob_lines}
 }};
 

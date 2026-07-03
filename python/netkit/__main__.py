@@ -43,6 +43,18 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Apply stable graph optimizations before embedding (BN fold, linear dense merge)",
     )
+    aot.add_argument(
+        "--arena-headroom",
+        type=int,
+        default=12,
+        metavar="PCT",
+        help="Extra arena headroom %% above measured forward peak (default: 12)",
+    )
+    aot.add_argument(
+        "--no-flash-section",
+        action="store_true",
+        help="Do not place the .nk blob in a GCC .rodata section",
+    )
 
     args = parser.parse_args(argv)
     input_path = Path(args.input)
@@ -70,12 +82,19 @@ def main(argv: list[str] | None = None) -> int:
             model_name=args.name,
             include_main=args.main,
             optimize=args.optimize,
+            arena_headroom_percent=args.arena_headroom,
+            flash_section=not args.no_flash_section,
         )
         print(f"Wrote {result.header_path}")
         print(f"Wrote {result.source_path}")
         print(
             f"network={result.network} input={result.input_elements} "
             f"output={result.output_elements} bytes={result.nk_bytes} language={result.language.value}"
+        )
+        print(
+            f"arena_after_load={result.arena_bytes_after_load} "
+            f"arena_after_forward={result.arena_bytes_after_forward} "
+            f"arena_recommended={result.arena_bytes_recommended}"
         )
         if result.optimizations_applied:
             print(f"optimizations={','.join(result.optimizations_applied)}")

@@ -1,12 +1,17 @@
-# Executables (repo root only — do not match python/netkit/)
+# Executables (build products — do not ignore python/netkit/ package)
 /netkit
+/main
 examples/infer_c
 examples/infer_cpp
+examples/trim_firmware
 tests/test_c_api
+tests/embedded_smoke
 tools/nk_infer
 
-# Libraries
+# Static libraries
 libnetkit.a
+libnetkit_trim.a
+*.a
 
 # Object files
 *.o
@@ -16,12 +21,12 @@ libnetkit.a
 .vscode/
 
 # Debug symbols
-netkit.dSYM/
+*.dSYM/
 
 # macOS
 .DS_Store
 
-# Python
+# Python (package source under python/netkit/ is tracked)
 python/netkit_tools.egg-info/
 
 # clangd index cache

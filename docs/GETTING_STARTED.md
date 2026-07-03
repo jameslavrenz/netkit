@@ -199,8 +199,28 @@ python -m netkit aot models/test_mlp.nk -o build/aot --language c
 # Optional smoke main (compile with -DNETKIT_AOT_MAIN)
 python -m netkit aot models/test_mlp.nk -o build/aot --main
 
+# MCU firmware sizing (arena bytes probed via ./netkit inspect when available)
+python -m netkit aot models/mlp_hand.nk -o build/aot --arena-headroom 15
+
 # Optional graph optimizations (fewer ops at runtime; verified against original .nk)
 python -m netkit aot models/cnn_extended_ops.nk -o build/aot --optimize
+```
+
+Generated headers expose measured arena usage for static buffer allocation:
+
+- **C++** — `kArenaBytesAfterLoad`, `kArenaBytesAfterForward`, `kArenaBytesRecommended`, plus `InitArena()`
+- **C** — `MODEL_AOT_ARENA_BYTES_*` macros and `{symbol}_aot_init_arena()`
+
+The `.nk` blob is placed in flash-friendly `.rodata` by default (GCC `__attribute__((section(".rodata")))`). Pass `--no-flash-section` to omit the attribute.
+
+Typical MCU bring-up:
+
+```c
+alignas(max_align_t) static unsigned char arena_mem[MLP_HAND_AOT_ARENA_BYTES_RECOMMENDED];
+nk_arena_t arena;
+mlp_hand_aot_init_arena(&arena, arena_mem, sizeof(arena_mem));
+nk_model_t model;
+mlp_hand_aot_load(&arena, &model);
 ```
 
 Typical pipeline (single build session):

@@ -31,6 +31,7 @@ python -m netkit inspect models/test_mlp.nk
 python -m netkit aot models/test_mlp.nk -o build/aot
 python -m netkit aot models/test_mlp.nk -o build/aot --language c
 python -m netkit aot models/test_mlp.nk -o build/aot --main   # optional smoke main
+python -m netkit aot models/mlp_hand.nk -o build/aot --arena-headroom 15   # MCU arena sizing
 python -m netkit aot models/cnn_extended_ops.nk -o build/aot --optimize   # fewer runtime ops
 
 # Convert all bundled regression models (from repo root)
@@ -52,7 +53,9 @@ from netkit import compile_aot, convert_onnx_to_nk, AotLanguage, optimize_nk
 
 convert_onnx_to_nk("models/test_mlp.onnx", "models/test_mlp.nk")
 result = compile_aot("models/test_mlp.nk", "build/aot", language=AotLanguage.CPP)
+result = compile_aot("models/mlp_hand.nk", "build/aot", arena_headroom_percent=15)
 result = compile_aot("models/cnn_extended_ops.nk", "build/aot", optimize=True)
+# result.arena_bytes_recommended — static arena size for firmware
 ```
 
 ## Testing
