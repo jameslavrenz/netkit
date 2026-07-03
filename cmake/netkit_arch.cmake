@@ -106,7 +106,7 @@ function(netkit_resolve_architecture)
         endif()
 
         if(_target_default STREQUAL "mcu")
-            set(CMSISCORE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/CMSIS-Core/Include" CACHE PATH "Path to CMSIS-Core" FORCE)
+            set(CMSISCORE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/CMSIS-Core/CMSIS/Core/Include" CACHE PATH "Path to CMSIS-Core" FORCE)
             message(STATUS "CMSIS-Core include: ${CMSISCORE}")
         endif()
     endif()

@@ -47,7 +47,7 @@ Aliases like `Cortex-M4` normalize to `CM4`. CMake also sets `NETKIT_TARGET` fro
 | `ARM_MATH_MVEF` / `ARM_MATH_MVEI` | `NETKIT_ARCH=M55`, `M85` | Helium vector extensions (complements toolchain `-mcpu=cortex-m55`) |
 | `HOST` / `__GNUC_PYTHON__` | Desktop only, or `NETKIT_HOST_SMOKE=1` on host MCU/MPU smoke | CMSIS-DSP portable host path (no CMSIS-Core device headers) |
 
-MCU builds also add `-Ithird_party/CMSIS-Core/Include` when that directory exists.
+MCU builds also add `-Ithird_party/CMSIS-Core/CMSIS/Core/Include` when that directory exists.
 
 ## Arena backing defaults
 
@@ -111,7 +111,7 @@ make mcu              # NETKIT_TARGET=mcu lib
 make mcu-heap         # NETKIT_TARGET=mcu NETKIT_HEAP_ARENA=1 lib
 make mpu              # NETKIT_TARGET=mpu lib
 make mpu-heap         # NETKIT_TARGET=mpu NETKIT_HEAP_ARENA=1 lib
-make cmsis-init       # fetch CMSIS-NN + CMSIS-DSP
+make cmsis-init       # fetch CMSIS-Core + CMSIS-NN + CMSIS-DSP
 make embedded-smoke   # lean MCU/MPU smoke binary (current NETKIT_TARGET)
 make test-embedded-smoke-matrix   # 7-profile host smoke (see TESTING.md)
 ```
@@ -202,7 +202,11 @@ Your firmware toolchain must still pass the appropriate `-mcpu` / `-march` flags
 
 ## CMSIS backends
 
-Optional compile-time kernel backends (Apache-2.0). Fetch once with `make cmsis-init`.
+Optional compile-time kernel backends (Apache-2.0). Fetch once with `make cmsis-init` (CMSIS-Core headers + optional NN/DSP libraries).
+
+### CMSIS-Core
+
+[ARM CMSIS 6](https://github.com/ARM-software/CMSIS_6) **Core(M)** headers are required for **on-device** MCU firmware when `NETKIT_ARCH` is set and CMSIS backends are enabled. Submodule path: `third_party/CMSIS-Core` → `CMSIS/Core/Include`. Not needed for host `make test` or `NETKIT_HOST_SMOKE=1` smoke builds.
 
 ### CMSIS-NN
 

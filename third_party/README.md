@@ -1,5 +1,11 @@
 # Third-party dependencies
 
+## CMSIS-Core (MCU firmware)
+
+[ARM CMSIS 6](https://github.com/ARM-software/CMSIS_6) provides **CMSIS-Core** device headers (`core_cm4.h`, `cmsis_compiler.h`, …) used when cross-compiling Cortex-M firmware with `NETKIT_ARCH` set.
+
+When `NETKIT_ARCH` is set and `third_party/CMSIS-Core/CMSIS/Core/Include` exists, Make and CMake add `-I` for that path. Host desktop builds and `NETKIT_HOST_SMOKE=1` embedded smoke **do not** require CMSIS-Core (CMSIS-DSP uses the portable `__GNUC_PYTHON__` path).
+
 ## CMSIS-NN (optional)
 
 [ARM CMSIS-NN](https://github.com/ARM-software/CMSIS-NN) is Apache-2.0 licensed and provides
@@ -30,12 +36,21 @@ On **MCU with both CMSIS-NN and CMSIS-DSP**, overlapping ops prefer NN then gene
 ```bash
 make cmsis-init
 # or individually:
+./tools/fetch_cmsis_core.sh
 ./tools/fetch_cmsis_nn.sh
 ./tools/fetch_cmsis_dsp.sh
-# or: git submodule update --init third_party/CMSIS-NN third_party/CMSIS-DSP
+# or: git submodule update --init third_party/CMSIS-Core third_party/CMSIS-NN third_party/CMSIS-DSP
 ```
 
-Both libraries are **git submodule pins** (`CMSIS-NN` @ `dbf45db`, `CMSIS-DSP` @ `4fb9ef7`). `make cmsis-init` checks out those commits when submodules are not initialized.
+All three are **git submodule pins**:
+
+| Submodule | Pin | Role |
+|-----------|-----|------|
+| `CMSIS-Core` | `45dab71` (CMSIS 6.3.0) | Core(M) headers for MCU cross-builds |
+| `CMSIS-NN` | `dbf45db` | Optional NN kernels |
+| `CMSIS-DSP` | `4fb9ef7` | Optional DSP kernels |
+
+`make cmsis-init` checks out those commits when submodules are not initialized.
 
 ## Architecture flags (`NETKIT_ARCH`)
 
@@ -50,7 +65,7 @@ Leave `NETKIT_ARCH` unset for native desktop builds (`__GNUC_PYTHON__` host path
 |------|------|
 | `third_party/cmsis_nn.mk` | Minimal CMSIS-NN source set linked into `libnetkit.a` |
 | `third_party/cmsis_dsp.mk` | Minimal CMSIS-DSP source set |
-| `third_party/netkit_arch.mk` | `NETKIT_ARCH` → `ARM_MATH_*` flags (Make) |
+| `third_party/netkit_arch.mk` | `NETKIT_ARCH` → `ARM_MATH_*` flags + CMSIS-Core include (Make) |
 | `cmake/netkit_cmsis.cmake` | CMSIS object libraries + target flags (CMake) |
 | `cmake/netkit_arch.cmake` | `NETKIT_ARCH` resolver (CMake) |
 

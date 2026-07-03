@@ -85,7 +85,7 @@ endif
 # Embedded firmware: loop unrolling (CMSIS-DSP 1.10+ defaults off) + CMSIS-Core include.
 ifneq ($(NETKIT_ARCH),)
   NETKIT_ARCH_CFLAGS += -DARM_MATH_LOOPUNROLL
-  CMSISCORE_DIR ?= third_party/CMSIS-Core/Include
+  CMSISCORE_DIR ?= third_party/CMSIS-Core/CMSIS/Core/Include
   ifneq ($(wildcard $(CMSISCORE_DIR)),)
     NETKIT_ARCH_CFLAGS += -I$(CMSISCORE_DIR)
   endif

@@ -125,7 +125,7 @@ See the full core table in [BUILD_TARGETS.md](BUILD_TARGETS.md#target-architectu
 
 ### Optional CMSIS backends
 
-Fetch once, then enable at compile time (no runtime switching):
+`make cmsis-init` fetches **CMSIS-Core** (device headers for MCU cross-builds), **CMSIS-NN**, and **CMSIS-DSP** as git submodules. Fetch once, then enable backends at compile time (no runtime switching):
 
 ```bash
 make cmsis-init
