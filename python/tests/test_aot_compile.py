@@ -24,6 +24,7 @@ AOT_MODELS = [
     "cnn_4x4_single.nk",
     "mlp_hand.nk",
     "cnn_hand.nk",
+    "speech_kws.nk",
 ]
 
 

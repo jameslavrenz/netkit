@@ -19,6 +19,7 @@ PARITY_PAIRS = [
     ("test_cnn.nk", "test_cnn.onnx"),
     ("cnn_4x4_single.nk", "cnn_4x4_single.onnx"),
     ("cnn_hand.nk", "cnn_hand.onnx"),
+    ("speech_kws.nk", "speech_kws.onnx"),
     ("op_matrix_mlp.nk", "op_matrix_mlp.onnx"),
     ("op_matrix_cnn.nk", "op_matrix_cnn.onnx"),
     ("deep_mlp.nk", "deep_mlp.onnx"),
@@ -28,7 +29,7 @@ PARITY_PAIRS = [
     ("fashion_mnist_cnn.nk", "fashion_mnist_cnn.onnx"),
 ]
 
-EXPECTED_CASES = 69
+EXPECTED_CASES = 77
 
 
 def _nk_infer_bin() -> Path:

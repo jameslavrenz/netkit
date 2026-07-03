@@ -87,7 +87,7 @@ When `NETKIT_ARENA_HEAP` is defined ( **CPU builds by default**, or MCU/MPU with
 | **CPU** | Once per session (CLI command or full test suite) | Frees backing memory when the session ends |
 | **MCU / MPU** | Optional once at startup | **No-op** — heap backing is never freed |
 
-Regression on CPU (`make test-cpp`) uses **one** heap arena for all 73 cases (`BeginRegressionArena` / `EndRegressionArena`), resetting the bump offset between cases instead of malloc/free per case.
+Regression on CPU (`make test-cpp`) uses **one** heap arena for all 81 cases (`BeginRegressionArena` / `EndRegressionArena`), resetting the bump offset between cases instead of malloc/free per case.
 
 See [BUILD_TARGETS.md](BUILD_TARGETS.md). Helper: `ArenaUtil::Init()` in `arena_util.hpp`.
 

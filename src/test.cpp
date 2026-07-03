@@ -30,6 +30,11 @@ NkRegression::RunSummary run_all_tests()
     merge(NkRegression::RunModelTests("models/cnn_hand.nk"));
 
     std::cout << "\n============================\n";
+    std::cout << " SPEECH KWS TESTS\n";
+    std::cout << "============================\n";
+    merge(NkRegression::RunModelTests("models/speech_kws.nk"));
+
+    std::cout << "\n============================\n";
     std::cout << " MNIST MLP TESTS\n";
     std::cout << "============================\n";
     merge(NkRegression::RunModelTests("models/mnist_mlp.nk"));

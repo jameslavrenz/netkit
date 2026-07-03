@@ -52,7 +52,7 @@ Exit code `0` if all cases pass, `1` if any fail.
 Prints per-case PASS/FAIL lines and a summary:
 
 ```
-Passed: 73
+Passed: 81
 Failed: 0
 ```
 

@@ -37,7 +37,7 @@ You get:
 Verify:
 
 ```bash
-make test         # 73 embedded .nk cases + Python ONNX parity + AOT tests (make test-python)
+make test         # 81 embedded .nk cases + Python ONNX parity + AOT tests (make test-python)
 ```
 
 ---
