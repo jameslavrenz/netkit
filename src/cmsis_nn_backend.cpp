@@ -97,10 +97,11 @@ bool CmsisNnKernel::TryConv2dForward(const Tensor& input,
     float* out = static_cast<float*>(output.data);
 
     const cmsis_nn_conv_params_f32 conv_params = {
-        .padding = {.w = pad_w, .h = pad_h},
         .stride = {.w = stride, .h = stride},
+        .padding = {.w = pad_w, .h = pad_h},
         .dilation = {.w = 1, .h = 1},
         .activation = fused_activation_clamp(fuse_activation),
+        .weight_format = ARM_NN_WEIGHT_FORMAT_STANDARD,
     };
 
     const cmsis_nn_dims input_dims = {
@@ -115,7 +116,7 @@ bool CmsisNnKernel::TryConv2dForward(const Tensor& input,
         .w = kernel_size,
         .c = in_channels,
     };
-    const cmsis_nn_dims bias_dims = {.n = 1, .w = 1, .h = 1, .c = out_channels};
+    const cmsis_nn_dims bias_dims = {.n = 1, .h = 1, .w = 1, .c = out_channels};
     const cmsis_nn_dims output_dims = {
         .n = 1,
         .h = static_cast<int32_t>(out_h),
