@@ -33,8 +33,8 @@
 #   make test-cpp     — ./netkit test (cpu only)
 #   make test-c       — ./tests/test_c_api (cpu only)
 #   make embedded-smoke — lean MCU/MPU smoke binary
-#   make test-embedded-smoke-matrix — MCU/MPU + NETKIT_ARCH + CMSIS profiles (host; in CI)
-#   make bench-hand-fvp — optional local FVP cycle timing (hand models; not CI)
+#   make test-embedded-smoke-matrix — MCU/MPU + NETKIT_ARCH + CMSIS profiles (host smoke)
+#   make bench-hand-fvp — optional local FVP cycle timing (hand models)
 #   make examples     — infer_cpp + infer_c
 #   make export-mnist — regenerate MNIST model + cases (requires numpy)
 #   make clean        — remove build products
@@ -55,7 +55,7 @@ NETKIT_ARCH ?=
 
 include third_party/netkit_arch.mk
 
-# Host embedded smoke (CI / desktop): portable CMSIS-DSP without CMSIS-Core headers.
+# Host embedded smoke (desktop): portable CMSIS-DSP without CMSIS-Core headers.
 ifeq ($(NETKIT_HOST_SMOKE),1)
   NETKIT_ARCH_CFLAGS += -D__GNUC_PYTHON__
 endif

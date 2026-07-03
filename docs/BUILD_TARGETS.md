@@ -4,7 +4,7 @@ netkit builds for three deployment profiles. Select one with **`NETKIT_TARGET`**
 
 | Target | Makefile / CMake | Role | What's included |
 |--------|------------------|------|-----------------|
-| **CPU** | `NETKIT_TARGET=cpu` (default) | Desktop dev, debug, CI | Lean runtime **plus** CLI, embedded regression tests, future debug/analysis tooling |
+| **CPU** | `NETKIT_TARGET=cpu` (default) | Desktop dev and debug | Lean runtime **plus** CLI, embedded regression tests, future debug/analysis tooling |
 | **MCU** | `NETKIT_TARGET=mcu` | Microcontroller firmware | Lean runtime only — `.nk` load, arena, tensors, kernel ops, inference |
 | **MPU** | `NETKIT_TARGET=mpu` | Microprocessor / RTOS | Same lean runtime as MCU |
 
@@ -12,7 +12,7 @@ netkit builds for three deployment profiles. Select one with **`NETKIT_TARGET`**
 
 | System | Primary? | Notes |
 |--------|----------|-------|
-| **GNU Make** | Yes | `make`, `make test`, CI default |
+| **GNU Make** | Yes | `make`, `make test` (primary) |
 | **CMake** | Optional | `cmake -B cmake-build && cmake --build cmake-build` — same flags, auto-detects desktop vs embedded via `NETKIT_ARCH` |
 
 Both use the same optional CMSIS backends and `NETKIT_ARCH` → `ARM_MATH_*` mapping (`third_party/netkit_arch.mk`, `cmake/netkit_arch.cmake`).
@@ -135,7 +135,7 @@ CMake cache options mirror Make: `NETKIT_TARGET`, `NETKIT_ARCH`, `NETKIT_CMSIS_N
 
 ## CPU (desktop)
 
-Use for local development, CI, and the **`netkit` CLI**.
+Use for local development and the **`netkit` CLI**.
 
 **Build outputs:**
 
@@ -298,12 +298,12 @@ Full architecture: [KERNELS.md](KERNELS.md).
 
 ## Testing
 
-Full regression (`make test`) requires **`NETKIT_TARGET=cpu`**. CMSIS backends are validated in **CI** via host smoke (`make test-embedded-smoke-matrix` with `NETKIT_HOST_SMOKE=1`). **Cross-compiling** with `arm-none-eabi-gcc` is **local only** — not a GitHub Actions job.
+Full regression (`make test`) requires **`NETKIT_TARGET=cpu`**. CMSIS backends are validated locally via host smoke (`make test-embedded-smoke-matrix` with `NETKIT_HOST_SMOKE=1`). **Cross-compiling** with `arm-none-eabi-gcc` is a separate local step.
 
 ```bash
 make cmsis-init
 make NETKIT_CMSIS_DSP=1 test-cpp
-make test-embedded-smoke-matrix          # host MCU/MPU + CMSIS profiles (also in CI)
+make test-embedded-smoke-matrix          # host MCU/MPU + CMSIS profiles
 make NETKIT_HOST_SMOKE=1 NETKIT_TARGET=mcu NETKIT_ARCH=CM4 NETKIT_CMSIS_NN=1 lib
 
 # Local arm-none-eabi cross-compile (requires gcc-arm-none-eabi)

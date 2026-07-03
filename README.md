@@ -18,7 +18,7 @@ Models are loaded from binary **`.nk`** files (single-file architecture + weight
 | **[ONNX Import](docs/ONNX.md)** | Python packager (ONNX → `.nk`); parity tests in Python |
 | **[Binary .nk Format](docs/NK_FORMAT.md)** | Single-file models — Python packager + C++ loader |
 | **[Python packager](python/README.md)** | `python -m netkit convert` (ONNX → `.nk`), `aot` (embed `.nk` in C/C++) |
-| **[Testing](docs/TESTING.md)** | Regression suites, Make targets, CI |
+| **[Testing](docs/TESTING.md)** | Regression suites and Make targets |
 | **[C API Reference](docs/c-api.md)** | `netkit.h` (C23) |
 | **[C++ API Reference](docs/cpp-api.md)** | Headers in `include/` (C++26) |
 | **[API Parity Policy](docs/API_PARITY.md)** | C ↔ C++ symbol map and contribution rules |
@@ -102,7 +102,7 @@ netkit/
 ├── tools/
 │   ├── export_mnist_mlp.py
 │   ├── export_mnist_cnn.py
-│   ├── run_embedded_smoke.sh       # MCU/MPU + CMSIS host smoke (CI)
+│   ├── run_embedded_smoke.sh       # MCU/MPU + CMSIS host smoke
 │   ├── compile_cm4_cross.sh        # local arm-none-eabi cross-compile
 │   └── compile_hand_fvp_firmware.sh # local FVP benchmark ELFs (compile-only)
 └── docs/                   # Guides and API reference
@@ -145,8 +145,8 @@ make test         # C++ embedded regression + Python ONNX parity (cpu only)
 make test-cpp     # C++ embedded .nk cases only (73)
 make test-c       # C API regression only
 make test-python  # ONNX parity (69) + AOT compile tests (requires libnetkit.a)
-make test-embedded-smoke-matrix  # MCU/MPU + NETKIT_ARCH + CMSIS (host smoke; in CI)
-make bench-hand-fvp              # optional local FVP cycle timing (hand models; not CI)
+make test-embedded-smoke-matrix  # MCU/MPU + NETKIT_ARCH + CMSIS (host smoke)
+make bench-hand-fvp              # optional local FVP cycle timing (hand models)
 make example-cpp  # C++26 usage demo
 make example-c    # C23 usage demo
 make cmsis-init   # fetch CMSIS-NN + CMSIS-DSP (optional backends)
@@ -200,9 +200,9 @@ make test-embedded-smoke-matrix   # lean MCU/MPU profiles (see docs/TESTING.md)
 | C API | C23 | `tests/test_c_api.c` | Same 73 + API smoke tests |
 | ONNX parity | Python | `python/tests/test_onnx_parity.py` | 69 (.nk vs ONNX Runtime on bundled sidecars) |
 | AOT compile | Python | `python/tests/test_aot_compile.py` | Generates C/C++ from `.nk`, builds, runs vs reference |
-| Embedded smoke | C23 | `tests/embedded_smoke.c` | MCU/MPU load/run on host (`make test-embedded-smoke-matrix`; in CI) |
+| Embedded smoke | C23 | `tests/embedded_smoke.c` | MCU/MPU load/run on host (`make test-embedded-smoke-matrix`) |
 
-CI is a single GitHub Actions **`build-and-test`** job (host Clang only). FVP timing and `arm-none-eabi` cross-compile are **local** — see [TESTING.md](docs/TESTING.md).
+FVP timing and `arm-none-eabi` cross-compile are **local only** — see [TESTING.md](docs/TESTING.md).
 
 Regression cases are embedded in each bundled `.nk` file ([NK_FORMAT.md](docs/NK_FORMAT.md)).  
 MNIST MLP: [MNIST.md](docs/MNIST.md). MNIST CNN: [MNIST_CNN.md](docs/MNIST_CNN.md).

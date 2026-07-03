@@ -28,7 +28,7 @@ Every stable C++ public symbol has a documented C equivalent except desktop-only
 | [ARENA.md](ARENA.md) | Bump allocator, sizing, alignment |
 | [DATATYPES.md](DATATYPES.md) | Float32 today; float16/int roadmap |
 | [NK_FORMAT.md](NK_FORMAT.md) | `.nk` layout + embedded tests |
-| [TESTING.md](TESTING.md) | Regression suites, Make targets, CI |
+| [TESTING.md](TESTING.md) | Regression suites and Make targets |
 | [MNIST.md](MNIST.md) / [MNIST_CNN.md](MNIST_CNN.md) | Trained MNIST bundles |
 | [API_PARITY.md](API_PARITY.md) | C ↔ C++ symbol map |
 | [KERNELS.md](KERNELS.md) | CRTP kernel backends and CMSIS dispatch |

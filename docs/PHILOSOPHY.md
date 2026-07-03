@@ -78,7 +78,7 @@ Only **CPU** builds include `NETKIT_DESKTOP` APIs (`nk_cli_run`, `nk_run_all_tes
 | Single-threaded | Sequential forward pass |
 | Standard C/C++ | No external runtime dependencies in the engine |
 | API parity | Stable C23 mirror of public C++26 surface ([API_PARITY.md](API_PARITY.md)) |
-| Test in `.nk` | Optional embedded regression cases (`TCAS` section) for CI and bring-up |
+| Test in `.nk` | Optional embedded regression cases (`TCAS` section) for bring-up |
 
 ## Related docs
 

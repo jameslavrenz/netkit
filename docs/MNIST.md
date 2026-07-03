@@ -39,7 +39,7 @@ make export-onnx-test
 make test
 ```
 
-Commit `models/mnist_mlp.nk` and `models/mnist_mlp.onnx` after regenerating so CI stays offline.
+Commit `models/mnist_mlp.nk` and `models/mnist_mlp.onnx` after regenerating so tests stay offline (no training at test time).
 
 ## Running
 
