@@ -2,18 +2,19 @@
 
 netkit uses **GNU Make** as the primary build and test driver. **CMake** is optional (`cmake -B cmake-build && cmake --build cmake-build`) with the same flags — see [BUILD_TARGETS.md](BUILD_TARGETS.md). C++ regression tests run through `./netkit test` and the C API harness `tests/test_c_api`. ONNX parity runs in Python.
 
-**GitHub Actions** (`.github/workflows/ci.yml`) is **manual only** (`workflow_dispatch`) — see [CI](#ci). Run locally with `make test` before pushing.
+**GitHub Actions** (`.github/workflows/ci.yml`) is **manual only** (`workflow_dispatch`) — see [CI](#ci). Run locally with `make test` before pushing; run `make test-full` before release or when changing ONNX import/fusion.
 
 ## Quick commands
 
 ```bash
 make              # NETKIT_TARGET=cpu (default): netkit CLI + libnetkit.a
 make build-all    # cpu: netkit + examples + C API test binary; mcu/mpu: lib + examples + embedded_smoke
-make test         # C++ embedded regression + Python ONNX parity (cpu only)
-make test-fast    # C++/C + fast Python subset (~1 min; skips heavy ONNX/backbone parity)
+make test         # default: C++/C embedded regression + fast Python (~1 min; cpu only)
+make test-full    # full suite incl. ONNX parity (82) + backbone tests (manual / pre-release)
 make test-cpp     # ./netkit test only (86 embedded .nk cases)
 make test-c       # ./tests/test_c_api only
-make test-python  # ONNX parity (82) + AOT compile tests; requires libnetkit.a
+make test-python  # fast Python subset (same as in make test)
+make test-python-full  # ONNX parity (82) + AOT compile tests; requires libnetkit.a
 make clean        # remove objects and binaries
 make rebuild      # clean + make
 
@@ -51,14 +52,14 @@ These tests validate **`.nk` parsing, weight loading, and forward inference** ag
 
 ## Python ONNX parity
 
-`make test-python` runs `python/tests/test_onnx_parity.py`: replays embedded inputs through **`tools/nk_infer`** and **ONNX Runtime** on the matching `.onnx` file (82 cases).
+`make test-python-full` (or `make test-full`) runs `python/tests/test_onnx_parity.py`: replays embedded inputs through **`tools/nk_infer`** and **ONNX Runtime** on the matching `.onnx` file (82 cases). Skipped in default `make test` / `make test-python`.
 
 Requires **onnxruntime** for parity and **`make lib`** for AOT compile tests.
 
 ```bash
 pip install -e python   # adds onnxruntime
 make lib
-make test-python
+make test-python-full   # or make test-full
 ```
 
 ## PyTorch backbone pack parity (timm)
@@ -70,7 +71,7 @@ With train extras installed (`pip install -e "python[train]"`), Python tests pac
 | `python/tests/test_torch_backbone_pack.py` | Packed weights vs NumPy reference vs timm (ResNet-18, ConvNeXt V2-Atto, MobileNetV4 Small) |
 | `python/tests/test_torch_backbone_runtime_parity.py` | Same pack path, then **C++ runtime** (`tools/nk_infer`) vs timm and NumPy reference on random inputs |
 
-Requires **`make tools/nk_infer`** (model-sized heap arena via `nk_recommended_arena_bytes`). Not part of the 59 embedded cases — uses ephemeral `.nk` files in a temp directory.
+Requires **`make tools/nk_infer`** (model-sized heap arena via `nk_recommended_arena_bytes`). Not part of the 59 embedded cases — uses ephemeral `.nk` files in a temp directory. Skipped in default `make test`; run `make test-full`.
 
 ## AOT compile tests
 
@@ -84,8 +85,8 @@ Models exercised: `test_mlp.nk`, `cnn_4x4_single.nk`, `mlp_hand.nk`, `cnn_hand.n
 
 | Harness | In CI job? | Models | What it checks |
 |---------|:----------:|--------|----------------|
-| `make test` / `make test-cpp` | Yes | hand + MNIST + op-matrix + import extensions + MobileNetV4 / ResNet-18 / ConvNeXt V2 backbones | Full `.nk` load + forward vs embedded TCAS expected outputs (**86 cases**) |
-| `make test-c` | Yes | same via `nk_run_all_tests()` | C API parity with C++ regression |
+| `make test` / `make test-cpp` / `make test-c` | Yes | hand + MNIST + op-matrix + import extensions + MobileNetV4 / ResNet-18 / ConvNeXt V2 backbones | C++/C `.nk` load + forward vs embedded TCAS (**86 cases**) + fast Python (AOT, unit tests) |
+| `make test-full` / `make test-python-full` | No | + ONNX sidecars + timm backbone pack/runtime | Full ONNX parity (**82 cases**) + backbone tests — run manually before release |
 | `tests/embedded_smoke` / `make test-embedded-smoke-matrix` | No | `test_mlp.nk`, `cnn_4x4_single.nk` | Lean MCU/MPU runtime on host (`NETKIT_HOST_SMOKE=1`); run locally via `./tools/run_embedded_smoke.sh` |
 
 Hand-checked models (`mlp_hand`, `cnn_hand`) are fully validated in **`make test`**. Embedded smoke uses `test_mlp` and `cnn_4x4_single` for fast firmware bring-up.
@@ -174,7 +175,7 @@ The C API regression path uses the same C++ runner internally (`nk_run_all_tests
 | MNIST CNN case | `make export-mnist-cnn` (requires PyTorch) |
 | Op matrix models | `make export-op-matrix` (requires numpy) |
 
-Always run `make test` before committing.
+Always run `make test` before committing. Run `make test-full` when changing ONNX import, fusion, or backbone pack paths.
 
 ## Regenerating models
 
@@ -203,7 +204,7 @@ gh run watch    # optional: wait for the run you just started
 The **`build-and-test`** job on `ubuntu-latest` uses **host Clang** only (reference kernels — no CMSIS compile smoke):
 
 1. `make` — default desktop build
-2. `make NETKIT_CMSIS_DSP=0 rebuild test` — full C++ embedded + C API + Python suite (reference kernels)
+2. `make NETKIT_CMSIS_DSP=0 rebuild test` — default C++ embedded + C API + fast Python suite (reference kernels)
 3. Example and CLI smoke tests
 4. CMake configure + build smoke test (`./cmake-build/netkit test`, Release build)
 
@@ -223,7 +224,8 @@ Pushes do **not** trigger CI. Before pushing, run locally:
 
 ```bash
 make cmsis-init
-make test
+make test          # default fast suite (same as CI)
+make test-full     # optional: full ONNX/backbone parity before release
 ./tools/run_embedded_smoke.sh    # optional MCU/MPU + CMSIS host smoke matrix
 ```
 

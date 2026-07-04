@@ -29,8 +29,8 @@
 #   make              — cpu: netkit CLI + libnetkit.a (heap arena default)
 #   make lib          — libnetkit.a for current NETKIT_TARGET
 #   make build-all    — cpu: netkit + examples + C API tests; mcu/mpu: lib + examples
-#   make test         — full regression (cpu only)
-#   make test-fast    — C++/C + fast Python subset (skip heavy ONNX/backbone parity)
+#   make test         — default regression: C++/C + fast Python (cpu only)
+#   make test-full    — full regression incl. ONNX/backbone parity (manual / pre-release)
 #   make test-cpp     — ./netkit test (cpu only)
 #   make test-c       — ./tests/test_c_api (cpu only)
 #   make embedded-smoke — lean MCU/MPU smoke binary
@@ -188,7 +188,7 @@ TRIM_RUNTIME_SOURCES = src/arena.cpp src/tensor_factory.cpp src/tensor_access.cp
                        src/nk_format.cpp src/nk_loader.cpp src/netkit_api.cpp
 TRIM_CORE_OBJECTS = $(TRIM_RUNTIME_SOURCES:.cpp=.o)
 
-.PHONY: all lib clean rebuild test test-fast test-cpp test-c test-python test-python-fast run example-c example-cpp examples \
+.PHONY: all lib clean rebuild test test-full test-cpp test-c test-python test-python-full run example-c example-cpp examples \
         export-mnist export-mnist-cnn export-mnist-all export-op-matrix \
         export-nk build-all embed-tests cmsis-nn-init cmsis-dsp-init cmsis-init \
         cpu cpu-global mcu mcu-heap mpu mpu-heap embedded-smoke test-embedded-smoke \
@@ -287,13 +287,16 @@ endif
 
 test: test-cpp test-c test-python check-trim-lib
 
-test-fast: test-cpp test-c test-python-fast check-trim-lib
+test-full: test-cpp test-c test-python-full check-trim-lib
+
+# Backward-compatible alias
+test-fast: test
 
 test-python: lib $(TARGET) $(NK_INFER)
-	PYTHONPATH=python python3 -m unittest discover -s python/tests -p 'test_*.py'
-
-test-python-fast: lib $(TARGET) $(NK_INFER)
 	NETKIT_FAST_TESTS=1 PYTHONPATH=python python3 -m unittest discover -s python/tests -p 'test_*.py'
+
+test-python-full: lib $(TARGET) $(NK_INFER)
+	PYTHONPATH=python python3 -m unittest discover -s python/tests -p 'test_*.py'
 
 run: test
 

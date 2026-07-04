@@ -180,7 +180,7 @@ class TestNkFuse(unittest.TestCase):
 
     def test_onnx_resnet_backbone_primitive_import_then_packager_fuse(self) -> None:
         if os.environ.get("NETKIT_FAST_TESTS") == "1":
-            self.skipTest("skipped in make test-python-fast (use make test-python for full suite)")
+            self.skipTest("skipped in default make test (use make test-full)")
 
         onnx_path = Path("models/import_resnet18_backbone.onnx")
         if not onnx_path.is_file():

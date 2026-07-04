@@ -27,7 +27,7 @@ Related docs: [NK_FORMAT.md](NK_FORMAT.md), [CLI.md](CLI.md), [BUILD_TARGETS.md]
 |-------|----------|---------|--------|
 | C++ API | C++26 | `make test-cpp` / `./netkit test` | `src/test.cpp` |
 | C API | C23 | `make test-c` | `tests/test_c_api.c` |
-| Both | — | `make test` | runs C++ then C |
+| Both | — | `make test` (default) / `make test-full` (manual) | runs C++ then C; `test-full` adds full Python ONNX parity |
 
 Both suites exercise the same **86 embedded `.nk` inference cases**; `nk_run_all_tests()` delegates to `run_all_tests()` in `src/test.cpp`. The C suite additionally smoke-tests `nk_run_model_tests()` on composite and ONNX-import fixtures before the full regression pass.
 

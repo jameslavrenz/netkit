@@ -44,7 +44,7 @@ Application code is C++26. C23 is limited to the C header, the `extern "C"` brid
 - **CLI** — `test`, `run`, and `inspect` commands for desktop development
 - **MLP & CNN** — conv (with padding), max/avg pool, batch norm, flatten, dense; `.nk` loading
 - **Arena allocator** — Bump-pointer memory with aligned allocation (no heap in layer paths)
-- **Regression tests** — 86 embedded `.nk` cases (C++/C) plus Python ONNX parity (82), timm backbone pack/runtime parity, and AOT compile tests via `make test`
+- **Regression tests** — 86 embedded `.nk` cases (C++/C) plus Python AOT/unit tests via `make test`; full ONNX parity (82) and backbone tests via `make test-full`
 - **GitHub Actions CI** — manual `workflow_dispatch` only (`gh workflow run ci.yml`)
 - **Embedded smoke** — MCU/MPU + `NETKIT_ARCH` + CMSIS bring-up harness on host (`test_mlp`, `cnn_4x4_single`; `make test-embedded-smoke-matrix`; local only)
 - **Float32 inference** — all tensors, weights, and math use IEEE-754 single precision (`float`)
@@ -54,7 +54,8 @@ Application code is C++26. C23 is limited to the C header, the `extern "C"` brid
 
 ```bash
 make              # build netkit CLI + libnetkit.a (NETKIT_TARGET=cpu)
-make test         # C++ embedded regression + Python ONNX parity (cpu only)
+make test         # default: C++/C embedded regression + fast Python (~1 min)
+make test-full    # full suite incl. ONNX parity (82) + backbone tests (manual / pre-release)
 ./netkit run models/test_mlp.nk --input 1,2
 make example-cpp    # C++26 usage demo
 make example-c      # C23 usage demo
@@ -143,11 +144,12 @@ make NETKIT_TARGET=mcu lib   # lean embedded runtime
 make NETKIT_TARGET=mpu lib   # lean embedded runtime
 make NETKIT_TARGET=cpu NETKIT_GLOBAL_ARENA=1 all   # desktop, static arena
 make build-all    # cpu: netkit + examples + C API test binary
-make test         # C++ embedded regression + Python ONNX parity (cpu only)
-make test-fast    # C++/C + fast Python subset (skips heavy ONNX/backbone parity)
+make test         # default: C++/C embedded regression + fast Python (~1 min)
+make test-full    # full suite incl. ONNX parity (82) + backbone tests (manual / pre-release)
 make test-cpp     # C++ embedded .nk cases only (86)
 make test-c       # C API regression only
-make test-python  # ONNX parity (82) + AOT compile tests (requires libnetkit.a)
+make test-python  # fast Python subset (same as in make test)
+make test-python-full  # ONNX parity (82) + AOT compile tests (requires libnetkit.a)
 make test-embedded-smoke-matrix  # MCU/MPU + NETKIT_ARCH + CMSIS (host smoke; local only)
 make example-cpp  # C++26 usage demo
 make example-c    # C23 usage demo
@@ -189,10 +191,12 @@ See [docs/BUILD_TARGETS.md](docs/BUILD_TARGETS.md) for CPU vs MCU vs MPU builds 
 Full guide: [docs/TESTING.md](docs/TESTING.md)
 
 ```bash
-make test       # C++ embedded cases, then C API, then Python ONNX parity
+make test       # default: C++/C embedded cases + fast Python
+make test-full  # full suite incl. ONNX parity (manual)
 make test-cpp   # ./netkit test
 make test-c     # ./tests/test_c_api
 make test-python
+make test-python-full
 make test-embedded-smoke-matrix   # lean MCU/MPU profiles (see docs/TESTING.md)
 ```
 
@@ -239,6 +243,6 @@ MIT — see [LICENSE](LICENSE).
 
 - C++ sources: C++26
 - C sources and `netkit.h`: C23
-- All tests must pass (`make test`)
+- All tests must pass (`make test`; run `make test-full` before release)
 - Update docs when changing public API
 - **New C++ public API requires a matching C entry in `netkit.h`** — see [API_PARITY.md](docs/API_PARITY.md)

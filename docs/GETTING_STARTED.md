@@ -37,7 +37,7 @@ You get:
 Verify:
 
 ```bash
-make test         # 86 embedded .nk cases + Python ONNX parity + AOT tests (make test-python)
+make test         # default: C++/C (86) + fast Python (AOT, unit tests)
 ```
 
 ---
@@ -228,7 +228,7 @@ Typical pipeline (single build session):
 ```text
 model.onnx  →  convert  →  model.nk  →  aot  →  model_aot.{hpp,cpp}
                               ↓
-                         make test-python / ./netkit test
+                         make test / ./netkit test
 ```
 
 At runtime the generated code calls `NkLoader::LoadMLPFromBuffer` / `LoadCNNFromBuffer` (C++) or `nk_model_load_memory` (C) — same `.nk` format, loaded from flash/RAM instead of a filesystem path.
@@ -243,7 +243,7 @@ clang++ -std=c++26 -Iinclude -c build/aot/test_mlp_aot.cpp -o test_mlp_aot.o
 clang++ -std=c++26 -Iinclude -o my_app my_app.cpp test_mlp_aot.o libnetkit.a
 ```
 
-Tests: `make test-python` includes `python/tests/test_aot_compile.py` (compile + run vs reference). See [TESTING.md](TESTING.md).
+Tests: default `make test` / `make test-python` includes `python/tests/test_aot_compile.py` (compile + run vs reference). Full ONNX parity: `make test-full`. See [TESTING.md](TESTING.md).
 
 ---
 
@@ -326,6 +326,7 @@ netkit/
 | Goal | Steps |
 |------|-------|
 | Validate before push | `make cmsis-init && make test` |
+| Full ONNX/backbone regression | `make test-full` |
 | Run GitHub Actions CI | `gh workflow run ci.yml` (manual only; not on push) |
 | Try a model quickly | `./netkit run model.nk --input ...` |
 | Size firmware RAM | `./netkit inspect model.nk --full` |

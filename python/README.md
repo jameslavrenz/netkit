@@ -70,7 +70,8 @@ result = compile_aot("models/cnn_extended_ops.nk", "build/aot", optimize=True)
 ```bash
 pip install -e python   # onnx + onnxruntime for parity tests
 make lib                # required for AOT compile tests
-make test-python        # ONNX parity (82) + AOT tests (from repo root)
+make test-python        # fast Python subset (from repo root; same as in make test)
+make test-python-full   # ONNX parity (82) + AOT tests
 python -m unittest python.tests.test_onnx_convert_ops  # padding, avg pool, batch norm, fusion
 python -m unittest python.tests.test_aot_compile
 ```
