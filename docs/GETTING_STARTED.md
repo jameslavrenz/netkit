@@ -331,7 +331,7 @@ netkit/
 | Size firmware RAM | `./netkit inspect model.nk --full` |
 | Ship on MCU | `make NETKIT_TARGET=mcu lib`, link into firmware, static arena |
 | Smoke MCU/MPU + CMSIS on host | `make test-embedded-smoke-matrix` |
-| Add regression case | Edit `python/netkit/regression_data.py`, `make embed-tests`, register in `src/test.cpp` |
+| Add regression case | Edit `HAND_CASE_INPUTS` in `python/netkit/regression_data.py`, `make embed-tests`, register in `src/test.cpp` |
 
 ---
 

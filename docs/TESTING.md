@@ -154,7 +154,7 @@ The C API regression path uses the same C++ runner internally (`nk_run_all_tests
 
 | Kind | How |
 |------|-----|
-| Hand case | Add to `python/netkit/regression_data.py`, run `make embed-tests`, register `.nk` in `src/test.cpp` if new bundle |
+| Hand case | Add input to `python/netkit/regression_data.py` (`HAND_CASE_INPUTS`), run `make embed-tests`, register `.nk` in `src/test.cpp` if new bundle |
 | ONNX parity case | Add matching `models/<name>.onnx`, convert with `make export-nk`, add pair to `PARITY_PAIRS` in `python/tests/test_onnx_parity.py` |
 | MNIST MLP case | `make export-mnist` (requires PyTorch: `pip install -e "python[train]"`) |
 | MNIST CNN case | `make export-mnist-cnn` (requires PyTorch) |
@@ -172,7 +172,7 @@ make export-mnist-cnn   # CNN — full 60k, 20 epochs (~18 min)
 make export-mnist-all   # both + refresh ONNX from .nk
 make export-op-matrix   # synthetic activation/deep-chain models + ONNX
 make export-nk          # ONNX → .nk + embed hand tests
-make embed-tests        # re-embed hand tests from regression_data.py
+make embed-tests        # re-embed hand tests (inputs from regression_data.py; expected from reference forward)
 ```
 
 Requires **PyTorch** for training scripts (`pip install -e "python[train]"`). NumPy is used for IDX I/O and packing only. MNIST data from CSV sibling path or IDX download into `data/mnist/`.

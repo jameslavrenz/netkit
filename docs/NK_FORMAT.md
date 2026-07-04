@@ -144,7 +144,7 @@ Each case:
 | Output count | `uint32` | Expected output float count |
 | Expected | `float32 × count` | Reference outputs |
 
-Runtime inference ignores the test section. `NkRegression::RunModelTests()` loads embedded cases via `NkLoader::ReadTestSuite()`. Hand-check suites are defined in `python/netkit/regression_data.py`; MNIST export scripts embed cases at write time.
+Runtime inference ignores the test section. `NkRegression::RunModelTests()` loads embedded cases via `NkLoader::ReadTestSuite()`. Hand-check **inputs** are defined in `python/netkit/regression_data.py`; `make embed-tests` computes expected outputs from each model's weights via the NumPy reference forward pass. MNIST export scripts embed cases at write time.
 
 ## Tooling
 
