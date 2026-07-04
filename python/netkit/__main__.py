@@ -81,6 +81,26 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Do not place the .nk blob in a GCC .rodata section",
     )
+    aot.add_argument(
+        "--target",
+        choices=("cpu", "mpu", "mcu"),
+        default="cpu",
+        help="Firmware target for arena sizing (mcu subtracts flash payload from probe peaks)",
+    )
+    weights_group = aot.add_mutually_exclusive_group()
+    weights_group.add_argument(
+        "--weights-in-ram",
+        dest="weights_in_ram",
+        action="store_true",
+        help="Size arena assuming weight/bias payload is copied into SRAM at buffer load",
+    )
+    weights_group.add_argument(
+        "--no-weights-in-ram",
+        dest="weights_in_ram",
+        action="store_false",
+        help="Size arena for flash-backed coefs (MCU default when --target mcu)",
+    )
+    aot.set_defaults(weights_in_ram=None)
 
     args = parser.parse_args(argv)
 
@@ -175,6 +195,11 @@ def main(argv: list[str] | None = None) -> int:
             optimize=args.optimize,
             arena_headroom_percent=args.arena_headroom,
             flash_section=not args.no_flash_section,
+            weights_in_ram=(
+                args.weights_in_ram
+                if args.weights_in_ram is not None
+                else args.target != "mcu"
+            ),
         )
         print(f"Wrote {result.header_path}")
         print(f"Wrote {result.source_path}")

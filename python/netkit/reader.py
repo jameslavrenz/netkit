@@ -9,7 +9,7 @@ from pathlib import Path
 import numpy as np
 
 from .cnn_layers import _layer_weight_tensor_count, conv2d_input_channels, depthwise_arch_entry, reconcile_depthwise_kernel
-from .format import HEADER_BYTES, Activation, LayerKind, NetworkKind, FLAG_HAS_TESTS, TEST_MAGIC, unpack_header
+from .format import HEADER_BYTES, Activation, LayerKind, NetworkKind, FLAG_HAS_TESTS, TEST_MAGIC, skip_payload_alignment_padding, unpack_header
 from .inspect import _read_layer_body, _read_tensor_desc
 from .writer import RegressionCase, RegressionSuite
 
@@ -155,6 +155,9 @@ def _read_nk_stream(stream: io.BytesIO) -> tuple[dict, np.ndarray]:
 
     weight_descs = [_read_tensor_desc(stream) for _ in range(header["num_weight_tensors"])]
     bias_descs = [_read_tensor_desc(stream) for _ in range(header["num_bias_tensors"])]
+
+    meta_end = stream.tell()
+    payload_start = skip_payload_alignment_padding(stream, meta_end)
 
     weights_blob = stream.read(header["weights_bytes"])
     biases_blob = stream.read(header["biases_bytes"])

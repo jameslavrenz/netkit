@@ -1,5 +1,6 @@
 #include "cli.hpp"
 #include "netkit.h"
+#include "netkit_config.h"
 #include "test.hpp"
 #include "nk_loader.hpp"
 #include "tensor_factory.hpp"
@@ -10,6 +11,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <vector>
 
 namespace Cli
 {
@@ -28,6 +30,49 @@ namespace Cli
                                                is_cnn,
                                                parsed.header.weights_bytes,
                                                parsed.header.biases_bytes);
+        }
+
+        bool ReadNkFile(const char* path, std::vector<uint8_t>& out)
+        {
+            std::FILE* file = std::fopen(path, "rb");
+            if (!file)
+                return false;
+
+            if (std::fseek(file, 0, SEEK_END) != 0)
+            {
+                std::fclose(file);
+                return false;
+            }
+
+            const long file_size = std::ftell(file);
+            if (file_size < 0)
+            {
+                std::fclose(file);
+                return false;
+            }
+
+            if (std::fseek(file, 0, SEEK_SET) != 0)
+            {
+                std::fclose(file);
+                return false;
+            }
+
+            out.resize(static_cast<std::size_t>(file_size));
+            if (file_size > 0 &&
+                std::fread(out.data(), 1, out.size(), file) != out.size())
+            {
+                std::fclose(file);
+                return false;
+            }
+
+            std::fclose(file);
+            return true;
+        }
+
+        std::size_t WeightPayloadBytes(const NkLoader::ParsedModel& parsed)
+        {
+            return static_cast<std::size_t>(parsed.header.weights_bytes) +
+                   static_cast<std::size_t>(parsed.header.biases_bytes);
         }
 
         void PrintHelp(const char* program)
@@ -246,11 +291,30 @@ namespace Cli
                 std::array<uint32_t, kMaxTensorRank> input_shape{};
                 uint32_t input_rank = 0;
 
+                std::vector<uint8_t> nk_blob;
+#if !NETKIT_WEIGHTS_IN_RAM
+                if (!ReadNkFile(resolved, nk_blob))
+                {
+                    std::cerr << "Failed to read " << resolved << " for flash-backed inspect\n";
+                    return 1;
+                }
+#endif
+
                 if (parsed.header.network_kind == NkFormat::NetworkKind::Mlp)
                 {
                     MLPNetwork* network = nullptr;
+#if !NETKIT_WEIGHTS_IN_RAM
+                    const NkLoader::LoadResult load_result =
+                        NkLoader::LoadMLPFromBuffer(nk_blob.data(),
+                                                    nk_blob.size(),
+                                                    arena,
+                                                    network,
+                                                    input_shape,
+                                                    input_rank);
+#else
                     const NkLoader::LoadResult load_result =
                         NkLoader::LoadMLP(resolved, arena, network, input_shape, input_rank);
+#endif
 
                     if (load_result.status != NkLoader::LoadStatus::Ok || !network || !network->IsValid())
                     {
@@ -269,12 +333,26 @@ namespace Cli
                     std::cout << "  after load:           " << bytes_after_load << " bytes\n";
                     std::cout << "  after forward (zero): " << arena.offset << " bytes\n";
                     std::cout << "  remaining:            " << arena.remaining() << " bytes\n";
+#if !NETKIT_WEIGHTS_IN_RAM
+                    std::cout << "  flash payload:        " << WeightPayloadBytes(parsed)
+                              << " bytes (not in arena)\n";
+#endif
                 }
                 else
                 {
                     CNNNetwork* network = nullptr;
+#if !NETKIT_WEIGHTS_IN_RAM
+                    const NkLoader::LoadResult load_result =
+                        NkLoader::LoadCNNFromBuffer(nk_blob.data(),
+                                                    nk_blob.size(),
+                                                    arena,
+                                                    network,
+                                                    input_shape,
+                                                    input_rank);
+#else
                     const NkLoader::LoadResult load_result =
                         NkLoader::LoadCNN(resolved, arena, network, input_shape, input_rank);
+#endif
 
                     if (load_result.status != NkLoader::LoadStatus::Ok || !network || !network->IsValid())
                     {
@@ -295,6 +373,10 @@ namespace Cli
                     std::cout << "  after load:           " << bytes_after_load << " bytes\n";
                     std::cout << "  after forward (zero): " << arena.offset << " bytes\n";
                     std::cout << "  remaining:            " << arena.remaining() << " bytes\n";
+#if !NETKIT_WEIGHTS_IN_RAM
+                    std::cout << "  flash payload:        " << WeightPayloadBytes(parsed)
+                              << " bytes (not in arena)\n";
+#endif
                 }
 
                 return 0;

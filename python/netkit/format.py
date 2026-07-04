@@ -12,6 +12,7 @@ TEST_MAGIC = b"TCAS"
 VERSION = 3
 HEADER_BYTES = 48
 TENSOR_DESC_BYTES = 24
+PAYLOAD_ALIGN = 4
 FLAG_HAS_TESTS = 0x0001
 MAX_CASE_NAME_LEN = 127
 MAX_LAYERS = 100
@@ -65,6 +66,28 @@ ACTIVATION_FROM_NAME = {
 
 def activation_from_name(name: str) -> Activation:
     return ACTIVATION_FROM_NAME.get(name, Activation.NONE)
+
+
+def weight_payload_bytes(header: dict) -> int:
+    """Total weight + bias payload bytes in the .nk file (excluded from MCU arena when coefs stay in flash)."""
+    return int(header["weights_bytes"]) + int(header["biases_bytes"])
+
+
+def payload_alignment_padding(meta_bytes: int) -> int:
+    """Zero bytes inserted before the weight payload so float data is 4-byte aligned."""
+    return (-meta_bytes) % PAYLOAD_ALIGN
+
+
+def skip_payload_alignment_padding(stream, meta_end: int) -> int:
+    """Skip zero padding after catalog; return file offset where weight payload starts."""
+    pad = payload_alignment_padding(meta_end)
+    if pad == 0:
+        return meta_end
+    peek = stream.read(pad)
+    if len(peek) == pad and all(b == 0 for b in peek):
+        return meta_end + pad
+    stream.seek(meta_end)
+    return meta_end
 
 
 def pack_header(

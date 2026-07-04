@@ -12,6 +12,7 @@ from pathlib import Path
 import numpy as np
 
 from netkit.aot_compile import AotLanguage, compile_aot
+from netkit.format import HEADER_BYTES, unpack_header, weight_payload_bytes
 from netkit.reader import read_nk, read_test_suite
 from netkit.reference_forward import forward_cnn, forward_mlp
 
@@ -249,6 +250,25 @@ class TestAotCompile(unittest.TestCase):
             self.assertIn("NETKIT_AOT_FLASH_CONST", cpp_source)
             self.assertIn('section(".rodata")', cpp_source)
             self.assertIn("defined(__ELF__)", cpp_source)
+
+    def test_aot_mcu_flash_arena_smaller_than_ram_copy(self) -> None:
+        nk_path = MODELS / "mlp_hand.nk"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            ram = compile_aot(nk_path, tmp / "ram", language=AotLanguage.CPP, weights_in_ram=True)
+            flash = compile_aot(
+                nk_path, tmp / "flash", language=AotLanguage.CPP, weights_in_ram=False
+            )
+            header = unpack_header(Path(nk_path).read_bytes()[:HEADER_BYTES])
+            payload_bytes = weight_payload_bytes(header)
+            self.assertGreater(payload_bytes, 0)
+            self.assertLess(flash.arena_bytes_after_load, ram.arena_bytes_after_load)
+            self.assertLess(flash.arena_bytes_after_forward, ram.arena_bytes_after_forward)
+            self.assertLess(flash.arena_bytes_recommended, ram.arena_bytes_recommended)
+            self.assertGreaterEqual(
+                ram.arena_bytes_after_load - flash.arena_bytes_after_load,
+                payload_bytes // 2,
+            )
 
     def test_aot_runtime_matches_reference(self) -> None:
         for model_file in AOT_MODELS:

@@ -27,6 +27,7 @@ from .format import (
     pack_pool_layer,
     pack_tensor_desc,
     pack_test_section,
+    payload_alignment_padding,
 )
 
 
@@ -223,7 +224,9 @@ def write_nk_bytes(spec: ModelSpec) -> bytes:
     for tensor in spec.bias_tensors:
         catalog += pack_tensor_desc(rank=tensor.ndim, dims=list(tensor.shape))
 
-    body = header + layer_bytes + catalog + weights_blob + biases_blob
+    meta = header + layer_bytes + catalog
+    align_pad = payload_alignment_padding(len(meta))
+    body = meta + (b"\x00" * align_pad) + weights_blob + biases_blob
     if spec.tests and spec.tests.cases:
         body += pack_test_section(tolerance=spec.tests.tolerance, cases=spec.tests.cases)
 

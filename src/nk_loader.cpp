@@ -469,6 +469,62 @@ namespace NkLoader
             std::size_t pos = 0;
         };
 
+        bool AdvancePayloadAlignmentPadding(ByteCursor& cursor)
+        {
+            const std::size_t pos_after_catalog = cursor.pos;
+            const std::size_t misalign = pos_after_catalog % alignof(float);
+            if (misalign == 0)
+                return true;
+
+            const std::size_t pad = alignof(float) - misalign;
+            if (cursor.pos + pad > cursor.size)
+                return false;
+
+            for (std::size_t i = 0; i < pad; ++i)
+            {
+                if (cursor.data[cursor.pos + i] != 0)
+                    return true;
+            }
+
+            cursor.pos += pad;
+            return true;
+        }
+
+        bool AdvancePayloadAlignmentPadding(std::FILE* file, std::size_t& payload_offset)
+        {
+            const long pos = std::ftell(file);
+            if (pos < 0)
+                return false;
+
+            const std::size_t misalign = static_cast<std::size_t>(pos) % alignof(float);
+            if (misalign == 0)
+            {
+                payload_offset = static_cast<std::size_t>(pos);
+                return true;
+            }
+
+            const std::size_t pad = alignof(float) - misalign;
+            for (std::size_t i = 0; i < pad; ++i)
+            {
+                uint8_t byte = 0;
+                if (!ReadU8(file, byte))
+                    return false;
+                if (byte != 0)
+                {
+                    if (std::fseek(file, pos, SEEK_SET) != 0)
+                        return false;
+                    payload_offset = static_cast<std::size_t>(pos);
+                    return true;
+                }
+            }
+
+            const long after = std::ftell(file);
+            if (after < 0)
+                return false;
+            payload_offset = static_cast<std::size_t>(after);
+            return true;
+        }
+
         bool CursorReadExact(ByteCursor& cursor, void* buffer, std::size_t bytes)
         {
             if (bytes == 0)
@@ -757,12 +813,13 @@ namespace NkLoader
                 return LoadResult{LoadStatus::Ok, FromNkNetwork(parsed.header.network_kind), nullptr};
             }
 
-            if (parsed.payload_offset % alignof(float) != 0)
+            const auto* payload = blob + parsed.payload_offset;
+            const uintptr_t weights_addr = reinterpret_cast<uintptr_t>(payload);
+            if (weights_addr % alignof(float) != 0)
                 return Fail(LoadStatus::SizeMismatch, ".nk payload not float-aligned for flash weights");
 
-            weights = const_cast<float*>(reinterpret_cast<const float*>(blob + parsed.payload_offset));
-            biases = const_cast<float*>(
-                reinterpret_cast<const float*>(blob + parsed.payload_offset + weights_bytes));
+            weights = const_cast<float*>(reinterpret_cast<const float*>(payload));
+            biases = const_cast<float*>(reinterpret_cast<const float*>(payload + weights_bytes));
             return LoadResult{LoadStatus::Ok, FromNkNetwork(parsed.header.network_kind), nullptr};
         }
 
@@ -1490,7 +1547,12 @@ namespace NkLoader
             return Fail(LoadStatus::ReadFailed, "Could not seek .nk file");
         }
 
-        out.payload_offset = static_cast<std::size_t>(payload_start);
+        if (!AdvancePayloadAlignmentPadding(file, out.payload_offset))
+        {
+            std::fclose(file);
+            return Fail(LoadStatus::ReadFailed, "Could not align .nk payload offset");
+        }
+
         if (std::fseek(file, 0, SEEK_END) != 0)
         {
             std::fclose(file);
@@ -1547,6 +1609,9 @@ namespace NkLoader
             if (!ReadTensorDescCursor(cursor, out.bias_tensors[i]))
                 return Fail(LoadStatus::ReadFailed, "Failed to read bias tensor descriptor");
         }
+
+        if (!AdvancePayloadAlignmentPadding(cursor))
+            return Fail(LoadStatus::ReadFailed, "Could not align .nk payload offset");
 
         out.payload_offset = cursor.pos;
         return ValidateParsedSize(out, size);

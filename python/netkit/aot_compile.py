@@ -14,6 +14,7 @@ from typing import Literal
 import numpy as np
 
 from .arch_writer import arch_to_nk_bytes
+from .format import HEADER_BYTES, unpack_header, weight_payload_bytes
 from .nk_optimize import OptimizeOptions, optimize_nk
 from .reader import read_nk, read_test_suite
 from .reference_forward import forward_cnn, forward_mlp
@@ -104,14 +105,35 @@ def _find_netkit_binary(nk_path: Path) -> Path | None:
 
 
 def _estimate_arena_bytes(
-    nk_bytes: int, input_elements: int, output_elements: int
+    nk_bytes: int,
+    input_elements: int,
+    output_elements: int,
+    *,
+    weights_in_ram: bool,
+    payload_bytes: int,
 ) -> tuple[int, int]:
     """Conservative fallback when ./netkit inspect is unavailable."""
-    weight_guess = max(nk_bytes, input_elements * 4 + output_elements * 4)
+    if weights_in_ram:
+        weight_guess = max(nk_bytes, input_elements * 4 + output_elements * 4)
+    else:
+        meta_guess = max(0, nk_bytes - payload_bytes)
+        weight_guess = max(meta_guess, input_elements * 4 + output_elements * 4)
     after_load = weight_guess + 256
     io_scratch = (input_elements + output_elements) * 4 * 4
     after_forward = after_load + io_scratch
     return after_load, after_forward
+
+
+def _adjust_arena_for_flash(
+    after_load: int,
+    after_forward: int,
+    payload_bytes: int,
+    *,
+    weights_in_ram: bool,
+) -> tuple[int, int]:
+    if weights_in_ram or payload_bytes <= 0:
+        return after_load, after_forward
+    return max(0, after_load - payload_bytes), max(0, after_forward - payload_bytes)
 
 
 def _probe_arena_bytes(nk_path: Path) -> tuple[int, int]:
@@ -141,10 +163,24 @@ def _resolve_arena_bytes(
     output_elements: int,
     *,
     headroom_percent: int,
+    weights_in_ram: bool,
+    payload_bytes: int,
 ) -> tuple[int, int, int]:
     after_load, after_forward = _probe_arena_bytes(nk_path)
     if after_forward <= 0:
-        after_load, after_forward = _estimate_arena_bytes(nk_bytes, input_elements, output_elements)
+        after_load, after_forward = _estimate_arena_bytes(
+            nk_bytes,
+            input_elements,
+            output_elements,
+            weights_in_ram=weights_in_ram,
+            payload_bytes=payload_bytes,
+        )
+    after_load, after_forward = _adjust_arena_for_flash(
+        after_load,
+        after_forward,
+        payload_bytes,
+        weights_in_ram=weights_in_ram,
+    )
     recommended = _recommend_arena_bytes(after_forward, headroom_percent=headroom_percent)
     return after_load, after_forward, recommended
 
@@ -160,6 +196,7 @@ def compile_aot(
     optimize_options: OptimizeOptions | None = None,
     arena_headroom_percent: int = 12,
     flash_section: bool = True,
+    weights_in_ram: bool = True,
 ) -> AotCompileResult:
     """Compile a .nk model into embeddable C or C++ source files.
 
@@ -170,7 +207,9 @@ def compile_aot(
 
     Emits measured arena sizing constants for MCU firmware (static buffer allocation).
     When ``./netkit inspect --full`` is available, arena bytes come from a probe load +
-    zero-input forward; otherwise a conservative estimate is used.
+    zero-input forward; otherwise a conservative estimate is used. When
+    ``weights_in_ram=False`` (MCU flash default), ``weights_bytes + biases_bytes`` are
+    subtracted from probe/estimate peaks because coefs stay in the embedded blob.
     """
     path = Path(nk_path)
     out_dir = Path(output_dir)
@@ -188,6 +227,8 @@ def compile_aot(
         arch, weights = opt.arch, opt.weights
         optimizations_applied = tuple(opt.applied)
     nk_bytes = arch_to_nk_bytes(arch, weights, tests=tests)
+    header = unpack_header(nk_bytes[:HEADER_BYTES])
+    payload_bytes = weight_payload_bytes(header)
 
     input_elements, output_elements = _compute_io(arch, weights)
     network = arch["network"]
@@ -198,6 +239,8 @@ def compile_aot(
         input_elements,
         output_elements,
         headroom_percent=arena_headroom_percent,
+        weights_in_ram=weights_in_ram,
+        payload_bytes=payload_bytes,
     )
 
     blob_lines = _format_byte_array(nk_bytes)
