@@ -241,7 +241,7 @@ $(LIB): $(CORE_OBJECTS) $(CMSIS_NN_OBJECTS) $(CMSIS_DSP_OBJECTS)
 
 lib: netkit-config-sync $(LIB)
 
-$(TRIM_LIB): netkit-config-sync $(TRIM_CORE_OBJECTS)
+$(TRIM_LIB): $(TRIM_CORE_OBJECTS) | netkit-config-sync
 	ar rcs $@ $^
 
 trim-lib: $(TRIM_LIB)
