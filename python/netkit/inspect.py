@@ -48,10 +48,33 @@ def _read_layer_body(stream: io.BytesIO, kind: int) -> dict:
     if kind == LayerKind.DEPTHWISE_CONV2D:
         kernel_h, stride, channels = struct.unpack("<III", stream.read(12))
         activation, pad_h, pad_w, kernel_w, alpha = struct.unpack("<BBBBf", stream.read(8))
-        return {
+        extra_h = kernel_w & 0xF
+        extra_w = (kernel_w >> 4) & 0xF
+        if kernel_w == kernel_h:
+            kw = kernel_h
+            bottom = pad_h
+            right = pad_w
+        elif extra_w:
+            kw = kernel_h
+            bottom = pad_h + extra_h
+            right = pad_w + extra_w
+        elif extra_h and kernel_w < kernel_h:
+            kw = kernel_w
+            bottom = pad_h
+            right = pad_w
+        elif extra_h:
+            kw = kernel_h
+            bottom = pad_h + extra_h
+            right = pad_w + extra_w
+        else:
+            kw = kernel_w if kernel_w else kernel_h
+            bottom = pad_h
+            right = pad_w
+        entry = {
             "kind": "depthwise_conv2d",
             "kernel_h": kernel_h,
-            "kernel_w": kernel_w,
+            "kernel_w": kw,
+            "_kernel_w_byte": kernel_w,
             "stride": stride,
             "filters": channels,
             "pad_h": pad_h,
@@ -59,6 +82,11 @@ def _read_layer_body(stream: io.BytesIO, kind: int) -> dict:
             "activation": Activation(activation).name.lower(),
             "alpha": alpha,
         }
+        if bottom != pad_h:
+            entry["pad_h_end"] = bottom
+        if right != pad_w:
+            entry["pad_w_end"] = right
+        return entry
     if kind == LayerKind.MAX_POOL2D:
         pool, stride = struct.unpack("<II", stream.read(8))
         pad_h, pad_w, reserved = struct.unpack("<BBH", stream.read(4))

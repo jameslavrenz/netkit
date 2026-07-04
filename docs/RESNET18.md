@@ -55,6 +55,8 @@ python tools/write_resnet18_fixture.py
 
 Builder: `python/netkit/resnet18.py` (`build_resnet18_arch`). Embedded TCAS tolerance **1e-4** (deep-network float accumulation).
 
+**Packager fusion:** `expand_resnet_basic_block_to_linear()` + `fuse_composite_blocks()` in `python/netkit/nk_fuse.py` roundtrip the composite block from a linear conv/bn stack (same pattern as UIB). ONNX import with `--no-fuse` emits primitives; default `convert` optimize runs packager fuse — see `models/import_resnet_basic_block.nk`.
+
 ### Pack PyTorch checkpoint
 
 ```bash

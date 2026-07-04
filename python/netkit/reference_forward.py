@@ -97,12 +97,18 @@ def _depthwise_conv_nhwc(
     stride: int,
     pad_h: int = 0,
     pad_w: int = 0,
+    pad_h_end: int | None = None,
+    pad_w_end: int | None = None,
 ) -> np.ndarray:
     """kernel shape (channels, kh, kw); inp (H, W, C)."""
+    if pad_h_end is None:
+        pad_h_end = pad_h
+    if pad_w_end is None:
+        pad_w_end = pad_w
     h, w, channels = inp.shape
     _, kernel_h, kernel_w = kernel.shape
-    out_h = _out_dim(h, kernel_h, stride, pad_h)
-    out_w = _out_dim(w, kernel_w, stride, pad_w)
+    out_h = _out_dim(h, kernel_h, stride, pad_h, pad_h_end)
+    out_w = _out_dim(w, kernel_w, stride, pad_w, pad_w_end)
     out = np.zeros((out_h, out_w, channels), dtype=np.float32)
     for c in range(channels):
         for oh in range(out_h):
@@ -454,7 +460,18 @@ def forward_cnn(flat_input: np.ndarray, arch: dict[str, Any], weights: np.ndarra
             offset += kernel_elems
             bias = weights[offset : offset + ch]
             offset += ch
-            x = _depthwise_conv_nhwc(x, kernel, bias, stride=stride, pad_h=pad_h, pad_w=pad_w)
+            pad_h_end = layer.get("pad_h_end", pad_h)
+            pad_w_end = layer.get("pad_w_end", pad_w)
+            x = _depthwise_conv_nhwc(
+                x,
+                kernel,
+                bias,
+                stride=stride,
+                pad_h=pad_h,
+                pad_w=pad_w,
+                pad_h_end=pad_h_end,
+                pad_w_end=pad_w_end,
+            )
             x = _activate(x, layer.get("activation", "none"), alpha=float(layer.get("alpha", 0.01)))
             h, w, channels = x.shape
         elif layer_type == "max_pool2d":

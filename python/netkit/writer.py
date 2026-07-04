@@ -130,9 +130,16 @@ def write_nk_bytes(spec: ModelSpec) -> bytes:
                 pad_extra=pad_extra,
             )
         elif layer.kind == "depthwise_conv2d":
+            kh = layer.kernel_h
+            kw = layer.kernel_w
+            pad_h_end = layer.pad_h_end or layer.pad_h
+            pad_w_end = layer.pad_w_end or layer.pad_w
+            kernel_w_byte = kw
+            if kh == kw and (pad_h_end != layer.pad_h or pad_w_end != layer.pad_w):
+                kernel_w_byte = encode_pad_extra(layer.pad_h, layer.pad_w, pad_h_end, pad_w_end)
             layer_bytes += pack_depthwise_conv_layer(
-                kernel_h=layer.kernel_h,
-                kernel_w=layer.kernel_w,
+                kernel_h=kh,
+                kernel_w=kernel_w_byte,
                 stride=layer.stride,
                 channels=layer.filters,
                 activation=layer.activation,

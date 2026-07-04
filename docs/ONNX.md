@@ -24,7 +24,7 @@ See [python/README.md](../python/README.md) and [NK_FORMAT.md](NK_FORMAT.md).
 |---------|--------------|-------|
 | `Gemm` | `dense` | float32 weights/bias initializers; `transB` supported |
 | `MatMul` (+ optional `Add` bias) | `dense` | MLP graphs; weight initializer `[in, out]` |
-| `Conv` | `conv2d` or `depthwise_conv2d` | NCHW weights → netkit `[O,Kh,Kw,I]` or depthwise `[C,Kh,Kw]` when `group == in_channels`; per-side symmetric `pads` on import (see [Limitations](#limitations-v1)); fuses trailing activations |
+| `Conv` | `conv2d` or `depthwise_conv2d` | NCHW weights → netkit `[O,Kh,Kw,I]` or depthwise `[C,Kh,Kw]` when `group == in_channels`; other `group > 1` expands to dense `conv2d`; per-side asymmetric `pads` on import for conv and square-kernel depthwise; fuses trailing activations |
 | `MaxPool` | `max_pool2d` | square kernel from `kernel_shape`; symmetric `pads` |
 | `AveragePool` / `AvgPool` | `avg_pool2d` | square kernel from `kernel_shape`; symmetric `pads` |
 | `GlobalAveragePool` | `avg_pool2d` | emitted as `pool_size = H`, `stride = 1` (square spatial dims only) |
@@ -48,19 +48,27 @@ At inference time, feed CNN inputs in **NHWC flatten order** (same as existing n
 
 - **Float32 only** — other ONNX `TensorProto` types are rejected
 - **No external data** — weights must be embedded in the `.onnx` file (`raw_data` or `float_data`)
-- **Sequential primitive graphs** — no generic `Add` / skip branches unless **composite fusion** recognizes them (ResNet BasicBlock on `convert`; see below). Full ResNet / MobileNet / ConvNeXt backbones are best packed from timm via `python -m netkit pack`
-- **ONNX padding import** — `pads` may be per-side asymmetric (top ≠ bottom); encoded in `.nk` and executed by the runtime. Depthwise import still requires symmetric pads
-- **Square pool kernels on import** — `MaxPool` / `AvgPool` accept non-square `kernel_shape`; encoded in pool `reserved` metadata
+- **Sequential primitive graphs** — no generic `Add` / skip branches unless **composite fusion** recognizes them (ResNet BasicBlock, MobileNetV4 UIB on `convert`, or packager `nk_fuse` after `--no-fuse` import). ConvNeXt V2 GRN residuals still need `netkit pack` or future ONNX fusion
+- **MobileNet ONNX** — timm exports fold BatchNorm into Conv weights; import and packager UIB fusion synthesize identity BN tensors for conv-only stacks. Full backbone may leave stem/head as primitives when subgraphs do not match UIB patterns
+- **ONNX padding import** — `pads` may be per-side asymmetric (top ≠ bottom); encoded in `.nk` for `conv2d`, square-kernel `depthwise_conv2d`, and pools. Non-square depthwise (e.g. 5×1) with asymmetric pads is still rejected
+- **Grouped `Conv`** — `group > 1` non-depthwise convs expand to dense `conv2d` at import (no native grouped layer)
+- **Non-square pool kernels on import** — `MaxPool` / `AvgPool` accept non-square `kernel_shape`; encoded in pool `reserved` metadata
 
 PyTorch/TensorFlow exports often include `MatMul`, `Add`, `Reshape`, or extra `Pad` nodes — re-export or simplify the graph (e.g. `torch.onnx.export` on an `nn.Sequential`), enable composite fusion, or use `netkit pack` for supported timm backbones.
 
 ### Composite block fusion
 
-**ONNX `convert` (default):** when the graph has `Add` nodes, `python -m netkit convert` fuses matching **ResNet BasicBlock** subgraphs into layer kind `resnet_basic_block` (residual add + two conv branches). Disable with `--no-fuse`.
+**ONNX `convert` (default):** when the graph has `Add` nodes, `python -m netkit convert` fuses matching **ResNet BasicBlock** and **MobileNetV4 UIB** (residual add) subgraphs into composite layers. Stride-2 UIB blocks without skip fuse at the project conv. Disable with `--no-fuse`.
+
+**Packager fuse (`nk_fuse`):** after import, `optimize_nk(..., fuse_composite=True)` (default during `convert`) can rebuild composite blocks from primitive layers — ResNet BasicBlock, ConvNeXt V2 block, and MobileNet UIB (including timm conv-only exports via identity BN). This enables **ONNX → primitive `.nk` → optimize → fuse** when `--no-fuse` skips ONNX-side fusion:
 
 ```bash
-python -m netkit convert model.onnx --no-fuse   # primitive layers only
+python -m netkit convert model.onnx --no-fuse   # import ResNet blocks as conv+bn primitives
+# convert still runs packager fuse during optimize (default)
+python -m netkit convert model.onnx --no-fuse --no-optimize   # fully primitive output
 ```
+
+Fixtures: `models/import_resnet_basic_block.{onnx,nk}` (timm export → primitive import → packager fuse), `models/import_mobilenet_uib.{onnx,nk}` (stride-2 UIB without skip), and `models/import_mobilenet_uib_skip.{onnx,nk}` (UIB with residual Add).
 
 **Timm `pack` (no ONNX round-trip):** ResNet-18, MobileNetV4-Conv-Small, and ConvNeXt V2-Atto emit fused composite layers (`resnet_basic_block`, `mobilenetv4_uib`, `convnextv2_block`) directly from PyTorch checkpoints:
 
@@ -77,7 +85,7 @@ Requires `pip install -e "python[train]"` (torch + timm).
 | Suite | What it validates |
 |-------|-------------------|
 | C++ `make test-cpp` / `make test-c` | **`.nk` loader + inference** against embedded `TCAS` cases in each model (71 cases) |
-| Python `make test-python` | **`.nk` runtime vs ONNX Runtime** on embedded inputs (61 cases); **AOT compile** tests (C/C++ from `.nk`, requires `make lib`) |
+| Python `make test-python` | **`.nk` runtime vs ONNX Runtime** on embedded inputs (67 cases); **AOT compile** tests (C/C++ from `.nk`, requires `make lib`) |
 
 ```bash
 make                          # build netkit CLI

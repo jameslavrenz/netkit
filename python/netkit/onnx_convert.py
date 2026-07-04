@@ -63,6 +63,57 @@ def _onnx_depthwise_conv_to_netkit(weight: np.ndarray) -> np.ndarray:
     return weight.reshape(out_c, kh, kw).astype(np.float32).copy()
 
 
+def _expand_grouped_conv_to_netkit(weight: np.ndarray, *, group: int, in_channels: int) -> np.ndarray:
+    """Expand ONNX grouped Conv weights into dense netkit conv2d layout [O, Kh, Kw, I]."""
+    out_c, in_per_group, kh, kw = weight.shape
+    if in_per_group * group != in_channels:
+        raise ValueError("grouped conv weight shape does not match input channels")
+    if out_c % group != 0:
+        raise ValueError("grouped conv output channels must divide group count")
+    full = np.zeros((out_c, kh, kw, in_channels), dtype=np.float32)
+    out_per_group = out_c // group
+    w = np.transpose(weight.astype(np.float32), (0, 2, 3, 1))  # [O, Kh, Kw, I/G]
+    for g in range(group):
+        o_base = g * out_per_group
+        i_base = g * in_per_group
+        for oc in range(out_per_group):
+            for ic in range(in_per_group):
+                full[o_base + oc, :, :, i_base + ic] = w[o_base + oc, :, :, ic]
+    return full
+
+
+def _depthwise_layer_spec(
+    *,
+    kh: int,
+    kw: int,
+    stride: int,
+    channels: int,
+    activation: Activation,
+    alpha: float,
+    pad_top: int,
+    pad_left: int,
+    pad_bottom: int,
+    pad_right: int,
+) -> LayerSpec:
+    spec = LayerSpec(
+        kind="depthwise_conv2d",
+        kernel_h=kh,
+        kernel_w=kw,
+        stride=stride,
+        filters=channels,
+        activation=activation,
+        alpha=alpha,
+        pad_h=pad_top,
+        pad_w=pad_left,
+    )
+    if pad_bottom != pad_top or pad_right != pad_left:
+        if kh != kw:
+            raise ValueError("asymmetric padding on non-square depthwise conv is not supported")
+        spec.pad_h_end = pad_bottom
+        spec.pad_w_end = pad_right
+    return spec
+
+
 def _attr_int(node, name: str, default: int = 0) -> int:
     for attr in node.attribute:
         if attr.name == name:
@@ -280,19 +331,18 @@ def _emit_cnn_primitive(
         out_c = int(weight.shape[0])
         in_c = int(channels)
         if group > 1 and group == in_c and out_c == in_c:
-            if pad_top != pad_bottom or pad_left != pad_right:
-                raise ValueError("asymmetric padding is not supported for depthwise conv import")
             layers.append(
-                LayerSpec(
-                    kind="depthwise_conv2d",
-                    kernel_h=kh,
-                    kernel_w=kw,
+                _depthwise_layer_spec(
+                    kh=kh,
+                    kw=kw,
                     stride=stride,
-                    filters=out_c,
+                    channels=out_c,
                     activation=activation,
                     alpha=alpha,
-                    pad_h=pad_top,
-                    pad_w=pad_left,
+                    pad_top=pad_top,
+                    pad_left=pad_left,
+                    pad_bottom=pad_bottom,
+                    pad_right=pad_right,
                 )
             )
             weight_tensors.append(_onnx_depthwise_conv_to_netkit(weight.astype(np.float32)))
@@ -312,6 +362,24 @@ def _emit_cnn_primitive(
                 )
             )
             weight_tensors.append(_onnx_conv_to_netkit(weight.astype(np.float32)))
+        elif group > 1 and in_c % group == 0 and out_c % group == 0:
+            layers.append(
+                LayerSpec(
+                    kind="conv2d",
+                    kernel_size=kh,
+                    stride=stride,
+                    filters=out_c,
+                    activation=activation,
+                    alpha=alpha,
+                    pad_h=pad_top,
+                    pad_w=pad_left,
+                    pad_h_end=pad_bottom,
+                    pad_w_end=pad_right,
+                )
+            )
+            weight_tensors.append(
+                _expand_grouped_conv_to_netkit(weight.astype(np.float32), group=group, in_channels=in_c)
+            )
         else:
             raise ValueError("grouped conv (non-depthwise) is not supported")
         bias_tensors.append(
@@ -319,7 +387,9 @@ def _emit_cnn_primitive(
         )
         spatial_h = _conv_output_dim(spatial_h, kh, stride, pad_top, pad_bottom)
         spatial_w = _conv_output_dim(spatial_w, kw, stride, pad_left, pad_right)
-        if group == 1:
+        if group == 1 or (
+            group > 1 and in_c % group == 0 and out_c % group == 0 and not (group == in_c and out_c == in_c)
+        ):
             channels = out_c
         consumed.add(node_index)
         return layers, weight_tensors, bias_tensors, spatial_h, spatial_w, channels, consumed
@@ -463,9 +533,12 @@ def _primitive_shape_delta(
         stride = int(strides[0]) if strides else 1
         pad_top, pad_left, pad_bottom, pad_right = _layer_pad_fields(node)
         out_c = int(weight.shape[0])
+        in_c = int(channels)
         spatial_h = _conv_output_dim(spatial_h, kh, stride, pad_top, pad_bottom)
         spatial_w = _conv_output_dim(spatial_w, kw, stride, pad_left, pad_right)
-        if group == 1:
+        if group == 1 or (
+            group > 1 and in_c % group == 0 and out_c % group == 0 and not (group == in_c and out_c == in_c)
+        ):
             channels = out_c
         return spatial_h, spatial_w, channels
     if node.op_type == "MaxPool":
@@ -498,17 +571,24 @@ def _primitive_shape_delta(
     return None
 
 
-def _onnx_to_spec_cnn_fused(model) -> ModelSpec:
-    from .onnx_fuse import try_fuse_resnet_basic_block
+def _onnx_to_spec_cnn_branched(model, *, composite: bool) -> ModelSpec:
+    from .onnx_fuse import (
+        mobilenet_uib_fuse_result_to_primitives,
+        resnet_fuse_result_to_primitives,
+        try_fuse_mobilenetv4_uib,
+        try_fuse_mobilenetv4_uib_chain,
+        try_fuse_resnet_basic_block,
+    )
     from .onnx_graph import build_onnx_graph, topo_order
 
     graph = build_onnx_graph(model)
     initializers = graph.initializers
     order = topo_order(graph)
 
-    fusion_by_add: dict[int, object] = {}
+    fusion_by_index: dict[int, object] = {}
     fusion_consumed: set[int] = set()
     spatial_h, spatial_w, channels = graph.input_shape
+    block_input = graph.input_name
 
     for idx in order:
         if idx in fusion_consumed:
@@ -522,8 +602,30 @@ def _onnx_to_spec_cnn_fused(model) -> ModelSpec:
                 spatial_w=spatial_w,
                 in_channels=channels,
             )
+            if fused is None:
+                fused = try_fuse_mobilenetv4_uib(
+                    graph,
+                    idx,
+                    spatial_h=spatial_h,
+                    spatial_w=spatial_w,
+                    in_channels=channels,
+                )
             if fused is not None:
-                fusion_by_add[idx] = fused
+                fusion_by_index[idx] = fused
+                fusion_consumed.update(fused.consumed_indices)
+                spatial_h, spatial_w, channels = fused.spatial_h, fused.spatial_w, fused.out_channels
+                continue
+        elif node.op_type == "Conv" and node.output:
+            fused = try_fuse_mobilenetv4_uib_chain(
+                graph,
+                idx,
+                spatial_h=spatial_h,
+                spatial_w=spatial_w,
+                in_channels=channels,
+                block_input=block_input,
+            )
+            if fused is not None:
+                fusion_by_index[idx] = fused
                 fusion_consumed.update(fused.consumed_indices)
                 spatial_h, spatial_w, channels = fused.spatial_h, fused.spatial_w, fused.out_channels
                 continue
@@ -537,22 +639,39 @@ def _onnx_to_spec_cnn_fused(model) -> ModelSpec:
         )
         if shape is not None:
             spatial_h, spatial_w, channels = shape
+            if node.output:
+                block_input = node.output[0]
 
     layers: list[LayerSpec] = []
     weight_tensors: list[np.ndarray] = []
     bias_tensors: list[np.ndarray] = []
     spatial_h, spatial_w, channels = graph.input_shape
+    block_input = graph.input_name
     consumed: set[int] = set()
 
     for idx in order:
-        if idx in fusion_consumed and idx not in fusion_by_add:
+        if idx in fusion_consumed and idx not in fusion_by_index:
             continue
-        if idx in fusion_by_add:
-            fused = fusion_by_add[idx]
-            layers.append(fused.layer)
-            weight_tensors.extend(fused.weight_tensors)
-            bias_tensors.extend(fused.bias_tensors)
+        if idx in fusion_by_index:
+            fused = fusion_by_index[idx]
+            if composite:
+                layers.append(fused.layer)
+                weight_tensors.extend(fused.weight_tensors)
+                bias_tensors.extend(fused.bias_tensors)
+            elif fused.layer.kind == "resnet_basic_block":
+                prim_layers, prim_w, prim_b = resnet_fuse_result_to_primitives(fused)
+                layers.extend(prim_layers)
+                weight_tensors.extend(prim_w)
+                bias_tensors.extend(prim_b)
+            elif fused.layer.kind == "mobilenetv4_uib":
+                prim_layers, prim_w, prim_b = mobilenet_uib_fuse_result_to_primitives(fused)
+                layers.extend(prim_layers)
+                weight_tensors.extend(prim_w)
+                bias_tensors.extend(prim_b)
             spatial_h, spatial_w, channels = fused.spatial_h, fused.spatial_w, fused.out_channels
+            node = graph.node(idx)
+            if node.output:
+                block_input = node.output[0]
             continue
         emitted = _emit_cnn_primitive(
             graph,
@@ -569,6 +688,9 @@ def _onnx_to_spec_cnn_fused(model) -> ModelSpec:
         layers.extend(new_layers)
         weight_tensors.extend(new_w)
         bias_tensors.extend(new_b)
+        node = graph.node(idx)
+        if node.output:
+            block_input = node.output[0]
 
     return ModelSpec(
         network="cnn",
@@ -672,8 +794,8 @@ def onnx_to_spec(onnx_path: str | Path, *, fuse_composite: bool = True) -> Model
             bias_tensors=bias_tensors,
         )
 
-    if network == "cnn" and fuse_composite and _has_graph_branches(nodes, initializers):
-        return _onnx_to_spec_cnn_fused(model)
+    if network == "cnn" and _has_graph_branches(nodes, initializers):
+        return _onnx_to_spec_cnn_branched(model, composite=fuse_composite)
 
     # CNN (linear scan)
     channels = input_shape[2]
@@ -705,19 +827,18 @@ def onnx_to_spec(onnx_path: str | Path, *, fuse_composite: bool = True) -> Model
             out_c = int(weight.shape[0])
             in_c = int(channels)
             if group > 1 and group == in_c and out_c == in_c:
-                if pad_top != pad_bottom or pad_left != pad_right:
-                    raise ValueError("asymmetric padding is not supported for depthwise conv import")
                 layers.append(
-                    LayerSpec(
-                        kind="depthwise_conv2d",
-                        kernel_h=kh,
-                        kernel_w=kw,
+                    _depthwise_layer_spec(
+                        kh=kh,
+                        kw=kw,
                         stride=stride,
-                        filters=out_c,
+                        channels=out_c,
                         activation=activation,
                         alpha=alpha,
-                        pad_h=pad_top,
-                        pad_w=pad_left,
+                        pad_top=pad_top,
+                        pad_left=pad_left,
+                        pad_bottom=pad_bottom,
+                        pad_right=pad_right,
                     )
                 )
                 weight_tensors.append(_onnx_depthwise_conv_to_netkit(weight.astype(np.float32)))
@@ -737,6 +858,24 @@ def onnx_to_spec(onnx_path: str | Path, *, fuse_composite: bool = True) -> Model
                     )
                 )
                 weight_tensors.append(_onnx_conv_to_netkit(weight.astype(np.float32)))
+            elif group > 1 and in_c % group == 0 and out_c % group == 0:
+                layers.append(
+                    LayerSpec(
+                        kind="conv2d",
+                        kernel_size=kh,
+                        stride=stride,
+                        filters=out_c,
+                        activation=activation,
+                        alpha=alpha,
+                        pad_h=pad_top,
+                        pad_w=pad_left,
+                        pad_h_end=pad_bottom,
+                        pad_w_end=pad_right,
+                    )
+                )
+                weight_tensors.append(
+                    _expand_grouped_conv_to_netkit(weight.astype(np.float32), group=group, in_channels=in_c)
+                )
             else:
                 raise ValueError("grouped conv (non-depthwise) is not supported")
             bias_tensors.append(
@@ -744,7 +883,7 @@ def onnx_to_spec(onnx_path: str | Path, *, fuse_composite: bool = True) -> Model
             )
             spatial_h = _conv_output_dim(spatial_h, kh, stride, pad_top, pad_bottom)
             spatial_w = _conv_output_dim(spatial_w, kw, stride, pad_left, pad_right)
-            if group == 1:
+            if group == 1 or (group > 1 and in_c % group == 0 and out_c % group == 0 and not (group == in_c and out_c == in_c)):
                 channels = out_c
             i += 1 + skip
             continue
@@ -881,11 +1020,15 @@ def convert_onnx_to_nk(
     output_path: str | Path | None = None,
     *,
     fuse_composite: bool = True,
+    packager_fuse: bool | None = None,
     optimize: bool = True,
 ) -> Path:
     from .arch_writer import _arch_to_spec
     from .nk_optimize import optimize_nk
     from .reader import read_nk_bytes
+
+    if packager_fuse is None:
+        packager_fuse = True
 
     onnx_path = Path(onnx_path)
     output_path = Path(output_path) if output_path else onnx_path.with_suffix(".nk")
@@ -897,14 +1040,14 @@ def convert_onnx_to_nk(
         opt = optimize_nk(
             arch,
             weights,
-            options=OptimizeOptions(fuse_composite=fuse_composite),
+            options=OptimizeOptions(fuse_composite=packager_fuse),
         )
         spec = _arch_to_spec(opt.arch, opt.weights)
-    elif fuse_composite:
+    elif packager_fuse:
         from .nk_fuse import fuse_composite_blocks
 
         arch, weights = read_nk_bytes(write_nk_bytes(spec))
-        fused = fuse_composite_blocks(arch, weights)
+        fused = fuse_composite_blocks(arch, weights, verify_output=False)
         spec = _arch_to_spec(fused.arch, fused.weights)
     write_nk(output_path, spec)
     return output_path

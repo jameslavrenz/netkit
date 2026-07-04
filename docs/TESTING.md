@@ -48,7 +48,7 @@ These tests validate **`.nk` parsing, weight loading, and forward inference** ag
 
 ## Python ONNX parity
 
-`make test-python` runs `python/tests/test_onnx_parity.py`: replays embedded inputs through **`tools/nk_infer`** and **ONNX Runtime** on the matching `.onnx` file (61 cases).
+`make test-python` runs `python/tests/test_onnx_parity.py`: replays embedded inputs through **`tools/nk_infer`** and **ONNX Runtime** on the matching `.onnx` file (67 cases).
 
 Requires **onnxruntime** for parity and **`make lib`** for AOT compile tests.
 

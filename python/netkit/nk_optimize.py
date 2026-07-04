@@ -357,6 +357,15 @@ def _optimization_passes_enabled(opts: OptimizeOptions) -> bool:
     )
 
 
+_COMPOSITE_LAYER_TYPES = frozenset(
+    {"mobilenetv4_uib", "resnet_basic_block", "convnextv2_block"}
+)
+
+
+def _has_composite_layers(arch: dict[str, Any]) -> bool:
+    return any(layer.get("type") in _COMPOSITE_LAYER_TYPES for layer in arch.get("layers", []))
+
+
 def optimize_nk(
     arch: dict[str, Any],
     weights: np.ndarray,
@@ -381,7 +390,20 @@ def optimize_nk(
     current_weights = weights
     applied: list[str] = []
 
-    while _optimization_passes_enabled(opts):
+    if opts.fuse_composite and current_arch.get("network") == "cnn":
+        from .nk_fuse import fuse_composite_blocks
+
+        fused = fuse_composite_blocks(
+            current_arch,
+            current_weights,
+            atol=atol,
+            verify_output=False,
+        )
+        current_arch = fused.arch
+        current_weights = fused.weights
+        applied.extend(fused.applied)
+
+    while _optimization_passes_enabled(opts) and not _has_composite_layers(current_arch):
         layers, _ = _decompose(current_arch, current_weights)
         changed = False
         if opts.remove_identity_batch_norm and _remove_identity_batch_norm(layers):
@@ -414,18 +436,5 @@ def optimize_nk(
         if name not in seen:
             seen.add(name)
             unique_applied.append(name)
-
-    if opts.fuse_composite and current_arch.get("network") == "cnn":
-        from .nk_fuse import fuse_composite_blocks
-
-        fused = fuse_composite_blocks(
-            current_arch,
-            current_weights,
-            atol=atol,
-            verify_output=False,
-        )
-        current_arch = fused.arch
-        current_weights = fused.weights
-        unique_applied.extend(fused.applied)
 
     return OptimizeResult(arch=current_arch, weights=current_weights, applied=unique_applied)

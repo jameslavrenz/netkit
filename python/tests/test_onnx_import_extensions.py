@@ -145,3 +145,68 @@ def test_convert_runs_optimize_by_default():
         assert [layer["type"] for layer in arch["layers"]] == ["avg_pool2d", "batch_norm2d"]
         inp = np.random.randn(4 * 4 * 2).astype(np.float32)
         _ = forward_cnn(inp, arch, weights)
+
+
+def test_asymmetric_depthwise_import():
+    with tempfile.TemporaryDirectory() as tmp:
+        onnx_path = Path(tmp) / "asym_dw.onnx"
+        weight = np.random.randn(4, 1, 3, 3).astype(np.float32) * 0.1
+        bias = np.random.randn(4).astype(np.float32) * 0.05
+        x = helper.make_tensor_value_info("input", TensorProto.FLOAT, [1, 4, 8, 8])
+        y = helper.make_tensor_value_info("output", TensorProto.FLOAT, [1, 4, 9, 8])
+        w = numpy_helper.from_array(weight, name="w")
+        b = numpy_helper.from_array(bias, name="b")
+        conv = helper.make_node(
+            "Conv",
+            inputs=["input", "w", "b"],
+            outputs=["output"],
+            kernel_shape=[3, 3],
+            strides=[1, 1],
+            pads=[1, 1, 2, 1],
+            group=4,
+        )
+        graph = helper.make_graph([conv], "dw", [x], [y], [w, b])
+        onnx.save(
+            helper.make_model(graph, opset_imports=[helper.make_opsetid("", 13)]),
+            str(onnx_path),
+        )
+        spec = onnx_to_spec(onnx_path)
+        layer = spec.layers[0]
+        assert layer.kind == "depthwise_conv2d"
+        assert layer.pad_h == 1
+        assert layer.pad_h_end == 2
+        assert layer.pad_w == 1
+        assert layer.pad_w_end == 1
+
+
+def test_grouped_conv_import_expands_to_dense():
+    with tempfile.TemporaryDirectory() as tmp:
+        onnx_path = Path(tmp) / "grouped.onnx"
+        nk_path = Path(tmp) / "grouped.nk"
+        weight = np.random.randn(4, 2, 3, 3).astype(np.float32) * 0.1
+        bias = np.random.randn(4).astype(np.float32) * 0.05
+        x = helper.make_tensor_value_info("input", TensorProto.FLOAT, [1, 4, 8, 8])
+        y = helper.make_tensor_value_info("output", TensorProto.FLOAT, [1, 4, 8, 8])
+        w = numpy_helper.from_array(weight, name="w")
+        b = numpy_helper.from_array(bias, name="b")
+        conv = helper.make_node(
+            "Conv",
+            inputs=["input", "w", "b"],
+            outputs=["output"],
+            kernel_shape=[3, 3],
+            strides=[1, 1],
+            pads=[1, 1, 1, 1],
+            group=2,
+        )
+        graph = helper.make_graph([conv], "g", [x], [y], [w, b])
+        onnx.save(
+            helper.make_model(graph, opset_imports=[helper.make_opsetid("", 13)]),
+            str(onnx_path),
+        )
+        convert_onnx_to_nk(onnx_path, nk_path, optimize=False)
+        arch, weights = read_nk(nk_path)
+        assert arch["layers"][0]["type"] == "conv2d"
+        assert arch["layers"][0]["filters"] == 4
+        inp = np.random.randn(8 * 8 * 4).astype(np.float32)
+        out = forward_cnn(inp, arch, weights)
+        assert len(out) == 8 * 8 * 4

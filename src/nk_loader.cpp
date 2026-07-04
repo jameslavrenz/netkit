@@ -38,6 +38,43 @@ namespace NkLoader
             return NetworkKind::Unknown;
         }
 
+        uint32_t CatalogWeightTensorCount(const NkFormat::LayerDesc& layer)
+        {
+            switch (layer.kind)
+            {
+                case NkFormat::LayerKind::Conv2D:
+                case NkFormat::LayerKind::DepthwiseConv2D:
+                case NkFormat::LayerKind::Dense:
+                case NkFormat::LayerKind::BatchNorm2d:
+                case NkFormat::LayerKind::LayerNorm2d:
+                    return 1;
+                case NkFormat::LayerKind::ConvNeXtV2Block:
+                    return 5;
+                case NkFormat::LayerKind::MobilenetV4Uib:
+                {
+                    const auto& uib = layer.mobilenetv4_uib;
+                    uint32_t count = 0;
+                    if (uib.start_dw_kernel > 0)
+                        count += 2;
+                    count += 2;
+                    if (uib.middle_dw_kernel > 0)
+                        count += 2;
+                    count += 2;
+                    return count;
+                }
+                case NkFormat::LayerKind::ResNetBasicBlock:
+                {
+                    const auto& block = layer.resnet_basic_block;
+                    uint32_t count = 4;
+                    if (block.stride != 1 || block.in_channels != block.out_channels)
+                        count += 2;
+                    return count;
+                }
+                default:
+                    return 0;
+            }
+        }
+
         uint32_t ComputeOutputElements(const ParsedModel& model)
         {
             const NkFormat::FileHeader& header = model.header;
@@ -53,6 +90,7 @@ namespace NkLoader
             uint32_t c = header.input_shape[2];
             uint32_t features = h * w * c;
             bool flattened = false;
+            uint32_t weight_index = 0;
 
             for (uint32_t i = 0; i < header.num_layers; ++i)
             {
@@ -78,10 +116,17 @@ namespace NkLoader
                     case NkFormat::LayerKind::DepthwiseConv2D:
                     {
                         const NkFormat::ConvLayerDesc& layer = model.layers[i].conv;
-                        const uint32_t kernel_h = NkFormat::DepthwiseKernelH(layer);
-                        const uint32_t kernel_w = NkFormat::DepthwiseKernelW(layer);
-                        h = (h + 2 * layer.pad_h - kernel_h) / layer.stride + 1;
-                        w = (w + 2 * layer.pad_w - kernel_w) / layer.stride + 1;
+                        std::size_t weight_elems = 0;
+                        if (weight_index < header.num_weight_tensors)
+                            weight_elems = model.weight_tensors[weight_index].num_elements;
+                        const nk_op_detail::DepthwiseMeta dw_meta = nk_op_detail::DecodeDepthwiseMeta(
+                            layer, weight_elems, static_cast<std::size_t>(layer.filters));
+                        h = nk_op_detail::CalcOutputDimAsymmetric(
+                            h, static_cast<int>(dw_meta.kernel_h), static_cast<int>(layer.stride),
+                            static_cast<int>(layer.pad_h), dw_meta.pad_h_end);
+                        w = nk_op_detail::CalcOutputDimAsymmetric(
+                            w, static_cast<int>(dw_meta.kernel_w), static_cast<int>(layer.stride),
+                            static_cast<int>(layer.pad_w), dw_meta.pad_w_end);
                         features = h * w * c;
                         break;
                     }
@@ -147,6 +192,7 @@ namespace NkLoader
                     default:
                         break;
                 }
+                weight_index += CatalogWeightTensorCount(model.layers[i]);
             }
 
             if (flattened || header.num_layers == 0)
@@ -853,8 +899,12 @@ namespace NkLoader
                         const NkFormat::TensorDesc& w_desc = parsed.weight_tensors[weight_index++];
                         const NkFormat::TensorDesc& b_desc = parsed.bias_tensors[bias_index++];
 
-                        const uint32_t kernel_h = NkFormat::DepthwiseKernelH(layer);
-                        const uint32_t kernel_w = NkFormat::DepthwiseKernelW(layer);
+                        const nk_op_detail::DepthwiseMeta dw_meta = nk_op_detail::DecodeDepthwiseMeta(
+                            layer,
+                            static_cast<std::size_t>(w_desc.num_elements),
+                            static_cast<std::size_t>(layer.filters));
+                        const uint32_t kernel_h = dw_meta.kernel_h;
+                        const uint32_t kernel_w = dw_meta.kernel_w;
                         if (kernel_w == 0)
                             return Fail(LoadStatus::SizeMismatch,
                                           "Depthwise conv kernel_w must be non-zero in .nk");
@@ -880,11 +930,17 @@ namespace NkLoader
                                                       ToConvActivation(layer.activation),
                                                       layer.alpha,
                                                       static_cast<int>(layer.pad_h),
-                                                      static_cast<int>(layer.pad_w));
+                                                      static_cast<int>(layer.pad_w),
+                                                      dw_meta.pad_h_end,
+                                                      dw_meta.pad_w_end);
                         weight_offset += weight_elems;
                         bias_offset += layer.filters;
-                        h = (h + 2 * layer.pad_h - kernel_h) / layer.stride + 1;
-                        w = (w + 2 * layer.pad_w - kernel_w) / layer.stride + 1;
+                        h = nk_op_detail::CalcOutputDimAsymmetric(
+                            h, static_cast<int>(kernel_h), static_cast<int>(layer.stride),
+                            static_cast<int>(layer.pad_h), dw_meta.pad_h_end);
+                        w = nk_op_detail::CalcOutputDimAsymmetric(
+                            w, static_cast<int>(kernel_w), static_cast<int>(layer.stride),
+                            static_cast<int>(layer.pad_w), dw_meta.pad_w_end);
                         break;
                     }
                     case NkFormat::LayerKind::MaxPool2D:

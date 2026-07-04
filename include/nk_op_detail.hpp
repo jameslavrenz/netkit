@@ -6,6 +6,7 @@
 #include "nk_format.hpp"
 #include <cstdint>
 #include <cstring>
+#include <vector>
 
 namespace nk_op_detail
 {
@@ -32,6 +33,63 @@ namespace nk_op_detail
     {
         pad_h_end = static_cast<int>(pad_h) + static_cast<int>(pad_extra & 0xFU);
         pad_w_end = static_cast<int>(pad_w) + static_cast<int>((pad_extra >> 4) & 0xFU);
+    }
+
+    struct DepthwiseMeta
+    {
+        uint32_t kernel_h;
+        uint32_t kernel_w;
+        int pad_h_end;
+        int pad_w_end;
+    };
+
+    inline DepthwiseMeta DecodeDepthwiseMeta(const NkFormat::ConvLayerDesc& layer,
+                                             std::size_t weight_elems = 0,
+                                             std::size_t channels = 0)
+    {
+        const uint32_t kernel_h = NkFormat::DepthwiseKernelH(layer);
+        const uint8_t kw_byte = layer.kernel_w;
+        const int pad_h = static_cast<int>(layer.pad_h);
+        const int pad_w = static_cast<int>(layer.pad_w);
+
+        auto pad_from_byte = [&](uint8_t byte) -> DepthwiseMeta {
+            DepthwiseMeta meta{};
+            meta.kernel_h = kernel_h;
+            meta.kernel_w = kernel_h;
+            DecodeConvPadExtra(layer.pad_h, layer.pad_w, byte, meta.pad_h_end, meta.pad_w_end);
+            return meta;
+        };
+
+        auto literal = [&](uint32_t kw) -> DepthwiseMeta {
+            return {kernel_h, kw, pad_h, pad_w};
+        };
+
+        if (weight_elems > 0 && channels > 0 && weight_elems % channels == 0)
+        {
+            const std::size_t kernel_area = weight_elems / channels;
+            std::vector<DepthwiseMeta> candidates;
+            if (kw_byte == kernel_h && static_cast<std::size_t>(kernel_h) * kernel_h == kernel_area)
+                candidates.push_back(literal(kernel_h));
+            if (static_cast<std::size_t>(kernel_h) * kernel_h == kernel_area && kw_byte != kernel_h)
+                candidates.push_back(pad_from_byte(kw_byte));
+            const uint32_t literal_kw = kw_byte ? kw_byte : kernel_h;
+            if (static_cast<std::size_t>(kernel_h) * literal_kw == kernel_area)
+                candidates.push_back(literal(literal_kw));
+            if (!candidates.empty())
+                return candidates.front();
+        }
+
+        if (kw_byte == kernel_h)
+            return literal(kernel_h);
+        const int extra_w = (static_cast<int>(kw_byte) >> 4) & 0xF;
+        if (extra_w != 0)
+            return pad_from_byte(kw_byte);
+        const int extra_h = static_cast<int>(kw_byte) & 0xF;
+        if (extra_h != 0 && kw_byte < kernel_h)
+            return literal(kw_byte);
+        if (extra_h != 0)
+            return pad_from_byte(kw_byte);
+        return literal(kw_byte ? kw_byte : kernel_h);
     }
 
     struct PoolMeta

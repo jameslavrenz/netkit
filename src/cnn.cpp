@@ -157,7 +157,9 @@ void CNNNetwork::InitDepthwiseConvLayer(uint32_t layer_idx,
                                         ConvActivationType activation,
                                         float leaky_alpha,
                                         int pad_h,
-                                        int pad_w)
+                                        int pad_w,
+                                        int pad_h_end,
+                                        int pad_w_end)
 {
     if (!blocks || layer_idx >= num_layers)
         return;
@@ -168,6 +170,8 @@ void CNNNetwork::InitDepthwiseConvLayer(uint32_t layer_idx,
     blocks[layer_idx].depthwise_conv.depthwise.stride = stride;
     blocks[layer_idx].depthwise_conv.depthwise.pad_h = pad_h;
     blocks[layer_idx].depthwise_conv.depthwise.pad_w = pad_w;
+    blocks[layer_idx].depthwise_conv.depthwise.pad_h_end = pad_h_end >= 0 ? pad_h_end : pad_h;
+    blocks[layer_idx].depthwise_conv.depthwise.pad_w_end = pad_w_end >= 0 ? pad_w_end : pad_w;
     blocks[layer_idx].depthwise_conv.depthwise.channels = channels;
     blocks[layer_idx].depthwise_conv.depthwise.weights = weights;
     blocks[layer_idx].depthwise_conv.depthwise.bias = bias;

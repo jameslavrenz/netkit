@@ -460,6 +460,8 @@ def _arch_to_spec(arch: dict, weights: np.ndarray) -> ModelSpec:
                     alpha=alpha,
                     pad_h=layer.get("pad_h", 0),
                     pad_w=layer.get("pad_w", 0),
+                    pad_h_end=layer.get("pad_h_end", layer.get("pad_h", 0)),
+                    pad_w_end=layer.get("pad_w_end", layer.get("pad_w", 0)),
                 )
             )
         elif layer_type == "max_pool2d":

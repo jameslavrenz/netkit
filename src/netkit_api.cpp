@@ -1291,8 +1291,13 @@ nk_status_t nk_model_run(const nk_model_t* model,
         if (!output_tensor.data)
             return NK_ERR_ARENA_OVERFLOW;
         const float* out_data = static_cast<const float*>(output_tensor.data);
-        for (uint32_t i = 0; i < state->arch.output_elements; ++i)
+        const uint32_t actual_output = output_tensor.num_elements;
+        if (output_capacity < actual_output)
+            return NK_ERR_BUFFER_TOO_SMALL;
+        for (uint32_t i = 0; i < actual_output; ++i)
             output[i] = out_data[i];
+        *output_count = actual_output;
+        return NK_OK;
     }
     else
     {

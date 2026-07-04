@@ -28,9 +28,13 @@ PARITY_PAIRS = [
     ("import_rect_pool.nk", "import_rect_pool.onnx"),
     ("import_matmul_mlp.nk", "import_matmul_mlp.onnx"),
     ("import_cnn_matmul_head.nk", "import_cnn_matmul_head.onnx"),
+    ("import_resnet_basic_block.nk", "import_resnet_basic_block.onnx"),
+    ("import_mobilenet_uib.nk", "import_mobilenet_uib.onnx"),
+    ("import_mobilenet_uib_skip.nk", "import_mobilenet_uib_skip.onnx"),
+    ("import_asym_depthwise_conv.nk", "import_asym_depthwise_conv.onnx"),
 ]
 
-EXPECTED_CASES = 61
+EXPECTED_CASES = 73
 
 
 def _nk_infer_bin() -> Path:

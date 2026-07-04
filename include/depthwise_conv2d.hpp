@@ -10,6 +10,8 @@ struct DepthwiseConv2D
     int stride = 1;
     int pad_h = 0;
     int pad_w = 0;
+    int pad_h_end = -1;
+    int pad_w_end = -1;
     int channels = 0;
 
     float* weights; // [ch][kh][kw]

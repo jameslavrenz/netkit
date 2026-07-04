@@ -8,7 +8,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .cnn_layers import depthwise_arch_entry
+from .cnn_layers import _layer_weight_tensor_count, depthwise_arch_entry, reconcile_depthwise_kernel
 from .format import HEADER_BYTES, Activation, LayerKind, NetworkKind, FLAG_HAS_TESTS, TEST_MAGIC, unpack_header
 from .inspect import _read_layer_body, _read_tensor_desc
 from .writer import RegressionCase, RegressionSuite
@@ -190,6 +190,33 @@ def _read_nk_stream(stream: io.BytesIO) -> tuple[dict, np.ndarray]:
     )
 
     arch = _layers_to_arch(network, input_shape, layers)
+    weight_index = 0
+    for layer_index, layer in enumerate(arch["layers"]):
+        if layer["type"] == "depthwise_conv2d":
+            if weight_index >= len(weight_arrays):
+                raise ValueError("missing depthwise weight tensor in .nk catalog")
+            parsed = layers[layer_index]
+            kernel_w_byte = int(parsed.get("_kernel_w_byte", layer["kernel_w"]))
+            kw, top, left, bottom, right = reconcile_depthwise_kernel(
+                kernel_h=int(layer["kernel_h"]),
+                kernel_w_byte=kernel_w_byte,
+                pad_h=int(layer.get("pad_h", 0)),
+                pad_w=int(layer.get("pad_w", 0)),
+                channels=int(layer["filters"]),
+                weight_elems=int(weight_arrays[weight_index].size),
+            )
+            layer["kernel_w"] = kw
+            layer["pad_h"] = top
+            layer["pad_w"] = left
+            if bottom != top:
+                layer["pad_h_end"] = bottom
+            elif "pad_h_end" in layer:
+                del layer["pad_h_end"]
+            if right != left:
+                layer["pad_w_end"] = right
+            elif "pad_w_end" in layer:
+                del layer["pad_w_end"]
+        weight_index += _layer_weight_tensor_count(layer)
     return arch, flat_weights
 
 
