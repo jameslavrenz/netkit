@@ -36,7 +36,13 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    float input[4096];
+    if (arch.input_elements > NK_MAX_CASE_FLOATS || arch.output_elements > NK_MAX_CASE_FLOATS)
+    {
+        fprintf(stderr, "model I/O exceeds example buffer limit (%u floats)\n", (unsigned)NK_MAX_CASE_FLOATS);
+        return 1;
+    }
+
+    float input[NK_MAX_CASE_FLOATS];
     for (int i = 0; i < input_arg_count; ++i)
         input[i] = strtof(argv[i + 2], NULL);
 
@@ -63,7 +69,7 @@ int main(int argc, char** argv)
         goto done;
     }
 
-    float output[4096];
+    float output[NK_MAX_CASE_FLOATS];
     uint32_t output_count = 0;
     const nk_status_t run_status = nk_model_run(&model,
                                                   &arena,

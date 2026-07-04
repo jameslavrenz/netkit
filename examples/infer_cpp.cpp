@@ -9,6 +9,7 @@
 #include "cnn.hpp"
 #include "nk_loader.hpp"
 #include "mlp.hpp"
+#include "netkit.h"
 #include "tensor_factory.hpp"
 #include <array>
 #include <cstdlib>
@@ -58,6 +59,7 @@ int main(int argc, char** argv)
     }
 
     const uint32_t input_elements = NkLoader::InputElements(parsed);
+    const uint32_t output_elements = NkLoader::OutputElements(parsed);
     const int input_arg_count = argc - 2;
     if (static_cast<uint32_t>(input_arg_count) != input_elements)
     {
@@ -65,13 +67,13 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    if (input_elements > 4096)
+    if (input_elements > NK_MAX_CASE_FLOATS || output_elements > NK_MAX_CASE_FLOATS)
     {
-        std::cerr << "input too large for example buffer\n";
+        std::cerr << "model I/O exceeds example buffer limit (" << NK_MAX_CASE_FLOATS << " floats)\n";
         return 1;
     }
 
-    float input_buffer[4096] = {};
+    float input_buffer[NK_MAX_CASE_FLOATS] = {};
     for (int i = 0; i < input_arg_count; ++i)
         input_buffer[i] = std::strtof(argv[i + 2], nullptr);
 

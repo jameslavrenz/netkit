@@ -81,7 +81,7 @@ Full reference: [docs/CLI.md](docs/CLI.md)
 | `examples/infer_cpp.cpp` | C++26 | `make example-cpp` | `./examples/infer_cpp models/test_mlp.nk 1 2` |
 | `examples/infer_c.c` | C23 | `make example-c` | `./examples/infer_c models/test_mlp.nk 1 2` |
 
-Both load a `.nk` model and print input/output tensors. See [Getting Started](docs/GETTING_STARTED.md) for minimal code snippets and linking.
+Both load a `.nk` model and print input/output tensors (stack buffers up to `NK_MAX_CASE_FLOATS` / 16384 floats, same as CLI). See [Getting Started](docs/GETTING_STARTED.md) for minimal code snippets and linking.
 
 ## Project structure
 
@@ -222,9 +222,13 @@ See [PHILOSOPHY.md](docs/PHILOSOPHY.md) for the full narrative. In brief:
 
 ## Roadmap
 
+**Phase 1 (today):** float32 interpreter runtime — `.nk` load, MLP/CNN + fused blocks (ResNet, MobileNet, ConvNeXt), depthwise conv, asymmetric padding, residual adds, optional CMSIS-NN/DSP with reference fallback ([KERNELS.md](docs/KERNELS.md)).
+
+**Phase 2 (planned):**
+
 - **Numeric types:** float16, int16, int8, int4 ([DATATYPES.md](docs/DATATYPES.md))
 - **Packager:** quantized `.nk` export, broader fusion ([PHILOSOPHY.md](docs/PHILOSOPHY.md))
-- **Runtime:** asymmetric conv padding, depthwise conv, residual branches
+- **Import / runtime:** broader ONNX op coverage (e.g. non-depthwise grouped conv), int8 inference kernels
 
 ## License
 
