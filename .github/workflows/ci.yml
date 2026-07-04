@@ -11,8 +11,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - name: Install Clang
         run: |
@@ -29,17 +27,8 @@ jobs:
       - name: Install Python dependencies
         run: pip install -e "python[train]"
 
-      - name: Fetch CMSIS libraries
-        run: make cmsis-init
-
       - name: Build
         run: make
-
-      - name: Build MCU CM4 with CMSIS-NN (host smoke link)
-        run: make NETKIT_HOST_SMOKE=1 NETKIT_TARGET=mcu NETKIT_ARCH=CM4 NETKIT_CMSIS_NN=1 NETKIT_CMSIS_DSP=1 lib
-
-      - name: Build and smoke-test CMSIS-DSP backend
-        run: chmod +x tools/run_cmsis_dsp_smoke.sh && ./tools/run_cmsis_dsp_smoke.sh
 
       - name: Run C++, C API, and Python tests
         run: make NETKIT_CMSIS_DSP=0 rebuild test

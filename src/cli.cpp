@@ -1,4 +1,5 @@
 #include "cli.hpp"
+#include "netkit.h"
 #include "test.hpp"
 #include "nk_loader.hpp"
 #include "tensor_factory.hpp"
@@ -14,7 +15,7 @@ namespace Cli
 {
     namespace
     {
-        constexpr uint32_t kMaxInputFloats = 4096;
+        constexpr uint32_t kMaxInputFloats = NK_MAX_CASE_FLOATS;
 
 #if !defined(NETKIT_ARENA_HEAP)
         alignas(std::max_align_t) unsigned char g_arena_buffer[ArenaUtil::kMnistCnnCapacity];
@@ -56,7 +57,7 @@ namespace Cli
             std::cout << "      Input count must match the model input shape:\n";
             std::cout << "        MLP: batch × features\n";
             std::cout << "        CNN: H × W × C in NHWC flatten order\n";
-            std::cout << "      Maximum 4096 input floats per invocation.\n\n";
+            std::cout << "      Maximum " << NK_MAX_CASE_FLOATS << " input floats per invocation.\n\n";
 
             std::cout << "  inspect <model.nk> [--full]\n";
             std::cout << "      Print a boxed network summary (architecture at a glance).\n";

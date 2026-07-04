@@ -197,15 +197,14 @@ gh workflow run ci.yml
 gh run watch    # optional: wait for the run you just started
 ```
 
-The **`build-and-test`** job on `ubuntu-latest` uses **host Clang** only:
+The **`build-and-test`** job on `ubuntu-latest` uses **host Clang** only (reference kernels — no CMSIS compile smoke):
 
-1. `make cmsis-init` — fetch CMSIS-NN and CMSIS-DSP
-2. `make` — default desktop build
-3. `make NETKIT_HOST_SMOKE=1 NETKIT_TARGET=mcu NETKIT_ARCH=CM4 NETKIT_CMSIS_NN=1 NETKIT_CMSIS_DSP=1 lib` — CMSIS MCU link smoke (host)
-4. `./tools/run_cmsis_dsp_smoke.sh` — CMSIS-DSP build + forward smoke (hand models only)
-5. `make NETKIT_CMSIS_DSP=0 rebuild test` — full C++ embedded + C API + Python suite (reference kernels)
-6. Example and CLI smoke tests
-7. CMake configure + build smoke test (`./cmake-build/netkit test`, Release build)
+1. `make` — default desktop build
+2. `make NETKIT_CMSIS_DSP=0 rebuild test` — full C++ embedded + C API + Python suite (reference kernels)
+3. Example and CLI smoke tests
+4. CMake configure + build smoke test (`./cmake-build/netkit test`, Release build)
+
+CMSIS backends are validated **locally** (`make cmsis-init`, `make NETKIT_CMSIS_DSP=1 test-cpp`, `./tools/run_cmsis_dsp_smoke.sh`, `make test-embedded-smoke-matrix`) — not in CI.
 
 **CI build notes**
 

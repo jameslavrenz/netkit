@@ -95,7 +95,7 @@ Load a model and run one forward pass.
 | MLP | `batch × features` (product of input shape) |
 | CNN | `H × W × C` (NHWC flatten order) |
 
-Maximum 4096 input floats per invocation.
+Maximum `NK_MAX_CASE_FLOATS` (16384) input floats per invocation — enough for 56×56×3 CNN inputs and embedded regression cases.
 
 **Errors:** Missing `--input`, wrong value count, parse/load failures, or arena overflow print to stderr and return exit code `1`.
 
