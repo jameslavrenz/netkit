@@ -22,7 +22,7 @@ See [python/README.md](../python/README.md) and [NK_FORMAT.md](NK_FORMAT.md).
 | ONNX op | netkit layer | Notes |
 |---------|--------------|-------|
 | `Gemm` | `dense` | float32 weights/bias initializers; `transB` supported |
-| `Conv` | `conv2d` | NCHW weights → netkit `[O,Kh,Kw,I]`; symmetric `pads` (top=left, bottom=right); fuses trailing activations |
+| `Conv` | `conv2d` or `depthwise_conv2d` | NCHW weights → netkit `[O,Kh,Kw,I]` or depthwise `[C,Kh,Kw]` when `group == in_channels`; per-side symmetric `pads` on import (see [Limitations](#limitations-v1)); fuses trailing activations |
 | `MaxPool` | `max_pool2d` | square kernel from `kernel_shape`; symmetric `pads` |
 | `AveragePool` / `AvgPool` | `avg_pool2d` | square kernel from `kernel_shape`; symmetric `pads` |
 | `GlobalAveragePool` | `avg_pool2d` | emitted as `pool_size = H`, `stride = 1` (square spatial dims only) |
@@ -46,23 +46,21 @@ At inference time, feed CNN inputs in **NHWC flatten order** (same as existing n
 
 - **Float32 only** — other ONNX `TensorProto` types are rejected
 - **No external data** — weights must be embedded in the `.onnx` file (`raw_data` or `float_data`)
-- **Linear graphs** — no branches, skip connections, or subgraphs (unless **composite fusion** recognizes ResNet BasicBlock `Add` patterns; see below)
-- **Symmetric conv and pool padding only** — `pads` must match top/bottom and left/right
-- **Square kernels** — `Conv` / pool ops use one `kernel_shape` value for height and width
+- **Sequential primitive graphs** — no generic `Add` / skip branches unless **composite fusion** recognizes them (ResNet BasicBlock on `convert`; see below). Full ResNet / MobileNet / ConvNeXt backbones are best packed from timm via `python -m netkit pack`
+- **ONNX padding import** — `pads` must be per-side symmetric (top = bottom, left = right). The runtime supports independent `pad_h` and `pad_w` (including non-square depthwise kernels); ONNX import rejects per-side asymmetric pads (e.g. top ≠ bottom)
+- **Square pool kernels** — `MaxPool` / `AvgPool` use one `kernel_shape` value for height and width on import (runtime `.nk` layers can specify non-square depthwise kernels)
 
-PyTorch/TensorFlow exports often include `MatMul`, `Add`, `Reshape`, or extra `Pad` nodes — re-export or simplify the graph (e.g. `torch.onnx.export` on an `nn.Sequential`) or extend the converter.
+PyTorch/TensorFlow exports often include `MatMul`, `Add`, `Reshape`, or extra `Pad` nodes — re-export or simplify the graph (e.g. `torch.onnx.export` on an `nn.Sequential`), enable composite fusion, or use `netkit pack` for supported timm backbones.
 
-### Composite block fusion (ResNet BasicBlock)
+### Composite block fusion
 
-When `Add` nodes are present, `python -m netkit convert` (default) walks the ONNX graph in topological order and fuses matching **ResNet BasicBlock** subgraphs into layer kind `10` (`resnet_basic_block`). This unlocks residual CNNs without a primitive `Add` layer in `.nk`.
-
-Disable with:
+**ONNX `convert` (default):** when the graph has `Add` nodes, `python -m netkit convert` fuses matching **ResNet BasicBlock** subgraphs into layer kind `resnet_basic_block` (residual add + two conv branches). Disable with `--no-fuse`.
 
 ```bash
-python -m netkit convert model.onnx --no-fuse
+python -m netkit convert model.onnx --no-fuse   # primitive layers only
 ```
 
-Pack timm checkpoints directly (no ONNX round-trip):
+**Timm `pack` (no ONNX round-trip):** ResNet-18, MobileNetV4-Conv-Small, and ConvNeXt V2-Atto emit fused composite layers (`resnet_basic_block`, `mobilenetv4_uib`, `convnextv2_block`) directly from PyTorch checkpoints:
 
 ```bash
 python -m netkit pack --arch resnet18 -o models/my_resnet18.nk --height 56 --width 56 --num-classes 10

@@ -170,7 +170,7 @@ Validation helpers: `IsMatMulValid`, `CheckSameShape2D`, etc.
 
 ## Conv2D (`conv2d.hpp`)
 
-Low-level convolution with optional symmetric padding (`pad_h`, `pad_w`).
+Low-level convolution with per-axis padding (`pad_h`, `pad_w` — same amount on both sides of each axis; values may differ between H and W).
 
 ```cpp
 struct Conv2D {
@@ -408,6 +408,6 @@ Exclude `main.cpp`, `cli.cpp`, and `test.cpp` from your link if you provide your
 - Inference only (no training, no autodiff)
 - Single-threaded
 - No heap allocation in `MLPNetwork` / `CNNNetwork` layer paths
-- Conv padding is symmetric only; pool layers support symmetric padding (`.nk` v3+)
+- Conv and pool layers support independent `pad_h` / `pad_w` per axis (`.nk` v3+); depthwise conv supports non-square `kernel_h` × `kernel_w`
 
-See the [roadmap](../README.md#roadmap) for planned ops (asymmetric padding, quantization).
+See the [roadmap](../README.md#roadmap) for planned work (quantized types, broader ONNX import).
