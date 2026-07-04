@@ -394,7 +394,6 @@ namespace NkRegression
 
         const NkLoader::NetworkKind kind = parse_result.kind;
         const std::size_t arena_capacity = ArenaCapacityForModel(parsed);
-        (void)arena_capacity;
 
         std::cout << "Model: " << resolved << "\n";
         std::cout << "Embedded cases: " << tests.num_cases << "\n";

@@ -1,7 +1,6 @@
 #pragma once
 #include "arena.hpp"
 #include "tensor.hpp"
-#include <initializer_list>
 #include "netkit_log.hpp"
 #include <span>
 
@@ -14,5 +13,5 @@ namespace TensorFactory
     Tensor CreateND(Arena& arena, uint32_t rank, std::span<const uint32_t> shape);
     Tensor View2D(float* data, uint32_t rows, uint32_t cols);
     Tensor ViewND(float* data, uint32_t rank, std::span<const uint32_t> shape);
-    void Fill(Tensor& t, std::initializer_list<float> values);
+    void Fill(Tensor& t, std::span<const float> values);
 }

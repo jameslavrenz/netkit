@@ -342,9 +342,7 @@ nk_status_t nk_tensor_fill(nk_tensor_t* tensor, const float* values, uint32_t co
         return NK_ERR_INVALID_ARGUMENT;
     if (count > AsTensor(tensor)->num_elements)
         return NK_ERR_INVALID_ARGUMENT;
-    float* dst = static_cast<float*>(AsTensor(tensor)->data);
-    for (uint32_t i = 0; i < count; ++i)
-        dst[i] = values[i];
+    TensorFactory::Fill(*AsTensor(tensor), std::span<const float>(values, count));
     return NK_OK;
 }
 
@@ -486,6 +484,8 @@ void nk_conv2d_forward(const nk_conv2d_t* conv, const nk_tensor_t* input, nk_ten
     c.stride = conv->stride;
     c.pad_h = conv->pad_h;
     c.pad_w = conv->pad_w;
+    c.pad_h_end = conv->pad_h_end < 0 ? conv->pad_h : conv->pad_h_end;
+    c.pad_w_end = conv->pad_w_end < 0 ? conv->pad_w : conv->pad_w_end;
     c.in_channels = conv->in_channels;
     c.out_channels = conv->out_channels;
     c.weights = conv->weights;
@@ -590,7 +590,9 @@ nk_status_t nk_cnn_init_conv_layer(nk_cnn_t* cnn,
                                    nk_conv_activation_t activation,
                                    float leaky_alpha,
                                    int pad_h,
-                                   int pad_w)
+                                   int pad_w,
+                                   int pad_h_end,
+                                   int pad_w_end)
 {
     if (!nk_cnn_is_valid(cnn))
         return NK_ERR_NOT_INITIALIZED;
@@ -604,7 +606,9 @@ nk_status_t nk_cnn_init_conv_layer(nk_cnn_t* cnn,
                                     ToCnnActivation(activation),
                                     leaky_alpha,
                                     pad_h,
-                                    pad_w);
+                                    pad_w,
+                                    pad_h_end,
+                                    pad_w_end);
     return NK_OK;
 }
 
@@ -619,7 +623,9 @@ nk_status_t nk_cnn_init_depthwise_conv_layer(nk_cnn_t* cnn,
                                              nk_conv_activation_t activation,
                                              float leaky_alpha,
                                              int pad_h,
-                                             int pad_w)
+                                             int pad_w,
+                                             int pad_h_end,
+                                             int pad_w_end)
 {
     if (!nk_cnn_is_valid(cnn))
         return NK_ERR_NOT_INITIALIZED;
@@ -633,33 +639,43 @@ nk_status_t nk_cnn_init_depthwise_conv_layer(nk_cnn_t* cnn,
                                              ToCnnActivation(activation),
                                              leaky_alpha,
                                              pad_h,
-                                             pad_w);
+                                             pad_w,
+                                             pad_h_end,
+                                             pad_w_end);
     return NK_OK;
 }
 
 nk_status_t nk_cnn_init_pool_layer(nk_cnn_t* cnn,
                                    uint32_t layer_idx,
-                                   int pool_size,
+                                   int pool_h,
+                                   int pool_w,
                                    int stride,
                                    int pad_h,
-                                   int pad_w)
+                                   int pad_w,
+                                   int pad_h_end,
+                                   int pad_w_end)
 {
     if (!nk_cnn_is_valid(cnn))
         return NK_ERR_NOT_INITIALIZED;
-    CnnPtr(cnn)->net->InitPoolLayer(layer_idx, pool_size, pool_size, stride, pad_h, pad_w);
+    CnnPtr(cnn)->net->InitPoolLayer(
+        layer_idx, pool_h, pool_w, stride, pad_h, pad_w, pad_h_end, pad_w_end);
     return NK_OK;
 }
 
 nk_status_t nk_cnn_init_avg_pool_layer(nk_cnn_t* cnn,
                                        uint32_t layer_idx,
-                                       int pool_size,
+                                       int pool_h,
+                                       int pool_w,
                                        int stride,
                                        int pad_h,
-                                       int pad_w)
+                                       int pad_w,
+                                       int pad_h_end,
+                                       int pad_w_end)
 {
     if (!nk_cnn_is_valid(cnn))
         return NK_ERR_NOT_INITIALIZED;
-    CnnPtr(cnn)->net->InitAvgPoolLayer(layer_idx, pool_size, pool_size, stride, pad_h, pad_w);
+    CnnPtr(cnn)->net->InitAvgPoolLayer(
+        layer_idx, pool_h, pool_w, stride, pad_h, pad_w, pad_h_end, pad_w_end);
     return NK_OK;
 }
 

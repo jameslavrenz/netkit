@@ -45,7 +45,7 @@ Both APIs expose float-only data accessors:
 | C++ | C |
 |-----|---|
 | `tensor_data_f32()` | `nk_tensor_data_f32()` |
-| `TensorFactory::Fill` with `float*` | `nk_tensor_fill()` |
+| `nk_tensor_fill` | fill tensor elements from `float*` (C); `TensorFactory::Fill(tensor, std::span<const float>)` (C++) |
 | `nk_model_run(..., const float* input, ..., float* output, ...)` | same |
 
 Do not assume `double` or integer tensor payloads work for forward passes.

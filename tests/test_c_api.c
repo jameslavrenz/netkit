@@ -68,7 +68,7 @@ static void TestArena(void)
     ExpectTrue(nk_arena_used(&arena) == 0, "arena initially empty");
 
     void* block = nk_arena_alloc(&arena, 64, 8);
-    ExpectTrue(block != NULL, "arena alloc");
+    ExpectTrue(block != nullptr, "arena alloc");
     ExpectTrue(nk_arena_used(&arena) == 64, "arena used after alloc");
     ExpectTrue(nk_arena_remaining(&arena) == sizeof(memory) - 64, "arena remaining");
 
@@ -86,7 +86,7 @@ static void TestArenaHeap(void)
     ExpectTrue(nk_arena_capacity(&arena) == 4096, "heap arena capacity");
 
     void* block = nk_arena_alloc(&arena, 128, 8);
-    ExpectTrue(block != NULL, "heap arena alloc");
+    ExpectTrue(block != nullptr, "heap arena alloc");
 
 #if defined(NETKIT_TARGET_CPU)
     nk_arena_destroy_heap(&arena);
@@ -108,10 +108,10 @@ static void TestArenaAlignment(void)
 
     /* Simulate odd float-count weight payload (28 bytes). */
     void* weights = nk_arena_alloc(&arena, 28, 4);
-    ExpectTrue(weights != NULL, "arena alloc weights");
+    ExpectTrue(weights != nullptr, "arena alloc weights");
 
     void* network = nk_arena_alloc(&arena, 32, 8);
-    ExpectTrue(network != NULL, "arena alloc aligned struct after odd weight blob");
+    ExpectTrue(network != nullptr, "arena alloc aligned struct after odd weight blob");
     ExpectTrue(((uintptr_t)network % 8u) == 0u, "struct pointer 8-byte aligned");
     ExpectTrue(nk_arena_used(&arena) > 28, "arena used includes alignment padding");
 }
@@ -145,6 +145,48 @@ static void TestTensorOps(void)
     ExpectFloatEq(out[1], 2.0f, "matmul c[1]");
     ExpectFloatEq(out[2], 3.0f, "matmul c[2]");
     ExpectFloatEq(out[3], 4.0f, "matmul c[3]");
+}
+
+static void TestConv2dSymmetricPadding(void)
+{
+    printf("\n--- conv2d symmetric padding (C API) ---\n");
+
+    alignas(max_align_t) unsigned char memory[4096];
+    nk_arena_t arena;
+    nk_arena_init(&arena, memory, sizeof(memory));
+
+    uint32_t shape[3] = {4, 4, 1};
+    nk_tensor_t input = {0};
+    nk_tensor_t output = {0};
+    ExpectStatus(nk_tensor_create_nd(&arena, 3, shape, &input), NK_OK, "conv input tensor");
+    ExpectStatus(nk_tensor_create_nd(&arena, 3, shape, &output), NK_OK, "conv output tensor");
+
+    const float input_values[16] = {
+        1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+        0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+    };
+    ExpectStatus(nk_tensor_fill(&input, input_values, 16), NK_OK, "conv input fill");
+
+    static float weights[9] = {0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+    static float bias[1] = {0.0f};
+
+    nk_conv2d_t conv = {
+        .kernel_size = 3,
+        .stride = 1,
+        .pad_h = 1,
+        .pad_w = 1,
+        .pad_h_end = NK_PAD_MIRROR,
+        .pad_w_end = NK_PAD_MIRROR,
+        .in_channels = 1,
+        .out_channels = 1,
+        .weights = weights,
+        .bias = bias,
+    };
+
+    nk_conv2d_forward(&conv, &input, &output);
+
+    const float* out = nk_tensor_data_f32_const(&output);
+    ExpectFloatEq(out[0], 1.0f, "conv2d center preserved with symmetric pad");
 }
 
 static void TestParseArchitecture(void)
@@ -247,7 +289,7 @@ static void TestArchPrint(void)
     printf("PASS nk_arch_print smoke (output above)\n");
 
     ExpectStatus(nk_arch_print("models/test_mlp.nk"), NK_OK, "nk_arch_print status");
-    ExpectStatus(nk_arch_print(NULL), NK_ERR_INVALID_ARGUMENT, "nk_arch_print null path");
+    ExpectStatus(nk_arch_print(nullptr), NK_ERR_INVALID_ARGUMENT, "nk_arch_print null path");
 }
 
 static void TestModelMetadata(void)
@@ -342,7 +384,7 @@ static void TestCnnLoadHasBuffers(void)
     nk_arena_init(&arena, memory, sizeof(memory));
 
     nk_cnn_t cnn;
-    ExpectStatus(nk_cnn_load("models/cnn_4x4_single.nk", &arena, &cnn, NULL), NK_OK, "cnn load");
+    ExpectStatus(nk_cnn_load("models/cnn_4x4_single.nk", &arena, &cnn, nullptr), NK_OK, "cnn load");
     ExpectTrue(nk_cnn_has_activation_buffers(&cnn), "cnn buffers ready after load");
 }
 
@@ -443,7 +485,7 @@ static void TestManualYoloxDecoupledHeadLayer(void)
                  NK_OK,
                  "yolox head init");
 
-    ExpectStatus(nk_cnn_init_yolox_decoupled_head_layer(NULL,
+    ExpectStatus(nk_cnn_init_yolox_decoupled_head_layer(nullptr,
                                                         &arena,
                                                         0,
                                                         2,
@@ -514,6 +556,7 @@ int main(void)
 #endif
     TestArenaAlignment();
     TestTensorOps();
+    TestConv2dSymmetricPadding();
     TestParseArchitecture();
     TestArchPrint();
     TestModelMetadata();

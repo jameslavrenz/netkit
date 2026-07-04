@@ -1567,24 +1567,6 @@ namespace NkLoader
             (void)input_rank;
             return LoadResult{LoadStatus::Ok, NetworkKind::Cnn, nullptr};
         }
-
-        void PrintTensorDesc(const char* label, const NkFormat::TensorDesc& desc)
-        {
-#ifndef NETKIT_DISABLE_IOSTREAM
-            std::cout << "  " << label << ": rank=" << static_cast<uint32_t>(desc.rank)
-                      << " dtype=" << NkFormat::DTypeName(desc.dtype) << " shape=[";
-            for (uint32_t i = 0; i < desc.rank; ++i)
-            {
-                std::cout << desc.dims[i];
-                if (i + 1 < desc.rank)
-                    std::cout << ", ";
-            }
-            std::cout << "] elements=" << desc.num_elements << "\n";
-#else
-            (void)label;
-            (void)desc;
-#endif
-        }
     }
 
     const char* StatusMessage(LoadStatus status)
@@ -1602,18 +1584,6 @@ namespace NkLoader
             case LoadStatus::ArenaOverflow: return "arena overflow";
         }
         return "unknown";
-    }
-
-    bool IsNkPath(const char* path)
-    {
-        if (!path)
-            return false;
-
-        const char* dot = std::strrchr(path, '.');
-        if (!dot)
-            return false;
-
-        return std::strcmp(dot, ".nk") == 0;
     }
 
     LoadResult ParseFile(const char* nk_path, ParsedModel& out)
@@ -2014,130 +1984,6 @@ namespace NkLoader
 #endif
     }
 
-    void PrintHeader(const char* nk_path, const ParsedModel& model)
-    {
-#ifndef NETKIT_DISABLE_IOSTREAM
-        const NkFormat::FileHeader& header = model.header;
-
-        std::cout << "netkit binary model (.nk)\n";
-        std::cout << "  file:            " << nk_path << "\n";
-        std::cout << "  format version:  " << header.version << "\n";
-        std::cout << "  network:         " << NkFormat::NetworkKindName(header.network_kind) << "\n";
-        std::cout << "  input rank:      " << static_cast<uint32_t>(header.input_rank) << "\n";
-        std::cout << "  input shape:     [";
-        for (uint32_t i = 0; i < header.input_rank; ++i)
-        {
-            std::cout << header.input_shape[i];
-            if (i + 1 < header.input_rank)
-                std::cout << ", ";
-        }
-        std::cout << "]\n";
-        std::cout << "  layers:          " << header.num_layers << "\n";
-        std::cout << "  weight tensors:  " << header.num_weight_tensors << " ("
-                  << header.weights_bytes << " bytes)\n";
-        std::cout << "  bias tensors:    " << header.num_bias_tensors << " (" << header.biases_bytes
-                  << " bytes)\n";
-
-        std::cout << "\nLayer stack:\n";
-        for (uint32_t i = 0; i < header.num_layers; ++i)
-        {
-            const NkFormat::LayerDesc& layer = model.layers[i];
-            std::cout << "  [" << i << "] " << NkFormat::LayerKindName(layer.kind);
-            switch (layer.kind)
-            {
-                case NkFormat::LayerKind::Dense:
-                    std::cout << " units=" << layer.dense.units
-                              << " activation=" << NkFormat::ActivationName(layer.dense.activation);
-                    break;
-                case NkFormat::LayerKind::Conv2D:
-                    std::cout << " kernel=" << layer.conv.kernel_size << " stride=" << layer.conv.stride
-                              << " filters=" << layer.conv.filters
-                              << " pad=" << static_cast<uint32_t>(layer.conv.pad_h) << ","
-                              << static_cast<uint32_t>(layer.conv.pad_w)
-                              << " activation=" << NkFormat::ActivationName(layer.conv.activation);
-                    break;
-                case NkFormat::LayerKind::DepthwiseConv2D:
-                {
-                    const uint32_t kernel_w = NkFormat::DepthwiseKernelW(layer.conv);
-                    std::cout << " kernel=" << layer.conv.kernel_size << "x" << kernel_w
-                              << " stride=" << layer.conv.stride
-                              << " channels=" << layer.conv.filters
-                              << " pad=" << static_cast<uint32_t>(layer.conv.pad_h) << ","
-                              << static_cast<uint32_t>(layer.conv.pad_w)
-                              << " activation=" << NkFormat::ActivationName(layer.conv.activation);
-                    break;
-                }
-                case NkFormat::LayerKind::MaxPool2D:
-                    std::cout << " pool=" << layer.pool.pool_size << " stride=" << layer.pool.stride;
-                    break;
-                case NkFormat::LayerKind::AvgPool2D:
-                    std::cout << " pool=" << layer.pool.pool_size << " stride=" << layer.pool.stride;
-                    break;
-                case NkFormat::LayerKind::BatchNorm2d:
-                    std::cout << " channels=" << layer.batch_norm.channels;
-                    break;
-                case NkFormat::LayerKind::LayerNorm2d:
-                    std::cout << " channels=" << layer.layernorm2d.channels
-                              << " eps=" << layer.layernorm2d.eps;
-                    break;
-                case NkFormat::LayerKind::ConvNeXtV2Block:
-                    std::cout << " channels=" << layer.convnextv2_block.channels
-                              << " eps=" << layer.convnextv2_block.eps;
-                    break;
-                case NkFormat::LayerKind::MobilenetV4Uib:
-                    std::cout << " in=" << layer.mobilenetv4_uib.in_channels
-                              << " out=" << layer.mobilenetv4_uib.out_channels
-                              << " start_dw="
-                              << static_cast<uint32_t>(layer.mobilenetv4_uib.start_dw_kernel)
-                              << " middle_dw="
-                              << static_cast<uint32_t>(layer.mobilenetv4_uib.middle_dw_kernel)
-                              << " stride=" << static_cast<uint32_t>(layer.mobilenetv4_uib.stride)
-                              << " expand=" << layer.mobilenetv4_uib.expand_ratio;
-                    break;
-                case NkFormat::LayerKind::ResNetBasicBlock:
-                    std::cout << " in=" << layer.resnet_basic_block.in_channels
-                              << " out=" << layer.resnet_basic_block.out_channels
-                              << " stride=" << static_cast<uint32_t>(layer.resnet_basic_block.stride);
-                    break;
-                case NkFormat::LayerKind::YoloxDecoupledHead:
-                    std::cout << " in=" << layer.yolox_decoupled_head.in_channels
-                              << " hidden=" << layer.yolox_decoupled_head.hidden_dim
-                              << " classes=" << layer.yolox_decoupled_head.num_classes
-                              << " convs=" << static_cast<uint32_t>(layer.yolox_decoupled_head.num_convs);
-                    break;
-                case NkFormat::LayerKind::Flatten:
-                    break;
-            }
-            std::cout << "\n";
-        }
-
-        if (header.num_weight_tensors > 0)
-        {
-            std::cout << "\nWeight tensor catalog:\n";
-            for (uint32_t i = 0; i < header.num_weight_tensors; ++i)
-            {
-                char label[32];
-                std::snprintf(label, sizeof(label), "weight[%u]", i);
-                PrintTensorDesc(label, model.weight_tensors[i]);
-            }
-        }
-
-        if (header.num_bias_tensors > 0)
-        {
-            std::cout << "\nBias tensor catalog:\n";
-            for (uint32_t i = 0; i < header.num_bias_tensors; ++i)
-            {
-                char label[32];
-                std::snprintf(label, sizeof(label), "bias[%u]", i);
-                PrintTensorDesc(label, model.bias_tensors[i]);
-            }
-        }
-#else
-        (void)nk_path;
-        (void)model;
-#endif
-    }
-
     LoadResult LoadMLP(const char* nk_path,
                        Arena& arena,
                        MLPNetwork*& network,
@@ -2324,35 +2170,6 @@ namespace NkLoader
         }
 
         const LoadResult result = LoadCNN(nk_path, arena, cnn, input_shape, input_rank);
-        kind = NetworkKind::Cnn;
-        return result;
-    }
-
-    LoadResult LoadFromBuffer(const uint8_t* data,
-                              std::size_t size,
-                              Arena& arena,
-                              NetworkKind& kind,
-                              MLPNetwork*& mlp,
-                              CNNNetwork*& cnn,
-                              std::array<uint32_t, kMaxTensorRank>& input_shape,
-                              uint32_t& input_rank)
-    {
-        mlp = nullptr;
-        cnn = nullptr;
-
-        ParsedModel parsed{};
-        LoadResult parse_result = ParseBuffer(data, size, parsed);
-        if (parse_result.status != LoadStatus::Ok)
-            return parse_result;
-
-        if (parsed.header.network_kind == NkFormat::NetworkKind::Mlp)
-        {
-            const LoadResult result = LoadMLPFromBuffer(data, size, arena, mlp, input_shape, input_rank);
-            kind = NetworkKind::Mlp;
-            return result;
-        }
-
-        const LoadResult result = LoadCNNFromBuffer(data, size, arena, cnn, input_shape, input_rank);
         kind = NetworkKind::Cnn;
         return result;
     }

@@ -14,24 +14,14 @@
 #include <array>
 #include <cstdlib>
 #include <iostream>
+#include <span>
 
 namespace
 {
     Tensor MakeNhwcView(float* data, uint32_t h, uint32_t w, uint32_t c)
     {
-        Tensor input{};
-        input.data = data;
-        input.type = DataType::Float32;
-        input.rank = 3;
-        input.shape[0] = h;
-        input.shape[1] = w;
-        input.shape[2] = c;
-        input.stride[0] = w * c;
-        input.stride[1] = c;
-        input.stride[2] = 1;
-        input.num_elements = h * w * c;
-        input.bytes = input.num_elements * sizeof(float);
-        return input;
+        const std::array<uint32_t, 3> shape{h, w, c};
+        return TensorFactory::ViewND(data, 3, std::span<const uint32_t>(shape));
     }
 }
 

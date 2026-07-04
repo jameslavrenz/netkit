@@ -28,6 +28,11 @@
  *   On MCU with both enabled, NN owns overlapping layer ops; DSP is not a fallback.
  *   On desktop and MPU, NETKIT_CMSIS_NN=1 is ignored (warning) — reference kernels and optional CMSIS-DSP apply.
  *
+ * Optional reference-kernel tuning (Makefile / CMake):
+ *   NETKIT_LOOP_UNROLL — EXPERIMENTAL. When 1, 4× manual loop unroll in netkit reference
+ *     kernels only (default 0). Increases .text/flash size; can exceed program memory on
+ *     small MCUs. Independent of CMSIS-DSP ARM_MATH_LOOPUNROLL.
+ *
  * Target architecture (Makefile NETKIT_ARCH=... / CMake -DNETKIT_ARCH=...):
  *   Maps to CMSIS ARM_MATH_* flags (CM0–M85, A32, NEON). Unset = desktop host.
  *   Also sets ARM_MATH_LOOPUNROLL (DSP), __DSP_PRESENT (M33), MVEF/MVEI (M55/M85).
@@ -76,6 +81,14 @@
 
 #if NETKIT_WEIGHTS_IN_RAM != 0 && NETKIT_WEIGHTS_IN_RAM != 1
 #error "NETKIT_WEIGHTS_IN_RAM must be 0 or 1"
+#endif
+
+#ifndef NETKIT_LOOP_UNROLL
+#define NETKIT_LOOP_UNROLL 0
+#endif
+
+#if NETKIT_LOOP_UNROLL != 0 && NETKIT_LOOP_UNROLL != 1
+#error "NETKIT_LOOP_UNROLL must be 0 or 1"
 #endif
 
 /* CMSIS-NN: Cortex-M MCU firmware only (not desktop CPU or Cortex-A MPU). */

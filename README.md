@@ -16,7 +16,8 @@ Models are loaded from binary **`.nk`** files (single-file architecture + weight
 | **[Arena Memory](docs/ARENA.md)** | Bump allocator — sizing, alignment, reset |
 | **[Data Types](docs/DATATYPES.md)** | Float32 today; float16 / int16 / int8 / int4 roadmap |
 | **[ONNX Import](docs/ONNX.md)** | Python packager (ONNX → `.nk`); parity tests in Python |
-| **[Binary .nk Format](docs/NK_FORMAT.md)** | Single-file models — Python packager + C++ loader |
+| **[Binary .nk Format](docs/NK_FORMAT.md)** | Single-file models — overview |
+| **[`.nk` File Specification](docs/NK_FILE_SPECIFICATION.md)** | Byte-level `.nk` layout, offsets, hex inspection |
 | **[Python packager](python/README.md)** | `python -m netkit convert` (ONNX → `.nk`), `aot` (embed `.nk` in C/C++) |
 | **[Testing](docs/TESTING.md)** | Regression suites, Make targets, CI on push/PR + manual full suite |
 | **[C API Reference](docs/c-api.md)** | `netkit.h` (C23) |
@@ -127,7 +128,7 @@ netkit/
 
 Regenerate `.nk` from ONNX: `make export-nk`. Arena buffer size is **not** in the model file — you provide a caller-owned buffer sized for weights + ping-pong activations. See [docs/ARENA.md](docs/ARENA.md).
 
-Format spec: [docs/NK_FORMAT.md](docs/NK_FORMAT.md). Regression tests: [docs/TESTING.md](docs/TESTING.md).
+Format overview: [docs/NK_FORMAT.md](docs/NK_FORMAT.md). Byte-level spec and inspection: [docs/NK_FILE_SPECIFICATION.md](docs/NK_FILE_SPECIFICATION.md). Regression tests: [docs/TESTING.md](docs/TESTING.md).
 
 ## Building
 

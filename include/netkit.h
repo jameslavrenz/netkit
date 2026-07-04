@@ -36,7 +36,7 @@ extern "C" {
 
 #define NK_MAX_TENSOR_RANK 4
 #define NK_MAX_CASE_FLOATS 16384
-#define NK_MAX_LAYERS      16
+#define NK_MAX_LAYERS      100
 #define NK_MAX_PATH_LEN    256
 #define NK_MAX_MESSAGE_LEN 128
 
@@ -160,6 +160,8 @@ typedef struct nk_conv2d
     int stride;
     int pad_h;
     int pad_w;
+    int pad_h_end;
+    int pad_w_end;
     int in_channels;
     int out_channels;
     float* weights;
@@ -192,6 +194,9 @@ typedef struct nk_test_summary
     uint32_t passed;
     uint32_t failed;
 } nk_test_summary_t;
+
+/** Pass for pad_h_end / pad_w_end to mirror pad_h / pad_w (symmetric padding). */
+#define NK_PAD_MIRROR (-1)
 
 /* -------------------------------------------------------------------------- */
 /* Errors / version                                                           */
@@ -307,7 +312,9 @@ nk_status_t nk_cnn_init_conv_layer(nk_cnn_t* cnn,
                                    nk_conv_activation_t activation,
                                    float leaky_alpha,
                                    int pad_h,
-                                   int pad_w);
+                                   int pad_w,
+                                   int pad_h_end,
+                                   int pad_w_end);
 
 nk_status_t nk_cnn_init_depthwise_conv_layer(nk_cnn_t* cnn,
                                              uint32_t layer_idx,
@@ -320,21 +327,29 @@ nk_status_t nk_cnn_init_depthwise_conv_layer(nk_cnn_t* cnn,
                                              nk_conv_activation_t activation,
                                              float leaky_alpha,
                                              int pad_h,
-                                             int pad_w);
+                                             int pad_w,
+                                             int pad_h_end,
+                                             int pad_w_end);
 
 nk_status_t nk_cnn_init_pool_layer(nk_cnn_t* cnn,
                                    uint32_t layer_idx,
-                                   int pool_size,
+                                   int pool_h,
+                                   int pool_w,
                                    int stride,
                                    int pad_h,
-                                   int pad_w);
+                                   int pad_w,
+                                   int pad_h_end,
+                                   int pad_w_end);
 
 nk_status_t nk_cnn_init_avg_pool_layer(nk_cnn_t* cnn,
                                        uint32_t layer_idx,
-                                       int pool_size,
+                                       int pool_h,
+                                       int pool_w,
                                        int stride,
                                        int pad_h,
-                                       int pad_w);
+                                       int pad_w,
+                                       int pad_h_end,
+                                       int pad_w_end);
 
 nk_status_t nk_cnn_init_batch_norm_layer(nk_cnn_t* cnn,
                                          uint32_t layer_idx,

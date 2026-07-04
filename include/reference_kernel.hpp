@@ -90,11 +90,6 @@ struct ReferenceKernel : KernelBase<ReferenceKernel>
                                            NetkitKernelActivation fuse_activation,
                                            Tensor& output);
 
-    static void FullyConnected(const Tensor& input, const Tensor& kernel, Tensor& output)
-    {
-        FullyConnectedImpl(input, kernel, output);
-    }
-
 private:
     static void FullyConnectedImpl(const Tensor& input, const Tensor& kernel, Tensor& output);
 };

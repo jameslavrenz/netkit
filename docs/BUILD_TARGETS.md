@@ -70,6 +70,7 @@ Compile-time macros (from `include/netkit_config.h`):
 | `NETKIT_WEIGHTS_IN_RAM` | `1` — copy weight/bias payload into arena at buffer/AOT load (default **CPU/MPU**); `0` — coefs stay in `.nk` flash blob (default **MCU**) |
 | `NETKIT_USE_CMSIS_NN` | CMSIS-NN backends enabled (see CMSIS section) |
 | `NETKIT_USE_CMSIS_DSP` | CMSIS-DSP backends enabled (see CMSIS section) |
+| `NETKIT_LOOP_UNROLL` | `1` — **experimental** 4× manual loop unroll in **netkit reference kernels** only (default **0**). Increases `.text` size; can exceed flash on small MCUs. Does not affect CMSIS (`ARM_MATH_LOOPUNROLL` is separate). |
 | `NETKIT_HOST_SMOKE` | Host MCU/MPU smoke only — adds `__GNUC_PYTHON__` for CMSIS without CMSIS-Core |
 
 Default arena constant (`NK_ARENA_DEFAULT_CAPACITY` / `Arena::kDefaultCapacity`):
@@ -236,6 +237,9 @@ make NETKIT_ARCH=CM4 NETKIT_TARGET=mcu NETKIT_CMSIS_NN=1 lib
 # CMSIS-DSP — desktop, MCU, or MPU
 make NETKIT_CMSIS_DSP=1 test-cpp
 
+# Reference-kernel 4× loop unroll — experimental (increases .text; check flash on MCU)
+make NETKIT_LOOP_UNROLL=1 test-cpp
+
 # MCU firmware with both
 make NETKIT_ARCH=CM4 NETKIT_TARGET=mcu NETKIT_CMSIS_NN=1 NETKIT_CMSIS_DSP=1 lib
 ```
@@ -244,6 +248,7 @@ make NETKIT_ARCH=CM4 NETKIT_TARGET=mcu NETKIT_CMSIS_NN=1 NETKIT_CMSIS_DSP=1 lib
 |---------------|-------|--------|
 | `NETKIT_CMSIS_NN=1` | `NETKIT_USE_CMSIS_NN` | MCU + Cortex-M `NETKIT_ARCH` only (ignored with warning on cpu/mpu) |
 | `NETKIT_CMSIS_DSP=1` | `NETKIT_USE_CMSIS_DSP` | Ops add/mul/scale/clip/matmul; FC/batch-norm on desktop/MPU; `ARM_MATH_LOOPUNROLL` |
+| `NETKIT_LOOP_UNROLL=1` | `NETKIT_LOOP_UNROLL=1` | **Experimental.** 4× manual unroll in reference kernels only (default 0). Larger `.text`; verify flash budget on MCU. |
 | `NETKIT_ARCH=<core>` | `ARM_MATH_*` (see table above) | Core-specific CMSIS-DSP/NN tuning |
 
 Dense weights use CMSIS-NN `[out, in]` layout via `Kernels::FullyConnectedWithBias` (same as PyTorch `nn.Linear`).

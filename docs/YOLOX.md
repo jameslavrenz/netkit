@@ -70,6 +70,26 @@ The fused layer is registered in the op resolver as `yolox_decoupled_head` (`Lay
 
 Post-processing (sigmoid, grid decode, NMS) stays on the host — see `python/netkit/yolox_decode.py`.
 
+## Manual construction
+
+Most deployments load `yolox_mnv4_small.nk` or `yolox_head_only.nk` via the loader. To attach a head to your own backbone features in code, follow the **same call order as any CNN**: create network → init layers in index order → `InitActivationBuffers` with **network input** shape → `forward`.
+
+| Step | C++ | C |
+|------|-----|---|
+| 1. Arena | `arena.init(memory, size)` | `nk_arena_init(&arena, memory, size)` |
+| 2. Network | `CNNNetwork(n, arena)` | `nk_cnn_create(&arena, n, &cnn)` |
+| 3. Layers | `InitConvLayer` / … / `InitYoloxDecoupledHeadLayer(i, arena, h, w, …)` | `nk_cnn_init_*_layer` / `nk_cnn_init_yolox_decoupled_head_layer` |
+| 4. Buffers | `InitActivationBuffers(arena, in_h, in_w, in_c)` | `nk_cnn_init_activation_buffers(&cnn, &arena, in_h, in_w, in_c)` |
+| 5. Inference | `forward(input, arena)` → `GetOutput()` | `nk_cnn_forward(&cnn, &arena, &input, &output)` |
+
+**Head-only** (backbone already produced `[H, W, C]` features): use `n = 1`, set `spatial_h/w` to the feature map size, `in_channels = C`, then call `InitActivationBuffers(arena, spatial_h, spatial_w, in_channels)`.
+
+**Full detector** (backbone + head): init UIB / conv layers for the backbone first (`layer_idx` 0…N−2), then `InitYoloxDecoupledHeadLayer(N−1, arena, h', w', …)` where `h', w'` are the spatial size **entering the head** (e.g. 2×2 on the bundled model). `InitActivationBuffers` always uses the **original network input** (e.g. 56×56×3), not the head's feature size.
+
+Stacked branch conv pointers: `cls_conv_weights[i]` and `reg_conv_weights[i]` for `i = 0 … num_convs−1` (max 4). Output tensor layout: NHWC `[H, W, 4 + 1 + num_classes]` — ltrb box (4), objectness (1), class logits (`num_classes`).
+
+Worked examples: [cpp-api.md](cpp-api.md#manual-construction-call-order-1), [c-api.md](c-api.md#cnn-manual-construction-call-order). Tests: `tests/test_c_api.c` (`TestManualYoloxDecoupledHeadLayer`).
+
 ## Arena sizing
 
 Use `./netkit inspect models/yolox_mnv4_small.nk --full` for activation high-water. The fused head allocates scratch proportional to `3 × H' × W' × hidden_dim` inside the layer (not counted in ping-pong buffers).
@@ -92,7 +112,7 @@ Python: `python/tests/test_yolox_detector.py` (run via `make test-python`).
 
 C++: `src/test.cpp` includes both `.nk` fixtures (**88** total embedded cases across the suite).
 
-C API: `nk_cnn_init_yolox_decoupled_head_layer` mirrors `CNNNetwork::InitYoloxDecoupledHeadLayer` for manual construction (`NK_CNN_BLOCK_YOLOX_DECOUPLED_HEAD` = 11). File load uses `nk_model_load` / `nk_model_run` as usual. Smoke test: `tests/test_c_api.c` (`TestManualYoloxDecoupledHeadLayer`, `yolox_head_only.nk` in composite load pass).
+C API smoke tests: `tests/test_c_api.c` (`TestManualYoloxDecoupledHeadLayer`, `yolox_head_only.nk` in composite load pass). Manual construction patterns: [c-api.md](c-api.md#cnn-manual-construction-call-order), [cpp-api.md](cpp-api.md#manual-construction-call-order-1).
 
 ## Limitations (Phase 1)
 

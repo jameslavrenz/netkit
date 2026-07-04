@@ -30,7 +30,7 @@ int main(int argc, char** argv)
 
     float input[NK_MAX_CASE_FLOATS];
     for (int i = 0; i < input_arg_count; ++i)
-        input[i] = strtof(argv[i + 2], NULL);
+        input[i] = strtof(argv[i + 2], nullptr);
 
 #if defined(NETKIT_ARENA_HEAP)
     const size_t arena_capacity = nk_recommended_arena_bytes(nk_path);

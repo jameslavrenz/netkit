@@ -3,8 +3,6 @@
 #include "activation_followup.hpp"
 #include "tensor_factory.hpp"
 
-using namespace TensorFactory;
-
 void MLPLayer::forward(const Tensor& input, Tensor& output)
 {
     const NetkitKernelActivation kernel_activation = ToKernelActivation(activation);
@@ -84,7 +82,7 @@ void MLPNetwork::forward(const Tensor& input, Tensor& output, Arena& /*arena*/)
 
         const uint32_t rows = current_input.shape[0];
         const uint32_t cols = layers[i].weights.shape[0];
-        Tensor layer_output = View2D(write_buffer, rows, cols);
+        Tensor layer_output = TensorFactory::View2D(write_buffer, rows, cols);
         if (layer_output.num_elements > max_activation_elements)
             return;
 

@@ -2,6 +2,8 @@
 
 Version **3** — single-file inference bundle for embedded runtimes. Produced by the Python package in [`python/`](../python/); consumed by the C++ loader (`NkLoader`) and `./netkit run` / `./netkit inspect`.
 
+**Canonical byte-level specification:** [NK_FILE_SPECIFICATION.md](NK_FILE_SPECIFICATION.md) (header offsets, layer record sizes, payload alignment, TCAS layout, `xxd` / CLI inspection).
+
 ## Overview
 
 | Section | Contents |
@@ -156,7 +158,7 @@ Python encode/decode: `python/netkit/pad_encoding.py` (`encode_pad_extra`, `enco
 
 Same `.nk` bytes on disk or in flash; the loader policy is compile-time (`NETKIT_WEIGHTS_IN_RAM` in `netkit_config.h`). Full tradeoff: [ARENA.md](ARENA.md#weight-storage-tradeoff-netkit_weights_in_ram).
 
-| Build | Default | Buffer / AOT load (`LoadFromBuffer`, `nk_model_load_memory`) | File load (`LoadMLP`, `nk_model_load`) |
+| Build | Default | Buffer / AOT load (`LoadMLPFromBuffer` / `LoadCNNFromBuffer`, `nk_model_load_memory`) | File load (`LoadMLP`, `nk_model_load`) |
 |-------|---------|----------------------------------------------------------------|----------------------------------------|
 | **MCU** | `NETKIT_WEIGHTS_IN_RAM=0` | Coefs in flash blob; arena = structs + activations | Always copies payload into arena |
 | **CPU / MPU** | `NETKIT_WEIGHTS_IN_RAM=1` | Copies weight/bias payload into arena | Copies payload into arena |

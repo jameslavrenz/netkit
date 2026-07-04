@@ -153,10 +153,9 @@ namespace TensorFactory
         return t;
     }
 
-    void Fill(Tensor& t, std::initializer_list<float> values)
+    void Fill(Tensor& t, std::span<const float> values)
     {
         float* p = static_cast<float*>(t.data);
-
         uint32_t i = 0;
         for (float v : values)
         {

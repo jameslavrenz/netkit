@@ -145,7 +145,7 @@ make NETKIT_TARGET=mcu NETKIT_WEIGHTS_IN_RAM=1 lib   # small model: copy coefs t
 make NETKIT_TARGET=cpu NETKIT_WEIGHTS_IN_RAM=0 lib     # test flash-backed load on desktop
 ```
 
-**Scope:** applies to **buffer / AOT load** (`LoadFromBuffer`, `nk_model_load_memory`). **File load** always copies payload into the arena (no persistent blob). Misaligned weight payloads fall back to arena copy even when `NETKIT_WEIGHTS_IN_RAM=0`.
+**Scope:** applies to **buffer / AOT load** (`LoadMLPFromBuffer` / `LoadCNNFromBuffer`, `nk_model_load_memory`). **File load** always copies payload into the arena (no persistent blob). Misaligned weight payloads fall back to arena copy even when `NETKIT_WEIGHTS_IN_RAM=0`.
 
 See [NK_FORMAT.md](NK_FORMAT.md) and [BUILD_TARGETS.md](BUILD_TARGETS.md).
 

@@ -29,5 +29,4 @@ NkOpCode ToOpCode(CnnBlockType block_type)
         case CnnBlockType::YoloxDecoupledHead:
             return NkOpCode::YoloxDecoupledHead;
     }
-    return NkOpCode::Dense;
 }

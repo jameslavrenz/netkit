@@ -57,18 +57,4 @@ namespace NkFormat
         }
         return "none";
     }
-
-    Activation ParseActivationName(const char* name)
-    {
-        if (!name)
-            return Activation::None;
-
-        if (std::strcmp(name, "relu") == 0) return Activation::ReLU;
-        if (std::strcmp(name, "sigmoid") == 0) return Activation::Sigmoid;
-        if (std::strcmp(name, "tanh") == 0) return Activation::Tanh;
-        if (std::strcmp(name, "leaky_relu") == 0) return Activation::LeakyReLU;
-        if (std::strcmp(name, "relu6") == 0) return Activation::ReLU6;
-        if (std::strcmp(name, "softmax") == 0) return Activation::Softmax;
-        return Activation::None;
-    }
 }

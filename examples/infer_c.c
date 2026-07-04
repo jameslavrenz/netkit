@@ -44,7 +44,7 @@ int main(int argc, char** argv)
 
     float input[NK_MAX_CASE_FLOATS];
     for (int i = 0; i < input_arg_count; ++i)
-        input[i] = strtof(argv[i + 2], NULL);
+        input[i] = strtof(argv[i + 2], nullptr);
 
     alignas(max_align_t) static unsigned char arena_memory[NK_ARENA_DEFAULT_CAPACITY];
     nk_arena_t arena;

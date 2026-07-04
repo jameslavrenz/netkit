@@ -503,8 +503,6 @@ void CNNNetwork::InitYoloxDecoupledHeadLayer(uint32_t layer_idx,
         static_cast<float*>(arena.alloc(static_cast<std::size_t>(scratch_elems) * sizeof(float),
                                         alignof(float)));
     block.scratch_elems = block.scratch ? scratch_elems : 0;
-    (void)spatial_w;
-    (void)in_channels;
 }
 
 void CNNNetwork::InitFlattenLayer(uint32_t layer_idx)

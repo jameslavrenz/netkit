@@ -65,7 +65,7 @@ const char* nk_version_string(void);  // "0.1.0"
 | Macro | Value | Description |
 |-------|-------|-------------|
 | `NK_MAX_TENSOR_RANK` | 4 | Max tensor rank |
-| `NK_MAX_LAYERS` | 16 | Max layers in architecture metadata |
+| `NK_MAX_LAYERS` | 100 | Max layers in `.nk` files (matches `NkFormat::kMaxLayers`) |
 | `NK_MAX_PATH_LEN` | 256 | Path buffer size used internally |
 | `NK_MAX_MESSAGE_LEN` | 128 | Max length of last error message |
 | `NK_ARENA_DEFAULT_CAPACITY` | 4 MiB (CPU) / 64 KiB (MCU) / 128 KiB (MPU) | Default static arena size by build target |
@@ -128,7 +128,7 @@ Used when building CNN pipelines manually. File-loaded models (`nk_cnn_load`) co
 
 Mirror C++ `Tensor` and `Conv2D` layouts. Safe to pass by pointer to all `nk_tensor_*` and `nk_ops_*` functions.
 
-`nk_conv2d_t` includes symmetric padding (`pad_h`, `pad_w`) applied on all four sides before convolution. Output spatial size: `(input + 2*pad - kernel) / stride + 1`.
+`nk_conv2d_t` mirrors C++ `Conv2D`: `pad_h`/`pad_w` are start padding; `pad_h_end`/`pad_w_end` are end padding. Pass `NK_PAD_MIRROR` (`-1`) for end padding to mirror the start (symmetric). Set all four explicitly for asymmetric padding.
 
 ### `nk_mlp_t`, `nk_cnn_t`
 
@@ -238,7 +238,7 @@ Full signatures are in [`netkit.h`](../include/netkit.h). Each group mirrors the
 | `nk_tensor_create_2d` | `TensorFactory::Create2D` |
 | `nk_tensor_create_nd` | `TensorFactory::CreateND` |
 | `nk_tensor_view_2d` | `TensorFactory::View2D` |
-| `nk_tensor_fill` | `TensorFactory::Fill` |
+| `nk_tensor_fill` | `TensorFactory::Fill` (`std::span<const float>`) |
 | `nk_tensor_print` | `TensorFactory::Print` |
 | `nk_tensor_print_labeled` | `TensorFactory::PrintLabeled` |
 
@@ -284,6 +284,33 @@ Full signatures are in [`netkit.h`](../include/netkit.h). Each group mirrors the
 | `nk_mlp_has_activation_buffers` | `MLPNetwork::HasActivationBuffers` |
 | `nk_mlp_forward` | `MLPNetwork::forward` |
 
+#### MLP manual construction (call order)
+
+1. `nk_arena_init` — bind memory.
+2. `nk_mlp_create(&arena, num_layers, &mlp)` — allocate layer table.
+3. `nk_mlp_init_layer(&mlp, i, &weights, &bias, activation, leaky_alpha)` for each `i` in order.
+4. `nk_mlp_init_activation_buffers(&mlp, &arena, batch_rows)` — **after all layers** (`batch_rows` usually `1`).
+5. `nk_mlp_forward(&mlp, &arena, &input, &output)` — supply output tensor storage.
+
+```c
+alignas(max_align_t) static unsigned char memory[65536];
+nk_arena_t arena;
+nk_arena_init(&arena, memory, sizeof(memory));
+
+nk_mlp_t mlp;
+nk_mlp_create(&arena, 2, &mlp);
+nk_mlp_init_layer(&mlp, 0, &w0, &b0, NK_ACTIVATION_RELU, 0.01f);
+nk_mlp_init_layer(&mlp, 1, &w1, &b1, NK_ACTIVATION_NONE, 0.01f);
+nk_mlp_init_activation_buffers(&mlp, &arena, 1);
+
+nk_tensor_t input, output;
+nk_tensor_view_2d(in_data, 1, in_features, &input);
+nk_tensor_view_2d(out_data, 1, out_features, &output);
+nk_mlp_forward(&mlp, &arena, &input, &output);
+```
+
+C++ equivalent: [cpp-api.md](cpp-api.md#manual-construction-call-order).
+
 ### CNN (`cnn.hpp`)
 
 | C function | C++ equivalent |
@@ -310,11 +337,13 @@ Full signatures are in [`netkit.h`](../include/netkit.h). Each group mirrors the
 nk_status_t nk_cnn_init_conv_layer(nk_cnn_t* cnn, uint32_t layer_idx,
     int kernel_size, int stride, int in_channels, int out_channels,
     float* weights, float* bias, nk_conv_activation_t activation, float leaky_alpha,
-    int pad_h, int pad_w);
+    int pad_h, int pad_w, int pad_h_end, int pad_w_end);
 nk_status_t nk_cnn_init_pool_layer(nk_cnn_t* cnn, uint32_t layer_idx,
-    int pool_size, int stride, int pad_h, int pad_w);
+    int pool_h, int pool_w, int stride, int pad_h, int pad_w,
+    int pad_h_end, int pad_w_end);
 nk_status_t nk_cnn_init_avg_pool_layer(nk_cnn_t* cnn, uint32_t layer_idx,
-    int pool_size, int stride, int pad_h, int pad_w);
+    int pool_h, int pool_w, int stride, int pad_h, int pad_w,
+    int pad_h_end, int pad_w_end);
 nk_status_t nk_cnn_init_batch_norm_layer(nk_cnn_t* cnn, uint32_t layer_idx,
     int channels, float* scale, float* bias);
 ```
@@ -325,14 +354,66 @@ nk_status_t nk_cnn_init_batch_norm_layer(nk_cnn_t* cnn, uint32_t layer_idx,
 |------------|----------------|
 | `nk_conv2d_forward` | `Conv2D::forward` |
 
-### CNN pipeline (manual construction)
+#### CNN manual construction (call order)
 
-Hybrid CNN models (conv → pool → batch norm → flatten → dense) use:
+1. `nk_arena_init` — bind memory.
+2. `nk_cnn_create(&arena, num_layers, &cnn)` — allocate block table.
+3. `nk_cnn_init_*_layer(&cnn, …)` for each **`layer_idx` from `0` to `num_layers - 1` in forward order** — one init function per block type (see `nk_cnn_block_type_t`). Composite inits (`nk_cnn_init_convnextv2_block_layer`, `nk_cnn_init_mobilenetv4_uib_layer`, `nk_cnn_init_resnet_basic_block_layer`, `nk_cnn_init_yolox_decoupled_head_layer`) also take `&arena` and **`spatial_h` / `spatial_w`** (feature-map size at that layer's input); fused scratch is allocated during the init call.
+4. `nk_cnn_init_activation_buffers(&cnn, &arena, in_h, in_w, in_c)` — **after all layers**; `in_h`, `in_w`, `in_c` are the **network input** NHWC shape (same tensor you pass to forward). Allocates ping-pong buffers and CMSIS kernel workspace when applicable.
+5. `nk_cnn_forward(&cnn, &arena, &input, &output)` — `input` rank-3 NHWC until flatten; `output` is filled from the network result.
+
+**Primitive hybrid pipeline** (conv → pool → batch norm → flatten → dense):
 
 ```c
-nk_cnn_init_conv_layer(cnn, idx, kernel, stride, in_c, out_c, w, b, act, alpha, pad_h, pad_w);
-nk_cnn_init_pool_layer(cnn, idx, pool_size, stride, pad_h, pad_w);           /* max pool */
-nk_cnn_init_avg_pool_layer(cnn, idx, pool_size, stride, pad_h, pad_w);
+nk_cnn_create(&arena, 5, &cnn);
+nk_cnn_init_conv_layer(&cnn, 0, 3, 1, 3, 16, conv_w, conv_b, NK_CONV_ACTIVATION_RELU, 0.01f,
+                       1, 1, NK_PAD_MIRROR, NK_PAD_MIRROR);
+nk_cnn_init_pool_layer(&cnn, 1, 2, 2, 2, 0, 0, NK_PAD_MIRROR, NK_PAD_MIRROR);
+nk_cnn_init_batch_norm_layer(&cnn, 2, 16, bn_scale, bn_bias);
+nk_cnn_init_flatten_layer(&cnn, 3);
+nk_cnn_init_dense_layer(&cnn, 4, &W, &B, NK_ACTIVATION_NONE, 0.01f);
+nk_cnn_init_activation_buffers(&cnn, &arena, in_h, in_w, in_c);
+nk_cnn_forward(&cnn, &arena, &input, &output);
+```
+
+**YOLOX decoupled head only** (`NK_CNN_BLOCK_YOLOX_DECOUPLED_HEAD` = 11):
+
+```c
+nk_cnn_create(&arena, 1, &cnn);
+nk_cnn_init_yolox_decoupled_head_layer(
+    &cnn, &arena, 0,
+    spatial_h, spatial_w,       /* feature map at head input, e.g. 2, 2 */
+    in_channels, hidden_dim, num_classes, num_convs,
+    stem_w, stem_b,
+    cls_conv_w, cls_conv_b,     /* float* arrays[length num_convs] */
+    reg_conv_w, reg_conv_b,
+    cls_pred_w, cls_pred_b,
+    reg_pred_w, reg_pred_b,
+    obj_pred_w, obj_pred_b);
+nk_cnn_init_activation_buffers(&cnn, &arena, spatial_h, spatial_w, in_channels);
+
+uint32_t shape[3] = {spatial_h, spatial_w, in_channels};
+nk_tensor_t input, output = {0};
+nk_tensor_create_nd(&arena, 3, shape, &input);
+nk_cnn_forward(&cnn, &arena, &input, &output);
+/* output: [spatial_h, spatial_w, 4 + 1 + num_classes] NHWC */
+```
+
+Full signatures: [`netkit.h`](../include/netkit.h). C++ equivalent: [cpp-api.md](cpp-api.md#manual-construction-call-order-1). Composite block details: [YOLOX.md](YOLOX.md#manual-construction), [RESNET18.md](RESNET18.md), [MOBILENETV4.md](MOBILENETV4.md), [CONVNEXTV2.md](CONVNEXTV2.md).
+
+Prefer **`nk_cnn_load` / `nk_model_load`** when weights come from a `.nk` file or embedded blob — the loader runs steps 2–4 for you.
+
+### CNN pipeline (primitive layer inits)
+
+Hybrid models can mix the init helpers below:
+
+```c
+nk_cnn_init_conv_layer(cnn, idx, kernel, stride, in_c, out_c, w, b, act, alpha,
+                       pad_h, pad_w, NK_PAD_MIRROR, NK_PAD_MIRROR);
+nk_cnn_init_pool_layer(cnn, idx, pool_h, pool_w, stride, pad_h, pad_w,
+                       NK_PAD_MIRROR, NK_PAD_MIRROR);  /* max pool */
+nk_cnn_init_avg_pool_layer(cnn, idx, pool_h, pool_w, stride, pad_h, pad_w,
+                           NK_PAD_MIRROR, NK_PAD_MIRROR);
 nk_cnn_init_batch_norm_layer(cnn, idx, channels, scale, bias);
 nk_cnn_init_flatten_layer(cnn, idx);
 nk_cnn_init_dense_layer(cnn, idx, &weights, &bias, NK_ACTIVATION_RELU, 0.01f);
@@ -376,8 +457,6 @@ nk_network_kind_t nk_model_kind(const nk_model_t* model);
 nk_status_t nk_model_run(...);
 nk_status_t nk_inspect_model(...);
 ```
-
-**C++-only diagnostics (no C binding):** `NkLoader::PrintHeader` — detailed binary header dump. See [API_PARITY.md](API_PARITY.md).
 
 ## Tests and CLI (CPU / desktop builds only)
 

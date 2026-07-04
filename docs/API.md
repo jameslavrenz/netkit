@@ -27,7 +27,8 @@ Core inference, loading, tensor/ops, MLP/CNN construction, regression, and CLI e
 | [CLI.md](CLI.md) | `netkit test`, `run`, `inspect`, help |
 | [ARENA.md](ARENA.md) | Bump allocator, sizing, alignment |
 | [DATATYPES.md](DATATYPES.md) | Float32 today; float16/int roadmap |
-| [NK_FORMAT.md](NK_FORMAT.md) | `.nk` layout + embedded tests |
+| [NK_FORMAT.md](NK_FORMAT.md) | `.nk` overview + embedded tests |
+| [NK_FILE_SPECIFICATION.md](NK_FILE_SPECIFICATION.md) | Byte-level `.nk` specification and inspection |
 | [TESTING.md](TESTING.md) | Regression suites, Make targets, manual CI |
 | [MNIST.md](MNIST.md) / [MNIST_CNN.md](MNIST_CNN.md) | Trained MNIST bundles |
 | [API_PARITY.md](API_PARITY.md) | C ↔ C++ symbol map |

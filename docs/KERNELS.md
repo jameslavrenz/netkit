@@ -26,7 +26,8 @@ VectorFast  LayerFast        ← CmsisDspKernel, CmsisNnKernel, or ReferenceKern
 |--------|------|
 | `kernel_crtp.hpp` | `KernelBase<Derived>` — static `Kernels::Mul` → `Derived::MulImpl` |
 | `kernel_activation.hpp` | `NetkitKernelActivation` enum for fused conv/FC activations |
-| `reference_kernel.hpp` / `reference_kernel.cpp` | Portable float32 implementations |
+| `reference_kernel.hpp` / `reference_kernel.cpp` | Portable float32 implementations (`NETKIT_LOOP_UNROLL` optional 4× unroll, experimental) |
+| `netkit_loop_unroll.hpp` | Compile-time loop unroll helpers for reference kernels only |
 | `cmsis_dsp_kernel.hpp` / `cmsis_dsp_backend.cpp` | CMSIS-DSP `Try*` for vector ops (add, mul, matmul, clip, batch-norm fallback, LayerNorm2d, GRN) |
 | `cmsis_nn_kernel.hpp` / `cmsis_nn_backend.cpp` | CMSIS-NN `Try*` for layer ops (conv, depthwise conv, pool, FC, batch norm, activations, GELU, softmax) |
 | `kernel_dispatch.hpp` | `ComposedKernel<VectorFast, LayerFast>` and `Try*` helpers |
@@ -122,6 +123,35 @@ static void MaxPool2dForwardImpl(const Tensor& input, int pool_size, int stride,
 ```
 
 No virtual functions; the compiler inlines the selected path for each translation unit.
+
+## Reference-kernel loop unroll (`NETKIT_LOOP_UNROLL`) — **experimental**
+
+Optional **4× manual loop unroll** for netkit reference kernels only. **Off by default** (`NETKIT_LOOP_UNROLL=0`). Independent of CMSIS-DSP `ARM_MATH_LOOPUNROLL` — CMSIS translation units never receive this flag.
+
+> **Experimental:** Duplicating loop bodies increases **`.text` / flash size**. On tight MCUs, enabling this can push the firmware image over available program memory even when RAM (arena) is sized correctly. Measure `.text` before shipping; prefer CMSIS backends on production firmware unless you have flash headroom.
+
+```bash
+make NETKIT_LOOP_UNROLL=1 lib
+cmake -DNETKIT_LOOP_UNROLL=ON ...
+```
+
+When enabled, hot loops in `reference_kernel.cpp` use helpers from `include/netkit_loop_unroll.hpp` (element-wise ops, matmul/FC dot products, activations). CMSIS backends (`cmsis_*_backend.cpp`) are unchanged. If CMSIS handles an op, reference unroll does not apply to that path.
+
+**Tradeoff:** larger compiled code for potentially faster reference fallback and reference-only builds. Not recommended for flash-constrained MCU images without verifying the link map.
+
+## Cache-friendly reference kernels (default build)
+
+Without enabling `NETKIT_LOOP_UNROLL`, reference spatial ops follow a few low-cost conventions for NHWC tensors:
+
+| Pattern | Where | Why |
+|---------|-------|-----|
+| **Spatial → channel loop order** (`oh`, `ow`, then `c` / `oc`) | Conv2D, depthwise conv, max/avg pool | Writes `out[(oh·W+ow)·C + c]` sequentially in `c` — better line/cache use than channel-outer loops |
+| **Channel-inner reduction** | Conv2D inner `ic` loop | At a fixed `(ih, iw)`, NHWC channels are contiguous — dot products walk memory linearly |
+| **Row-level padding skip** | Conv / pool kernel loops | When `ih` is out of bounds, skip the entire `kw` row instead of branching per tap |
+| **Inlined NHWC indexing** | Hot conv/pool paths | `(h·W+w)·C+c` computed inline instead of repeated helper calls |
+| **Contiguous 2D fast path** | `MatAddImpl` | Row-major tensors (`stride[1]==1`) use one linear pass (e.g. FC bias add) |
+
+No extra code-size toggle — these apply whenever reference kernels run (including CMSIS fallback). Runtime inference has **no `while` loops** on the hot path; padding uses structured `for` loops with early row skip, not unbounded control flow.
 
 ## Adding a new kernel op
 

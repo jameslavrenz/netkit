@@ -1,25 +1,23 @@
 #include "reference_kernel.hpp"
+#include "netkit_loop_unroll.hpp"
 #include "tensor_access.hpp"
 #include <cmath>
 #include <cfloat>
 
 void ReferenceKernel::MulImpl(const Tensor& a, const Tensor& b, Tensor& c)
 {
-    const float* a_data = static_cast<const float*>(a.data);
-    const float* b_data = static_cast<const float*>(b.data);
-    float* c_data = static_cast<float*>(c.data);
-
-    for (uint32_t i = 0; i < a.num_elements; i++)
-        c_data[i] = a_data[i] * b_data[i];
+    NetkitLoopUnroll::mul_contiguous(static_cast<const float*>(a.data),
+                                     static_cast<const float*>(b.data),
+                                     static_cast<float*>(c.data),
+                                     a.num_elements);
 }
 
 void ReferenceKernel::MulScalarImpl(const Tensor& a, float scalar, Tensor& c)
 {
-    const float* a_data = static_cast<const float*>(a.data);
-    float* c_data = static_cast<float*>(c.data);
-
-    for (uint32_t i = 0; i < a.num_elements; i++)
-        c_data[i] = a_data[i] * scalar;
+    NetkitLoopUnroll::mul_scalar_contiguous(static_cast<const float*>(a.data),
+                                            scalar,
+                                            static_cast<float*>(c.data),
+                                            a.num_elements);
 }
 
 void ReferenceKernel::MatAddImpl(const Tensor& a, const Tensor& b, Tensor& c)
@@ -30,6 +28,13 @@ void ReferenceKernel::MatAddImpl(const Tensor& a, const Tensor& b, Tensor& c)
 
     const uint32_t rows = a.shape[0];
     const uint32_t cols = a.shape[1];
+
+    if (a.stride[0] == cols && a.stride[1] == 1 && b.stride[0] == cols && b.stride[1] == 1 &&
+        c.stride[0] == cols && c.stride[1] == 1)
+    {
+        NetkitLoopUnroll::add_contiguous(a_data, b_data, c_data, rows * cols);
+        return;
+    }
 
     for (uint32_t i = 0; i < rows; i++)
     {
@@ -45,12 +50,10 @@ void ReferenceKernel::MatAddImpl(const Tensor& a, const Tensor& b, Tensor& c)
 
 void ReferenceKernel::MatAddNDImpl(const Tensor& a, const Tensor& b, Tensor& c)
 {
-    const float* a_data = static_cast<const float*>(a.data);
-    const float* b_data = static_cast<const float*>(b.data);
-    float* c_data = static_cast<float*>(c.data);
-
-    for (uint32_t idx = 0; idx < a.num_elements; idx++)
-        c_data[idx] = a_data[idx] + b_data[idx];
+    NetkitLoopUnroll::add_contiguous(static_cast<const float*>(a.data),
+                                     static_cast<const float*>(b.data),
+                                     static_cast<float*>(c.data),
+                                     a.num_elements);
 }
 
 void ReferenceKernel::MatMulImpl(const Tensor& a, const Tensor& b, Tensor& c)
@@ -65,29 +68,22 @@ void ReferenceKernel::MatMulImpl(const Tensor& a, const Tensor& b, Tensor& c)
 
     for (uint32_t i = 0; i < m; i++)
     {
+        const float* a_row = a_data + i * a.stride[0];
         for (uint32_t j = 0; j < n; j++)
         {
-            float sum = 0.0f;
-            for (uint32_t t = 0; t < k; t++)
-            {
-                const uint32_t a_index = i * a.stride[0] + t * a.stride[1];
-                const uint32_t b_index = t * b.stride[0] + j * b.stride[1];
-                sum += a_data[a_index] * b_data[b_index];
-            }
-            const uint32_t c_index = i * c.stride[0] + j * c.stride[1];
-            c_data[c_index] = sum;
+            const float sum = NetkitLoopUnroll::dot_strided_b_offset(
+                a_row, a.stride[1], b_data, b.stride[0], j * b.stride[1], k);
+            c_data[i * c.stride[0] + j * c.stride[1]] = sum;
         }
     }
 }
 
 void ReferenceKernel::MulNDImpl(const Tensor& a, const Tensor& b, Tensor& c)
 {
-    const float* a_data = static_cast<const float*>(a.data);
-    const float* b_data = static_cast<const float*>(b.data);
-    float* c_data = static_cast<float*>(c.data);
-
-    for (uint32_t idx = 0; idx < a.num_elements; idx++)
-        c_data[idx] = a_data[idx] * b_data[idx];
+    NetkitLoopUnroll::mul_contiguous(static_cast<const float*>(a.data),
+                                     static_cast<const float*>(b.data),
+                                     static_cast<float*>(c.data),
+                                     a.num_elements);
 }
 
 void ReferenceKernel::FullyConnectedImpl(const Tensor& input, const Tensor& kernel, Tensor& output)
@@ -102,17 +98,13 @@ void ReferenceKernel::FullyConnectedImpl(const Tensor& input, const Tensor& kern
 
     for (uint32_t b = 0; b < batch; ++b)
     {
+        const float* in_row = in + b * input.stride[0];
         for (uint32_t oc = 0; oc < out_features; ++oc)
         {
-            float sum = 0.0f;
-            for (uint32_t ic = 0; ic < in_features; ++ic)
-            {
-                const uint32_t in_index = b * input.stride[0] + ic * input.stride[1];
-                const uint32_t wt_index = oc * kernel.stride[0] + ic * kernel.stride[1];
-                sum += in[in_index] * wt[wt_index];
-            }
-            const uint32_t out_index = b * output.stride[0] + oc * output.stride[1];
-            out[out_index] = sum;
+            const float* wt_row = wt + oc * kernel.stride[0];
+            const float sum =
+                NetkitLoopUnroll::dot_strided(in_row, input.stride[1], wt_row, kernel.stride[1], in_features);
+            out[b * output.stride[0] + oc * output.stride[1]] = sum;
         }
     }
 }
@@ -133,8 +125,9 @@ void ReferenceKernel::ReLUImpl(const Tensor& a, Tensor& c)
     const float* a_data = static_cast<const float*>(a.data);
     float* c_data = static_cast<float*>(c.data);
 
-    for (uint32_t i = 0; i < a.num_elements; i++)
+    NetkitLoopUnroll::for_count(a.num_elements, [&](uint32_t i) {
         c_data[i] = (a_data[i] > 0.0f) ? a_data[i] : 0.0f;
+    });
 }
 
 void ReferenceKernel::SigmoidImpl(const Tensor& a, Tensor& c)
@@ -142,8 +135,9 @@ void ReferenceKernel::SigmoidImpl(const Tensor& a, Tensor& c)
     const float* a_data = static_cast<const float*>(a.data);
     float* c_data = static_cast<float*>(c.data);
 
-    for (uint32_t i = 0; i < a.num_elements; i++)
+    NetkitLoopUnroll::for_count(a.num_elements, [&](uint32_t i) {
         c_data[i] = 1.0f / (1.0f + std::expf(-a_data[i]));
+    });
 }
 
 void ReferenceKernel::TanhImpl(const Tensor& a, Tensor& c)
@@ -151,8 +145,7 @@ void ReferenceKernel::TanhImpl(const Tensor& a, Tensor& c)
     const float* a_data = static_cast<const float*>(a.data);
     float* c_data = static_cast<float*>(c.data);
 
-    for (uint32_t i = 0; i < a.num_elements; i++)
-        c_data[i] = std::tanhf(a_data[i]);
+    NetkitLoopUnroll::for_count(a.num_elements, [&](uint32_t i) { c_data[i] = std::tanhf(a_data[i]); });
 }
 
 void ReferenceKernel::LeakyReLUImpl(const Tensor& a, Tensor& c, float alpha)
@@ -160,8 +153,9 @@ void ReferenceKernel::LeakyReLUImpl(const Tensor& a, Tensor& c, float alpha)
     const float* a_data = static_cast<const float*>(a.data);
     float* c_data = static_cast<float*>(c.data);
 
-    for (uint32_t i = 0; i < a.num_elements; i++)
+    NetkitLoopUnroll::for_count(a.num_elements, [&](uint32_t i) {
         c_data[i] = (a_data[i] > 0.0f) ? a_data[i] : alpha * a_data[i];
+    });
 }
 
 void ReferenceKernel::ReLU6Impl(const Tensor& a, Tensor& c)
@@ -169,8 +163,7 @@ void ReferenceKernel::ReLU6Impl(const Tensor& a, Tensor& c)
     const float* a_data = static_cast<const float*>(a.data);
     float* c_data = static_cast<float*>(c.data);
 
-    for (uint32_t i = 0; i < a.num_elements; i++)
-    {
+    NetkitLoopUnroll::for_count(a.num_elements, [&](uint32_t i) {
         const float x = a_data[i];
         if (x < 0.0f)
             c_data[i] = 0.0f;
@@ -178,7 +171,7 @@ void ReferenceKernel::ReLU6Impl(const Tensor& a, Tensor& c)
             c_data[i] = 6.0f;
         else
             c_data[i] = x;
-    }
+    });
 }
 
 void ReferenceKernel::SoftmaxImpl(const Tensor& a, Tensor& c)
@@ -195,16 +188,13 @@ void ReferenceKernel::SoftmaxImpl(const Tensor& a, Tensor& c)
     }
 
     float sum = 0.0f;
-    for (uint32_t i = 0; i < n; i++)
-    {
+    NetkitLoopUnroll::for_count(n, [&](uint32_t i) {
         const float e = std::expf(a_data[i] - max_val);
         c_data[i] = e;
         sum += e;
-    }
+    });
 
-    const float inv_sum = 1.0f / sum;
-    for (uint32_t i = 0; i < n; i++)
-        c_data[i] *= inv_sum;
+    NetkitLoopUnroll::scale_contiguous(c_data, 1.0f / sum, n);
 }
 
 namespace
@@ -218,12 +208,11 @@ void ReferenceKernel::GeluImpl(const Tensor& a, Tensor& c)
     const float* a_data = static_cast<const float*>(a.data);
     float* c_data = static_cast<float*>(c.data);
 
-    for (uint32_t i = 0; i < a.num_elements; ++i)
-    {
+    NetkitLoopUnroll::for_count(a.num_elements, [&](uint32_t i) {
         const float x = a_data[i];
         const float inner = kSqrt2OverPi * (x + kGeluCoef * x * x * x);
         c_data[i] = 0.5f * x * (1.0f + std::tanh(inner));
-    }
+    });
 }
 
 void ReferenceKernel::Grn2dForwardImpl(const Tensor& input,
@@ -250,11 +239,10 @@ void ReferenceKernel::Grn2dForwardImpl(const Tensor& input,
     for (uint32_t c = 0; c < channel_count; ++c)
     {
         double sum_sq = 0.0;
-        for (uint32_t i = 0; i < spatial; ++i)
-        {
+        NetkitLoopUnroll::for_count(spatial, [&](uint32_t i) {
             const float value = in[i * channel_count + c];
             sum_sq += static_cast<double>(value) * value;
-        }
+        });
         channel_norm_scratch[c] = std::sqrt(static_cast<float>(sum_sq));
     }
 
@@ -289,44 +277,58 @@ bool ReferenceKernel::Conv2dForwardImpl(const Tensor& input,
                                         NetkitKernelActivation /*fuse_activation*/,
                                         Tensor& output)
 {
+    (void)pad_h_end;
+    (void)pad_w_end;
+
     float* in = tensor_data_f32(const_cast<Tensor&>(input));
     float* out = tensor_data_f32(output);
 
     const uint32_t out_h = output.shape[0];
     const uint32_t out_w = output.shape[1];
+    const int in_h = static_cast<int>(input.shape[0]);
+    const int in_w = static_cast<int>(input.shape[1]);
+    const uint32_t in_w_u = input.shape[1];
+    const uint32_t in_ch = static_cast<uint32_t>(in_channels);
+    const uint32_t out_ch = static_cast<uint32_t>(out_channels);
 
-    for (int oc = 0; oc < out_channels; oc++)
+    for (uint32_t oh = 0; oh < out_h; oh++)
     {
-        for (uint32_t oh = 0; oh < out_h; oh++)
+        for (uint32_t ow = 0; ow < out_w; ow++)
         {
-            for (uint32_t ow = 0; ow < out_w; ow++)
+            const uint32_t out_spatial_base = (oh * out_w + ow) * out_ch;
+
+            for (int oc = 0; oc < out_channels; oc++)
             {
                 float sum = bias ? bias[oc] : 0.0f;
 
                 for (int kh = 0; kh < kernel_size; kh++)
                 {
+                    const int ih = static_cast<int>(oh) * stride + kh - pad_h;
+                    if (ih < 0 || ih >= in_h)
+                        continue;
+
+                    const uint32_t in_row = static_cast<uint32_t>(ih) * in_w_u;
+
                     for (int kw = 0; kw < kernel_size; kw++)
                     {
-                        for (int ic = 0; ic < in_channels; ic++)
-                        {
-                            const int ih = static_cast<int>(oh) * stride + kh - pad_h;
-                            const int iw = static_cast<int>(ow) * stride + kw - pad_w;
-                            if (ih < 0 || iw < 0 || ih >= static_cast<int>(input.shape[0]) ||
-                                iw >= static_cast<int>(input.shape[1]))
-                                continue;
+                        const int iw = static_cast<int>(ow) * stride + kw - pad_w;
+                        if (iw < 0 || iw >= in_w)
+                            continue;
 
-                            const uint32_t in_idx =
-                                index_nhwc(input, static_cast<uint32_t>(ih), static_cast<uint32_t>(iw), ic);
-                            const uint32_t w_idx =
-                                (((oc * kernel_size + kh) * kernel_size + kw) * in_channels) + ic;
-                            sum += in[in_idx] * weights[w_idx];
-                        }
+                        const uint32_t in_base = (in_row + static_cast<uint32_t>(iw)) * input.shape[2];
+                        const uint32_t w_base =
+                            ((static_cast<uint32_t>(oc) * static_cast<uint32_t>(kernel_size) +
+                              static_cast<uint32_t>(kh)) *
+                                 static_cast<uint32_t>(kernel_size) +
+                             static_cast<uint32_t>(kw)) *
+                            in_ch;
+
+                        for (uint32_t ic = 0; ic < in_ch; ++ic)
+                            sum += in[in_base + ic] * weights[w_base + ic];
                     }
                 }
 
-                const uint32_t out_idx = (oh * out_w + ow) * static_cast<uint32_t>(out_channels) +
-                                         static_cast<uint32_t>(oc);
-                out[out_idx] = sum;
+                out[out_spatial_base + static_cast<uint32_t>(oc)] = sum;
             }
         }
     }
@@ -353,27 +355,37 @@ bool ReferenceKernel::DepthwiseConv2dForwardImpl(const Tensor& input,
 
     const uint32_t out_h = output.shape[0];
     const uint32_t out_w = output.shape[1];
+    const int in_h = static_cast<int>(input.shape[0]);
+    const int in_w = static_cast<int>(input.shape[1]);
+    const uint32_t in_w_u = input.shape[1];
+    const uint32_t ch_u = static_cast<uint32_t>(channels);
 
-    for (int c = 0; c < channels; ++c)
+    for (uint32_t oh = 0; oh < out_h; ++oh)
     {
-        for (uint32_t oh = 0; oh < out_h; ++oh)
+        for (uint32_t ow = 0; ow < out_w; ++ow)
         {
-            for (uint32_t ow = 0; ow < out_w; ++ow)
+            const uint32_t out_spatial_base = (oh * out_w + ow) * ch_u;
+
+            for (int c = 0; c < channels; ++c)
             {
                 float sum = bias ? bias[c] : 0.0f;
 
                 for (int kh = 0; kh < kernel_h; ++kh)
                 {
+                    const int ih = static_cast<int>(oh) * stride + kh - pad_h;
+                    if (ih < 0 || ih >= in_h)
+                        continue;
+
+                    const uint32_t in_row = static_cast<uint32_t>(ih) * in_w_u;
+
                     for (int kw = 0; kw < kernel_w; ++kw)
                     {
-                        const int ih = static_cast<int>(oh) * stride + kh - pad_h;
                         const int iw = static_cast<int>(ow) * stride + kw - pad_w;
-                        if (ih < 0 || iw < 0 || ih >= static_cast<int>(input.shape[0]) ||
-                            iw >= static_cast<int>(input.shape[1]))
+                        if (iw < 0 || iw >= in_w)
                             continue;
 
                         const uint32_t in_idx =
-                            index_nhwc(input, static_cast<uint32_t>(ih), static_cast<uint32_t>(iw), c);
+                            (in_row + static_cast<uint32_t>(iw)) * ch_u + static_cast<uint32_t>(c);
                         const uint32_t w_idx =
                             (static_cast<uint32_t>(c) * static_cast<uint32_t>(kernel_h) +
                              static_cast<uint32_t>(kh)) *
@@ -383,9 +395,7 @@ bool ReferenceKernel::DepthwiseConv2dForwardImpl(const Tensor& input,
                     }
                 }
 
-                const uint32_t out_idx = (oh * out_w + ow) * static_cast<uint32_t>(channels) +
-                                         static_cast<uint32_t>(c);
-                out[out_idx] = sum;
+                out[out_spatial_base + static_cast<uint32_t>(c)] = sum;
             }
         }
     }
@@ -412,32 +422,37 @@ void ReferenceKernel::MaxPool2dForwardImpl(const Tensor& input,
     const uint32_t out_h = output.shape[0];
     const uint32_t out_w = output.shape[1];
 
-    for (uint32_t c = 0; c < channels; ++c)
+    for (uint32_t oh = 0; oh < out_h; ++oh)
     {
-        for (uint32_t oh = 0; oh < out_h; ++oh)
+        for (uint32_t ow = 0; ow < out_w; ++ow)
         {
-            for (uint32_t ow = 0; ow < out_w; ++ow)
+            const uint32_t out_spatial_base = (oh * out_w + ow) * channels;
+
+            for (uint32_t c = 0; c < channels; ++c)
             {
                 float max_val = -FLT_MAX;
                 for (int kh = 0; kh < pool_h; ++kh)
                 {
+                    const int ih = static_cast<int>(oh) * stride + kh - pad_h;
+                    if (ih < 0 || static_cast<uint32_t>(ih) >= in_h)
+                        continue;
+
+                    const uint32_t in_row = static_cast<uint32_t>(ih) * in_w;
+
                     for (int kw = 0; kw < pool_w; ++kw)
                     {
-                        const int ih = static_cast<int>(oh) * stride + kh - pad_h;
                         const int iw = static_cast<int>(ow) * stride + kw - pad_w;
-                        if (ih < 0 || iw < 0 || static_cast<uint32_t>(ih) >= in_h ||
-                            static_cast<uint32_t>(iw) >= in_w)
-                            continue;
-
-                        const uint32_t in_idx = index_nhwc(input, static_cast<uint32_t>(ih),
-                                                           static_cast<uint32_t>(iw), c);
-                        if (in[in_idx] > max_val)
-                            max_val = in[in_idx];
+                        if (iw >= 0 && static_cast<uint32_t>(iw) < in_w)
+                        {
+                            const float v =
+                                in[(in_row + static_cast<uint32_t>(iw)) * channels + c];
+                            if (v > max_val)
+                                max_val = v;
+                        }
                     }
                 }
 
-                const uint32_t out_idx = (oh * out_w + ow) * channels + c;
-                out[out_idx] = max_val;
+                out[out_spatial_base + c] = max_val;
             }
         }
     }
@@ -462,33 +477,36 @@ void ReferenceKernel::AvgPool2dForwardImpl(const Tensor& input,
     const uint32_t out_h = output.shape[0];
     const uint32_t out_w = output.shape[1];
 
-    for (uint32_t c = 0; c < channels; ++c)
+    for (uint32_t oh = 0; oh < out_h; ++oh)
     {
-        for (uint32_t oh = 0; oh < out_h; ++oh)
+        for (uint32_t ow = 0; ow < out_w; ++ow)
         {
-            for (uint32_t ow = 0; ow < out_w; ++ow)
+            const uint32_t out_spatial_base = (oh * out_w + ow) * channels;
+
+            for (uint32_t c = 0; c < channels; ++c)
             {
                 float sum = 0.0f;
                 uint32_t count = 0;
                 for (int kh = 0; kh < pool_h; ++kh)
                 {
+                    const int ih = static_cast<int>(oh) * stride + kh - pad_h;
+                    if (ih < 0 || static_cast<uint32_t>(ih) >= in_h)
+                        continue;
+
+                    const uint32_t in_row = static_cast<uint32_t>(ih) * in_w;
+
                     for (int kw = 0; kw < pool_w; ++kw)
                     {
-                        const int ih = static_cast<int>(oh) * stride + kh - pad_h;
                         const int iw = static_cast<int>(ow) * stride + kw - pad_w;
-                        if (ih < 0 || iw < 0 || static_cast<uint32_t>(ih) >= in_h ||
-                            static_cast<uint32_t>(iw) >= in_w)
-                            continue;
-
-                        const uint32_t in_idx = index_nhwc(input, static_cast<uint32_t>(ih),
-                                                           static_cast<uint32_t>(iw), c);
-                        sum += in[in_idx];
-                        ++count;
+                        if (iw >= 0 && static_cast<uint32_t>(iw) < in_w)
+                        {
+                            sum += in[(in_row + static_cast<uint32_t>(iw)) * channels + c];
+                            ++count;
+                        }
                     }
                 }
 
-                const uint32_t out_idx = (oh * out_w + ow) * channels + c;
-                out[out_idx] = count > 0 ? sum / static_cast<float>(count) : 0.0f;
+                out[out_spatial_base + c] = count > 0 ? sum / static_cast<float>(count) : 0.0f;
             }
         }
     }
@@ -504,11 +522,10 @@ void ReferenceKernel::BatchNorm2dForwardImpl(const Tensor& input,
     float* out = tensor_data_f32(output);
     const uint32_t channels_u = static_cast<uint32_t>(channels);
 
-    for (uint32_t i = 0; i < input.num_elements; ++i)
-    {
+    NetkitLoopUnroll::for_count(input.num_elements, [&](uint32_t i) {
         const uint32_t c = i % channels_u;
         out[i] = in[i] * scale[c] + bias[c];
-    }
+    });
 }
 
 void ReferenceKernel::LayerNorm2dForwardImpl(const Tensor& input,
@@ -537,16 +554,16 @@ void ReferenceKernel::LayerNorm2dForwardImpl(const Tensor& input,
             mean /= static_cast<float>(channel_count);
 
             float variance = 0.0f;
-            for (uint32_t c = 0; c < channel_count; ++c)
-            {
+            NetkitLoopUnroll::for_count(channel_count, [&](uint32_t c) {
                 const float delta = pixel_in[c] - mean;
                 variance += delta * delta;
-            }
+            });
             variance /= static_cast<float>(channel_count);
             const float inv_std = 1.0f / std::sqrt(variance + eps);
 
-            for (uint32_t c = 0; c < channel_count; ++c)
+            NetkitLoopUnroll::for_count(channel_count, [&](uint32_t c) {
                 pixel_out[c] = (pixel_in[c] - mean) * inv_std * weight[c] + bias[c];
+            });
         }
     }
 }

@@ -20,6 +20,10 @@
 # Optional CMSIS-DSP kernels (Apache-2.0, fetch with ./tools/fetch_cmsis_dsp.sh):
 #   NETKIT_CMSIS_DSP=1     — use ARM CMSIS-DSP float32 vector/matrix ops in Ops::
 #
+# Optional reference-kernel loop unroll (netkit code only; not CMSIS):
+#   NETKIT_LOOP_UNROLL=1    — EXPERIMENTAL: 4× unroll in reference kernels (default 0).
+#                             Increases .text; verify flash headroom on MCU before use.
+#
 # Target architecture (empty = desktop CPU; sets ARM_MATH_* flags for CMSIS):
 #   NETKIT_ARCH=CM4        — Cortex-M4 (ARM_MATH_CM4)
 #   NETKIT_ARCH=CM7         — Cortex-M7 (ARM_MATH_CM7)
@@ -59,6 +63,7 @@ NETKIT_WEIGHTS_IN_RAM ?= 1
 endif
 NETKIT_CMSIS_NN ?= 0
 NETKIT_CMSIS_DSP ?= 0
+NETKIT_LOOP_UNROLL ?= 0
 NETKIT_ARCH ?=
 
 include third_party/netkit_arch.mk
@@ -155,6 +160,7 @@ else
 endif
 
 TARGET_CPPFLAGS += -DNETKIT_WEIGHTS_IN_RAM=$(NETKIT_WEIGHTS_IN_RAM)
+TARGET_CPPFLAGS += -DNETKIT_LOOP_UNROLL=$(NETKIT_LOOP_UNROLL)
 
 CFLAGS += $(TARGET_CPPFLAGS)
 CXXFLAGS += $(TARGET_CPPFLAGS)

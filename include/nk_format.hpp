@@ -4,7 +4,7 @@
 #include <cstdint>
 
 // Binary netkit model container (.nk) — little-endian, float32 weights/biases.
-// Spec: docs/NK_FORMAT.md. Python writer: python/netkit/
+// Spec: docs/NK_FILE_SPECIFICATION.md, docs/NK_FORMAT.md. Python writer: python/netkit/
 
 namespace NkFormat
 {
@@ -195,5 +195,4 @@ namespace NkFormat
     const char* LayerKindName(LayerKind kind);
     const char* DTypeName(DType dtype);
     const char* ActivationName(Activation activation);
-    Activation ParseActivationName(const char* name);
 }

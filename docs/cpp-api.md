@@ -129,7 +129,7 @@ namespace TensorFactory {
     Tensor CreateND(Arena& arena, uint32_t rank, std::span<const uint32_t> shape);
     Tensor View2D(float* data, uint32_t rows, uint32_t cols);
     Tensor ViewND(float* data, uint32_t rank, std::span<const uint32_t> shape);
-    void Fill(Tensor& t, std::initializer_list<float> values);
+    void Fill(Tensor& t, std::span<const float> values);
     void Print(const Tensor& t);
     void PrintLabeled(const char* label, const Tensor& t, uint32_t max_values = 0);
     // max_values == 0 prints every element; otherwise prints the first max_values plus a total count.
@@ -209,16 +209,45 @@ public:
 
 Weight matrix shape per layer: `[out_features, in_features]` row-major (CMSIS-NN / PyTorch layout).
 
+### Manual construction (call order)
+
+Most firmware uses `NkLoader::LoadMLP` / `LoadCNN` or `nk_mlp_load` / `nk_cnn_load`. To wire layers by hand:
+
+1. **`Arena::init`** (or `init_heap`) — bind caller-owned memory.
+2. **`MLPNetwork(num_layers, arena)`** — allocates the layer array from the arena.
+3. **`InitLayer(i, …)`** for each `i` from `0` to `num_layers - 1` — bind weight/bias tensors (usually views into flash or a prior arena alloc).
+4. **`InitActivationBuffers(arena, batch_rows)`** — **after all layers**; `batch_rows` is the input batch (typically `1`). Allocates ping-pong hidden buffers sized to the largest intermediate.
+5. **`forward(input, output, arena)`** — last layer writes to `output`; hidden layers reuse ping-pong buffers.
+
+```cpp
+alignas(std::max_align_t) static unsigned char memory[65536];
+Arena arena;
+arena.init(memory, sizeof(memory));
+
+MLPNetwork net(2, arena);
+net.InitLayer(0, W0, B0, ActivationType::ReLU);
+net.InitLayer(1, W1, B1, ActivationType::None);
+if (!net.InitActivationBuffers(arena, /*batch_rows=*/1))
+    return;  // arena overflow
+
+Tensor input = TensorFactory::View2D(in_data, 1, in_features);
+Tensor output = TensorFactory::View2D(out_data, 1, out_features);
+net.forward(input, output, arena);
+```
+
+C equivalent: [c-api.md](c-api.md#mlp-manual-construction-call-order) (`nk_mlp_create` → `nk_mlp_init_layer` → `nk_mlp_init_activation_buffers` → `nk_mlp_forward`).
+
 ---
 
 ## CNNNetwork (`cnn.hpp`)
 
-CNN pipelines support mixed blocks: conv2d, depthwise_conv2d, max_pool2d, avg_pool2d, batch_norm2d, layernorm2d, convnextv2_block, mobilenetv4_uib, resnet_basic_block, flatten, and dense (classification head). See [NK_FORMAT.md](NK_FORMAT.md), [CONVNEXTV2.md](CONVNEXTV2.md), [MOBILENETV4.md](MOBILENETV4.md), and [RESNET18.md](RESNET18.md).
+CNN pipelines support mixed blocks: conv2d, depthwise_conv2d, max_pool2d, avg_pool2d, batch_norm2d, layernorm2d, convnextv2_block, mobilenetv4_uib, resnet_basic_block, yolox_decoupled_head, flatten, and dense (classification head). See [NK_FORMAT.md](NK_FORMAT.md), [CONVNEXTV2.md](CONVNEXTV2.md), [MOBILENETV4.md](MOBILENETV4.md), [RESNET18.md](RESNET18.md), and [YOLOX.md](YOLOX.md).
 
 ```cpp
 enum class CnnBlockType {
     Conv2D, DepthwiseConv2D, MaxPool2D, AvgPool2D, BatchNorm2d, LayerNorm2d,
-    Flatten, Dense, ConvNeXtV2Block, MobilenetV4Uib, ResNetBasicBlock
+    Flatten, Dense, ConvNeXtV2Block, MobilenetV4Uib, ResNetBasicBlock,
+    YoloxDecoupledHead
 };
 
 class CNNNetwork {
@@ -239,7 +268,9 @@ public:
                        ConvActivationType activation,
                        float leaky_alpha = 0.01f,
                        int pad_h = 0,
-                       int pad_w = 0);
+                       int pad_w = 0,
+                       int pad_h_end = -1,
+                       int pad_w_end = -1);
     void InitDepthwiseConvLayer(uint32_t layer_idx,
                                 int kernel_h,
                                 int kernel_w,
@@ -250,9 +281,25 @@ public:
                                 ConvActivationType activation,
                                 float leaky_alpha = 0.01f,
                                 int pad_h = 0,
-                                int pad_w = 0);
-    void InitPoolLayer(uint32_t layer_idx, int pool_size, int stride, int pad_h = 0, int pad_w = 0);
-    void InitAvgPoolLayer(uint32_t layer_idx, int pool_size, int stride, int pad_h = 0, int pad_w = 0);
+                                int pad_w = 0,
+                                int pad_h_end = -1,
+                                int pad_w_end = -1);
+    void InitPoolLayer(uint32_t layer_idx,
+                       int pool_h,
+                       int pool_w,
+                       int stride,
+                       int pad_h = 0,
+                       int pad_w = 0,
+                       int pad_h_end = -1,
+                       int pad_w_end = -1);
+    void InitAvgPoolLayer(uint32_t layer_idx,
+                          int pool_h,
+                          int pool_w,
+                          int stride,
+                          int pad_h = 0,
+                          int pad_w = 0,
+                          int pad_h_end = -1,
+                          int pad_w_end = -1);
     void InitBatchNormLayer(uint32_t layer_idx, int channels, float* scale, float* bias);
     void InitLayerNormLayer(uint32_t layer_idx, int channels, float eps, float* weight, float* bias);
     void InitConvNeXtV2BlockLayer(uint32_t layer_idx, Arena& arena, uint32_t spatial_h, uint32_t spatial_w,
@@ -284,6 +331,63 @@ Spatial tensors stay NHWC until flatten; dense head output is `[1, units]`. Retu
 
 Layer dispatch uses `NkOpList<Ops...>::View()` for compile-time op tables — see [KERNELS.md](KERNELS.md).
 
+### Manual construction (call order)
+
+1. **`Arena::init`** — bind caller-owned memory (size with `inspect --full` or `nk_inspect_model` when possible).
+2. **`CNNNetwork(num_layers, arena)`** — allocates the block array from the arena.
+3. **`Init*Layer(layer_idx, …)`** for each index **`0 … num_layers - 1` in forward order** — configure one block type per index. Primitive layers only need weight pointers; **composite blocks** also take `Arena&` plus **`spatial_h` / `spatial_w`** (the feature-map height/width **at that layer's input**) and may allocate fused scratch from the arena during this call.
+4. **`InitActivationBuffers(arena, in_h, in_w, in_c)`** — **after every layer is configured**. Uses the **network input** NHWC shape (same as the tensor passed to `forward`), not the last layer's output shape. Allocates ping-pong activation buffers and (on CMSIS-NN builds) the shared kernel workspace — see [ARENA.md](ARENA.md#kernel-workspace-cmsis-nn).
+5. **`forward(input, arena)`** — input must be rank-3 NHWC until a `Flatten` block; result is in **`GetOutput()`** (also returned by reference). Returns a tensor with null `data` on arena overflow.
+
+**Hybrid primitive pipeline** (conv → pool → batch norm → flatten → dense):
+
+```cpp
+CNNNetwork net(5, arena);
+net.InitConvLayer(0, 3, 1, 3, 16, conv_w, conv_b, ConvActivationType::ReLU, 0.01f, 1, 1);
+net.InitPoolLayer(1, 2, 2, 0, 0);
+net.InitBatchNormLayer(2, 16, bn_scale, bn_bias);
+net.InitFlattenLayer(3);
+net.InitDenseLayer(4, W, B, ActivationType::None);
+if (!net.InitActivationBuffers(arena, in_h, in_w, in_c))
+    return;
+Tensor input = /* NHWC [in_h, in_w, in_c] */;
+Tensor& output = net.forward(input, arena);
+```
+
+**Composite blocks** (same index order; pass spatial size at the block input):
+
+| Block | Init function | Notes |
+|-------|---------------|--------|
+| ConvNeXt V2 | `InitConvNeXtV2BlockLayer(idx, arena, h, w, …)` | Fused scratch from arena |
+| MobileNetV4 UIB | `InitMobilenetV4UibLayer(idx, arena, h, w, …)` | |
+| ResNet BasicBlock | `InitResNetBasicBlockLayer(idx, arena, h, w, …)` | |
+| YOLOX decoupled head | `InitYoloxDecoupledHeadLayer(idx, arena, h, w, …)` | See [YOLOX.md](YOLOX.md#manual-construction) |
+
+**YOLOX head only** (single fused layer on backbone features):
+
+```cpp
+CNNNetwork net(1, arena);
+net.InitYoloxDecoupledHeadLayer(
+    0, arena,
+    spatial_h, spatial_w,   // e.g. 2, 2 for 2×2 feature map
+    in_channels,            // backbone output depth (e.g. 960)
+    hidden_dim, num_classes, num_convs,
+    stem_w, stem_b,
+    cls_conv_w, cls_conv_b,  // arrays of num_convs pointers
+    reg_conv_w, reg_conv_b,
+    cls_pred_w, cls_pred_b,
+    reg_pred_w, reg_pred_b,
+    obj_pred_w, obj_pred_b);
+if (!net.InitActivationBuffers(arena, spatial_h, spatial_w, in_channels))
+    return;
+Tensor input = /* NHWC [spatial_h, spatial_w, in_channels] */;
+Tensor& output = net.forward(input, arena);  // [H, W, 4+1+num_classes]
+```
+
+C equivalent: [c-api.md](c-api.md#cnn-manual-construction-call-order) (`nk_cnn_create` → `nk_cnn_init_*` → `nk_cnn_init_activation_buffers` → `nk_cnn_forward`).
+
+Prefer **`.nk` load** when weights live in a file or flash blob: `NkLoader::LoadCNN` / `nk_cnn_load` / `nk_model_load` perform steps 2–4 automatically.
+
 ---
 
 ## NkLoader (`nk_loader.hpp`)
@@ -313,7 +417,6 @@ void FillArchInfo(const ParsedModel& model, ArchInfo& info);
 uint32_t InputElements(const ParsedModel& model);
 uint32_t OutputElements(const ParsedModel& model);
 
-void PrintHeader(const char* nk_path, const ParsedModel& model);
 void PrintNetworkSummary(const char* nk_path, const ParsedModel& model);
 
 LoadResult LoadMLP(const char* nk_path, Arena& arena, MLPNetwork*& network,
@@ -331,20 +434,16 @@ LoadResult LoadCNNFromBuffer(const uint8_t* data, std::size_t size, Arena& arena
 LoadResult Load(const char* nk_path, Arena& arena, NetworkKind& kind,
                 MLPNetwork*& mlp, CNNNetwork*& cnn,
                 std::array<uint32_t, kMaxTensorRank>& input_shape, uint32_t& input_rank);
-
-LoadResult LoadFromBuffer(const uint8_t* data, std::size_t size, Arena& arena, NetworkKind& kind,
-                          MLPNetwork*& mlp, CNNNetwork*& cnn,
-                          std::array<uint32_t, kMaxTensorRank>& input_shape, uint32_t& input_rank);
 }
 ```
 
-**C equivalents:** `nk_parse_architecture` / `nk_parse_architecture_memory` fill `nk_arch_info_t`. `PrintNetworkSummary` → `nk_arch_print`. `PrintHeader` is a detailed binary dump (no C binding). Embedded firmware uses `LoadFromBuffer` / `LoadMLPFromBuffer` / `LoadCNNFromBuffer` (C: `nk_model_load_memory`).
+**C equivalents:** `nk_parse_architecture` / `nk_parse_architecture_memory` fill `nk_arch_info_t`. `PrintNetworkSummary` → `nk_arch_print`. Embedded firmware uses `LoadMLPFromBuffer` / `LoadCNNFromBuffer` (C: `nk_model_load_memory`).
 
-**High-level C++ usage** loads with `Load` / `LoadMLP` / `LoadCNN` (file) or `LoadFromBuffer` / `LoadMLPFromBuffer` / `LoadCNNFromBuffer` (embedded `.nk` bytes) and calls `forward` directly. The C API adds `nk_model_t` + `nk_model_run` as a convenience wrapper — see [c-api.md](c-api.md).
+**High-level C++ usage** loads with `Load` / `LoadMLP` / `LoadCNN` (file) or `LoadMLPFromBuffer` / `LoadCNNFromBuffer` (embedded `.nk` bytes) and calls `forward` directly. The C API adds `nk_model_t` + `nk_model_run` as a convenience wrapper — see [c-api.md](c-api.md).
 
 **AOT firmware:** `python -m netkit aot` generates C++26 or C23 sources with an embedded `.nk` blob and thin wrappers — see [GETTING_STARTED.md](GETTING_STARTED.md#5-aot-compile-embed-nk-in-firmware).
 
-**Format** — full binary layout in [NK_FORMAT.md](NK_FORMAT.md). Convert ONNX with `python -m netkit convert`.
+**Format** — full binary layout in [NK_FILE_SPECIFICATION.md](NK_FILE_SPECIFICATION.md) (byte-level) and [NK_FORMAT.md](NK_FORMAT.md) (overview). Convert ONNX with `python -m netkit convert`.
 
 ---
 

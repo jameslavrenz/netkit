@@ -77,8 +77,6 @@ namespace NkLoader
         const char* message = nullptr;
     };
 
-    bool IsNkPath(const char* path);
-
     LoadResult ParseFile(const char* nk_path, ParsedModel& out);
     LoadResult ParseBuffer(const uint8_t* data, std::size_t size, ParsedModel& out);
     LoadResult ReadTestSuite(const char* nk_path, TestSuite& out);
@@ -87,7 +85,6 @@ namespace NkLoader
     uint32_t InputElements(const ParsedModel& model);
     uint32_t OutputElements(const ParsedModel& model);
 
-    void PrintHeader(const char* nk_path, const ParsedModel& model);
     void PrintNetworkSummary(const char* nk_path, const ParsedModel& model);
 
     LoadResult LoadMLP(const char* nk_path,
@@ -125,15 +122,6 @@ namespace NkLoader
                     CNNNetwork*& cnn,
                     std::array<uint32_t, kMaxTensorRank>& input_shape,
                     uint32_t& input_rank);
-
-    LoadResult LoadFromBuffer(const uint8_t* data,
-                              std::size_t size,
-                              Arena& arena,
-                              NetworkKind& kind,
-                              MLPNetwork*& mlp,
-                              CNNNetwork*& cnn,
-                              std::array<uint32_t, kMaxTensorRank>& input_shape,
-                              uint32_t& input_rank);
 
     const char* StatusMessage(LoadStatus status);
     const char* NetworkKindName(NetworkKind kind);

@@ -19,6 +19,8 @@ C source in this repository is limited to `tests/test_c_api.c` and `examples/inf
 
 When adding a feature, update this file and both [c-api.md](c-api.md) and [cpp-api.md](cpp-api.md).
 
+**Manual network construction** (layer init call order, activation buffers, forward): [cpp-api.md](cpp-api.md#manual-construction-call-order) (MLP + CNN) and [c-api.md](c-api.md#mlp-manual-construction-call-order) (C). Composite blocks (ResNet, UIB, ConvNeXt, YOLOX head): same docs plus feature guides ([YOLOX.md](YOLOX.md#manual-construction), etc.).
+
 Related docs: [NK_FORMAT.md](NK_FORMAT.md), [CLI.md](CLI.md), [BUILD_TARGETS.md](BUILD_TARGETS.md), [PHILOSOPHY.md](PHILOSOPHY.md).
 
 ## Test suites
@@ -105,7 +107,7 @@ Both suites exercise the same **88 embedded `.nk` inference cases**; `nk_run_all
 
 | C++ | C |
 |-----|---|
-| `Conv2D` | `nk_conv2d_t` (includes `pad_h`, `pad_w`) |
+| `Conv2D` | `nk_conv2d_t` (includes `pad_h`, `pad_w`, `pad_h_end`, `pad_w_end`; `NK_PAD_MIRROR` = symmetric end) |
 | `Conv2D::forward` | `nk_conv2d_forward` |
 
 ### MLP (`mlp.hpp`)
@@ -155,14 +157,12 @@ Both suites exercise the same **88 embedded `.nk` inference cases**; `nk_run_all
 | `ParseBuffer` + `FillArchInfo` | `nk_parse_architecture_memory` |
 | `InputElements` / `OutputElements` | `nk_arch_info_t` via `nk_parse_architecture` / `nk_model_get_arch` |
 | `ArenaUtil::CapacityForModel` (+ inspect probe on CPU) | `nk_recommended_arena_bytes` |
-| `PrintHeader` | — (detailed binary dump only) |
 | `PrintNetworkSummary` | `nk_arch_print` |
 | `LoadMLP` | `nk_mlp_load` |
 | `LoadMLPFromBuffer` | (via `nk_model_load_memory` for MLP) |
 | `LoadCNN` | `nk_cnn_load` |
 | `LoadCNNFromBuffer` | (via `nk_model_load_memory` for CNN) |
 | `Load` | `nk_model_load_auto` |
-| `LoadFromBuffer` | `nk_model_load_memory` |
 | `ArchInfo` | `nk_arch_info_t` |
 
 High-level combined handle (C convenience):
@@ -177,12 +177,11 @@ High-level combined handle (C convenience):
 
 | C++ | Reason |
 |-----|--------|
-| `PrintHeader` | Detailed `.nk` header dump |
 | `NkOpsResolver`, `NkOpList`, `CNNNetwork::SetOpsResolver` | Firmware op trimming — compile-time `NkOpList<Ops...>::View()` in C++ only; file load uses default resolver internally |
 | `ArenaUtil`, `BeginRegressionArena`, `EndRegressionArena` | CLI/regression sizing helpers |
 | `TensorFactory::ViewND` | ND tensor views — use `nk_tensor_view_2d` or load from `.nk` |
 | `MLPNetwork::GetLayer`, `CNNNetwork::GetBlock`, `CNNNetwork::GetOutput` | In-memory network introspection after manual construction |
-| `NkLoader::IsNkPath`, `ReadTestSuite`, `ModelPayloadBytes`, `NetworkKindName` | Loader utilities; C uses `nk_parse_architecture` / `nk_model_*` instead |
+| `NkLoader::ReadTestSuite`, `ModelPayloadBytes`, `NetworkKindName` | Loader utilities; C uses `nk_parse_architecture` / `nk_model_*` instead |
 | `Conv2D::forward(..., fuse_activation)` | C `nk_conv2d_forward` uses default activation fusion |
 | `TensorFactory::PrintLabeled(..., max_values)` | C `nk_tensor_print_labeled` omits truncation control |
 
