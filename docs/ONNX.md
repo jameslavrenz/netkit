@@ -88,7 +88,7 @@ Requires `pip install -e "python[train]"` (torch + timm).
 
 | Suite | What it validates |
 |-------|-------------------|
-| C++ `make test-cpp` / `make test-c` | **`.nk` loader + inference** against embedded `TCAS` cases in each model (87 cases) |
+| C++ `make test-cpp` / `make test-c` | **`.nk` loader + inference** against embedded `TCAS` cases in each model (88 cases) |
 | Python `make test-python-full` | **`.nk` runtime vs ONNX Runtime** on embedded inputs (82 cases); **AOT compile** tests (C/C++ from `.nk`, requires `make lib`) |
 
 ```bash

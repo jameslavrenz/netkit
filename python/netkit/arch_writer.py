@@ -490,6 +490,16 @@ def pack_random_cnn_weights(arch: dict, rng: np.random.Generator, scale: float =
     return np.concatenate(parts).astype(np.float32)
 
 
+def count_packed_cnn_weight_floats(arch: dict, num_layers: int | None = None) -> int:
+    """Return the flat float count for the first ``num_layers`` of a CNN arch."""
+    if arch.get("network") != "cnn":
+        raise ValueError("count_packed_cnn_weight_floats expects a CNN arch")
+    layers = arch["layers"] if num_layers is None else arch["layers"][:num_layers]
+    sub = {"network": "cnn", "input": list(arch["input"]), "layers": layers}
+    rng = np.random.default_rng(0)
+    return int(len(pack_random_cnn_weights(sub, rng, scale=0.02)))
+
+
 def _arch_to_spec(arch: dict, weights: np.ndarray) -> ModelSpec:
     layers: list[LayerSpec] = []
     if len(arch["layers"]) > MAX_LAYERS:

@@ -45,7 +45,7 @@ Application code is C++26. C23 is limited to the C header, the `extern "C"` brid
 - **CLI** — `test`, `run`, and `inspect` commands for desktop development
 - **MLP & CNN** — conv (with padding), max/avg pool, batch norm, flatten, dense; `.nk` loading
 - **Arena allocator** — Bump-pointer memory with aligned allocation (no heap in layer paths)
-- **Regression tests** — 87 embedded `.nk` cases (C++/C) plus Python AOT/unit tests via `make test`; full ONNX parity (82) and backbone tests via `make test-full`
+- **Regression tests** — 88 embedded `.nk` cases (C++/C) plus Python AOT/unit tests via `make test`; full ONNX parity (82) and backbone tests via `make test-full`
 - **GitHub Actions CI** — fast suite on push/PR (`make test`); full suite manual only (`gh workflow run test-full.yml`)
 - **Embedded smoke** — MCU/MPU + `NETKIT_ARCH` + CMSIS bring-up harness on host (`test_mlp`, `cnn_4x4_single`; `make test-embedded-smoke-matrix`; local only)
 - **Float32 inference** — all tensors, weights, and math use IEEE-754 single precision (`float`)

@@ -7,7 +7,7 @@ from typing import Any
 import numpy as np
 
 from .mobilenetv4_small import build_mobilenetv4_small_arch
-from .reference_forward import _activate, _conv_nhwc
+from .reference_forward import _activate, _conv_nhwc, forward_cnn
 
 YOLOX_MAX_STACKED_CONVS = 4
 MNv4_SMALL_BACKBONE_OUT_CHANNELS = 960
@@ -50,6 +50,52 @@ def build_yolox_mnv4_small_detector(
         }
     )
     return arch
+
+
+def backbone_arch_from_detector(arch: dict[str, Any]) -> dict[str, Any]:
+    """Return the MobileNetV4-Small backbone portion of a detector arch (no YOLOX head)."""
+    if not arch.get("layers") or arch["layers"][-1].get("type") != "yolox_decoupled_head":
+        raise ValueError("expected a detector arch ending with yolox_decoupled_head")
+    return {"network": "cnn", "input": list(arch["input"]), "layers": arch["layers"][:-1]}
+
+
+def head_weight_offset(arch: dict[str, Any]) -> int:
+    """Flat weight index where the fused YOLOX head tensors begin."""
+    from .arch_writer import count_packed_cnn_weight_floats
+
+    return count_packed_cnn_weight_floats(arch, num_layers=len(arch["layers"]) - 1)
+
+
+def forward_yolox_backbone(
+    flat_input: np.ndarray,
+    arch: dict[str, Any],
+    weights: np.ndarray,
+) -> list[float]:
+    """Forward through the detector backbone layers only."""
+    offset = head_weight_offset(arch)
+    return forward_cnn(flat_input, backbone_arch_from_detector(arch), weights[:offset])
+
+
+def forward_yolox_head_nhwc(
+    features: np.ndarray,
+    head_layer: dict[str, Any],
+    weights: np.ndarray,
+    *,
+    offset: int | None = None,
+) -> np.ndarray:
+    """Run the fused YOLOX head on an NHWC backbone feature map."""
+    if offset is None:
+        raise ValueError("offset is required when weights contain backbone tensors")
+    out, _ = yolox_decoupled_head_forward_nhwc(
+        np.asarray(features, dtype=np.float32),
+        in_channels=int(head_layer["in_channels"]),
+        hidden_dim=int(head_layer["hidden_dim"]),
+        num_classes=int(head_layer["num_classes"]),
+        num_convs=int(head_layer["num_convs"]),
+        weights=weights,
+        offset=offset,
+    )
+    return out
 
 
 def pack_yolox_head_weights_flat(

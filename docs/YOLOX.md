@@ -30,11 +30,13 @@ The head runs cls/reg/obj branches **in parallel inside the fused layer** (netki
 | File | Input | Head | Output grid |
 |------|-------|------|-------------|
 | `models/yolox_mnv4_small.nk` | 56×56×3 | hidden=64, 2 stacked convs, 10 classes | 2×2×15 (60 floats) |
+| `models/yolox_head_only.nk` | 2×2×960 (synthetic backbone features) | hidden=32, 2 stacked convs, 5 classes | 2×2×10 (40 floats) |
 
 Regenerate:
 
 ```bash
 python tools/write_yolox_mnv4_detector_fixture.py
+python tools/write_yolox_head_only_fixture.py
 ```
 
 ## Python API
@@ -76,8 +78,19 @@ For MCU firmware with flash-backed weights, compile with `NETKIT_WEIGHTS_IN_RAM=
 
 ## Tests
 
-- `python/tests/test_yolox_detector.py` — arch builder, NumPy reference, decode, `.nk` roundtrip, C++ CLI parity
-- C++ regression includes `models/yolox_mnv4_small.nk` via embedded TCAS cases
+Synthetic regression covers the **full MobileNetV4-Small → YOLOX chain** and an **isolated head** fixture:
+
+| Layer | What is verified |
+|-------|------------------|
+| **C++ embedded TCAS** | `yolox_mnv4_small.nk` (19 layers, random 56×56×3 input) and `yolox_head_only.nk` (head on 2×2×960 features) vs Python reference |
+| **Backbone chain** | YOLOX backbone layers match `build_mobilenetv4_small_arch(include_head=False)`; shared weight prefix; backbone-only forward equals MNv4 without head |
+| **Head composition** | `forward(backbone) → head` equals full-detector forward (fixture + fresh random weights) |
+| **Decode golden** | Hand-built 1×1 output tensor → expected box geometry and score threshold behavior |
+| **Runtime parity** | `tools/nk_infer` matches NumPy reference on both fixtures and on a temp-written model |
+
+Python: `python/tests/test_yolox_detector.py` (run via `make test-python`).
+
+C++: `src/test.cpp` includes both `.nk` fixtures (**88** total embedded cases across the suite).
 
 ## Limitations (Phase 1)
 

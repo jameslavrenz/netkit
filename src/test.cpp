@@ -55,6 +55,7 @@ NkRegression::RunSummary run_all_tests()
     std::cout << "============================\n";
     merge(NkRegression::RunModelTests("models/mobilenetv4_small.nk"));
     merge(NkRegression::RunModelTests("models/yolox_mnv4_small.nk"));
+    merge(NkRegression::RunModelTests("models/yolox_head_only.nk"));
 
     std::cout << "\n============================\n";
     std::cout << " MNIST MLP TESTS\n";
