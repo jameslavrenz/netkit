@@ -16,9 +16,10 @@
  *                       NETKIT_HEAP_ARENA=1 allows one init_heap() at startup; never freed.
  *
  * Optional weight storage (Makefile / CMake):
- *   NETKIT_WEIGHTS_IN_FLASH — when 1, LoadFromBuffer / nk_model_load_memory bind weight and
- *     bias tensors directly into the .nk blob (flash/XIP); arena holds activations only.
- *     Default 1 on MCU, 0 on CPU and MPU. Override with NETKIT_WEIGHTS_IN_FLASH=0|1.
+ *   NETKIT_WEIGHTS_IN_RAM — when 1, buffer/AOT load copies weight and bias payload into
+ *     the arena (SRAM). When 0, weights stay in the .nk blob (flash/XIP); arena holds
+ *     activations and network structs only.
+ *     Default 0 on MCU (flash-backed), 1 on CPU and MPU. Override with NETKIT_WEIGHTS_IN_RAM=0|1.
  *     File-based load (LoadMLP path) always copies payload into the arena.
  *
  * Optional kernel backends (Makefile / CMake):
@@ -64,17 +65,17 @@
 #define NK_ARENA_DEFAULT_CAPACITY (4U * 1024U * 1024U)
 #endif
 
-/* Weight load policy: zero-copy from .nk blob (flash) vs copy into arena (SRAM). */
-#ifndef NETKIT_WEIGHTS_IN_FLASH
+/* Weight load policy: copy into arena (SRAM) vs use .nk blob in flash. */
+#ifndef NETKIT_WEIGHTS_IN_RAM
 #if defined(NETKIT_TARGET_MCU)
-#define NETKIT_WEIGHTS_IN_FLASH 1
+#define NETKIT_WEIGHTS_IN_RAM 0
 #else
-#define NETKIT_WEIGHTS_IN_FLASH 0
+#define NETKIT_WEIGHTS_IN_RAM 1
 #endif
 #endif
 
-#if NETKIT_WEIGHTS_IN_FLASH != 0 && NETKIT_WEIGHTS_IN_FLASH != 1
-#error "NETKIT_WEIGHTS_IN_FLASH must be 0 or 1"
+#if NETKIT_WEIGHTS_IN_RAM != 0 && NETKIT_WEIGHTS_IN_RAM != 1
+#error "NETKIT_WEIGHTS_IN_RAM must be 0 or 1"
 #endif
 
 /* CMSIS-NN: Cortex-M MCU firmware only (not desktop CPU or Cortex-A MPU). */

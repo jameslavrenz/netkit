@@ -773,7 +773,7 @@ namespace NkLoader
                                             float*& weights,
                                             float*& biases)
         {
-#if NETKIT_WEIGHTS_IN_FLASH
+#if !NETKIT_WEIGHTS_IN_RAM
             const LoadResult bound = BindPayloadFromBlob(parsed, blob, blob_size, weights, biases);
             if (bound.status == LoadStatus::Ok)
                 return bound;

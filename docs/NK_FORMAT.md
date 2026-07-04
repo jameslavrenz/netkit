@@ -151,14 +151,16 @@ Python encode/decode: `python/netkit/pad_encoding.py` (`encode_pad_extra`, `enco
 
 ### Weight load policy (runtime)
 
-Same `.nk` bytes on disk or in flash; the loader policy is compile-time (`NETKIT_WEIGHTS_IN_FLASH` in `netkit_config.h`):
+Same `.nk` bytes on disk or in flash; the loader policy is compile-time (`NETKIT_WEIGHTS_IN_RAM` in `netkit_config.h`). Full tradeoff: [ARENA.md](ARENA.md#weight-storage-tradeoff-netkit_weights_in_ram).
 
 | Build | Default | Buffer / AOT load (`LoadFromBuffer`, `nk_model_load_memory`) | File load (`LoadMLP`, `nk_model_load`) |
 |-------|---------|----------------------------------------------------------------|----------------------------------------|
-| **MCU** | Flash-backed | Weight/bias tensors point into the blob (zero-copy); arena holds structs + activations | Always copies payload into arena |
-| **CPU / MPU** | Arena copy | Copies weight/bias payload into arena | Copies payload into arena |
+| **MCU** | `NETKIT_WEIGHTS_IN_RAM=0` | Coefs in flash blob; arena = structs + activations | Always copies payload into arena |
+| **CPU / MPU** | `NETKIT_WEIGHTS_IN_RAM=1` | Copies weight/bias payload into arena | Copies payload into arena |
 
-Override: `make NETKIT_WEIGHTS_IN_FLASH=0|1` or CMake `-DNETKIT_WEIGHTS_IN_FLASH=ON|OFF`. Misaligned payloads fall back to arena copy. See [ARENA.md](ARENA.md).
+**Sizing rule:** if SRAM fits **weights + activations + headroom**, use `NETKIT_WEIGHTS_IN_RAM=1`; otherwise MCU default leaves coefs in flash.
+
+Override: `make NETKIT_WEIGHTS_IN_RAM=0|1` or CMake `-DNETKIT_WEIGHTS_IN_RAM=ON|OFF`. Misaligned payloads fall back to arena copy.
 
 ## Embedded regression tests (optional)
 

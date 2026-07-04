@@ -99,17 +99,52 @@ The arena size is **not** stored in the model file. **You** (or your test harnes
 
 | Allocation | When | Notes |
 |------------|------|-------|
-| Weight blob (from `.nk`) | Load | Copied into arena on **CPU/MPU** (`NETKIT_WEIGHTS_IN_FLASH=0`) and on **file load** everywhere |
-| Weight views (flash blob) | Load | **MCU default** (`NETKIT_WEIGHTS_IN_FLASH=1`) — buffer/AOT load binds pointers into `.rodata`; no arena weight copy |
+| Weight blob (from `.nk`) | Load | Copied into arena when **`NETKIT_WEIGHTS_IN_RAM=1`** (CPU/MPU default) and on **file load** everywhere |
+| Weight views (flash blob) | Load | When **`NETKIT_WEIGHTS_IN_RAM=0`** (MCU default) — buffer/AOT load binds pointers into `.rodata`; no arena weight copy |
 | Network structs | Load | `MLPNetwork` / `CNNNetwork`, layer metadata |
 | Ping-pong buffers | Load | **2 ×** largest intermediate activation (float32) |
 | Input / output tensors | Caller | Optional — CLI and `nk_model_run` allocate these per run |
 
 Ping-pong buffers are reserved at **load time**, so a forward pass does not grow the arena for hidden activations. Peak activation memory is roughly **2 × largest layer output**, not the sum of every layer.
 
+### Weight storage tradeoff (`NETKIT_WEIGHTS_IN_RAM`)
+
+MCU parts usually have **much more flash than RAM**. The `.nk` blob (including coefficients) lives in flash via AOT embed or a const buffer. At load time, netkit can either **copy weights into the arena (SRAM)** or **leave them in the blob** and wire layer tensors to flash addresses.
+
+Compile-time flag: **`NETKIT_WEIGHTS_IN_RAM`** (`include/netkit_config.h`).
+
+| Value | Where coefs live at inference | Startup (buffer/AOT load) | RAM use | Inference speed |
+|-------|------------------------------|---------------------------|---------|-----------------|
+| **`1`** | SRAM (arena copy) | One-time `memcpy` from blob | Weights + biases + activations in arena | Faster (zero-wait SRAM reads) |
+| **`0`** | Flash (`.nk` blob) | Parse + pointer bind only | Activations + structs only; flash holds weights | Slower flash reads; fits larger models |
+
+**Defaults**
+
+| Target | `NETKIT_WEIGHTS_IN_RAM` | Typical use |
+|--------|-------------------------|-------------|
+| **MCU** | `0` | RAM is the bottleneck — keep coefs in flash unless the model is small |
+| **CPU / MPU** | `1` | Plenty of RAM — copy for speed and simpler debugging |
+
+**Choosing for firmware**
+
+1. Size static arena with `./netkit inspect --full` (or AOT constants) **including** weight copy on the host.
+2. If **weights + activations + headroom ≤ available SRAM** → build with **`NETKIT_WEIGHTS_IN_RAM=1`** for faster inference.
+3. If **weights do not fit in RAM** → keep MCU default **`NETKIT_WEIGHTS_IN_RAM=0`**; coefs stay in flash; size arena for **activations + structs only** (subtract `weights_bytes + biases_bytes` from host inspect high-water).
+
+Override:
+
+```bash
+make NETKIT_TARGET=mcu NETKIT_WEIGHTS_IN_RAM=1 lib   # small model: copy coefs to SRAM
+make NETKIT_TARGET=cpu NETKIT_WEIGHTS_IN_RAM=0 lib     # test flash-backed load on desktop
+```
+
+**Scope:** applies to **buffer / AOT load** (`LoadFromBuffer`, `nk_model_load_memory`). **File load** always copies payload into the arena (no persistent blob). Misaligned weight payloads fall back to arena copy even when `NETKIT_WEIGHTS_IN_RAM=0`.
+
+See [NK_FORMAT.md](NK_FORMAT.md) and [BUILD_TARGETS.md](BUILD_TARGETS.md).
+
 ### How to pick a size
 
-1. **Measure** — `./netkit inspect models/your_model.nk --full` or `nk_inspect_model()`. Use **arena bytes after forward** (includes load + ping buffers + a zero-input forward with caller I/O tensors). On **MCU + `NETKIT_WEIGHTS_IN_FLASH=1`**, subtract weight+bias bytes from that figure when sizing firmware RAM (weights stay in flash; `inspect` on CPU always copies weights).
+1. **Measure** — `./netkit inspect models/your_model.nk --full` or `nk_inspect_model()`. Use **arena bytes after forward** (includes load + ping buffers + a zero-input forward with caller I/O tensors). On **MCU + `NETKIT_WEIGHTS_IN_RAM=0`**, subtract `weights_bytes + biases_bytes` from that figure when sizing firmware RAM (coefs stay in flash; host `inspect` always uses arena copy).
 2. **Add headroom** — typically **1.5–2×** measured high-water for batch or future changes.
 3. **Declare static storage** — firmware usually uses a fixed `unsigned char memory[N]` sized from step 1–2.
 

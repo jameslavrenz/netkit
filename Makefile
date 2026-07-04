@@ -12,7 +12,7 @@
 #   NETKIT_HEAP_ARENA=1    — MCU/MPU: compile heap arena helpers (off by default)
 #
 # Weight load policy (buffer / AOT path only; file load always copies to arena):
-#   NETKIT_WEIGHTS_IN_FLASH=1|0 — default 1 on mcu (zero-copy from flash blob), 0 on cpu/mpu
+#   NETKIT_WEIGHTS_IN_RAM=1|0 — default 0 on mcu (coefs in flash), 1 on cpu/mpu (copy to SRAM)
 #
 # Optional CMSIS-NN kernels (Apache-2.0, fetch with ./tools/fetch_cmsis_nn.sh):
 #   NETKIT_CMSIS_NN=1      — Cortex-M MCU only (NETKIT_TARGET=mcu + NETKIT_ARCH=CM4|M33|...)
@@ -53,9 +53,9 @@ NETKIT_TARGET ?= cpu
 NETKIT_GLOBAL_ARENA ?= 0
 NETKIT_HEAP_ARENA ?= 0
 ifeq ($(NETKIT_TARGET),mcu)
-NETKIT_WEIGHTS_IN_FLASH ?= 1
+NETKIT_WEIGHTS_IN_RAM ?= 0
 else
-NETKIT_WEIGHTS_IN_FLASH ?= 0
+NETKIT_WEIGHTS_IN_RAM ?= 1
 endif
 NETKIT_CMSIS_NN ?= 0
 NETKIT_CMSIS_DSP ?= 0
@@ -154,7 +154,7 @@ else
   $(error NETKIT_TARGET must be cpu, mcu, or mpu (got '$(NETKIT_TARGET)'))
 endif
 
-TARGET_CPPFLAGS += -DNETKIT_WEIGHTS_IN_FLASH=$(NETKIT_WEIGHTS_IN_FLASH)
+TARGET_CPPFLAGS += -DNETKIT_WEIGHTS_IN_RAM=$(NETKIT_WEIGHTS_IN_RAM)
 
 CFLAGS += $(TARGET_CPPFLAGS)
 CXXFLAGS += $(TARGET_CPPFLAGS)

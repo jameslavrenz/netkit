@@ -102,7 +102,7 @@ namespace NkLoader
                                  MLPNetwork*& network,
                                  std::array<uint32_t, kMaxTensorRank>& input_shape,
                                  uint32_t& input_rank);
-    /* When NETKIT_WEIGHTS_IN_FLASH=1, `data` must outlive the network (flash .rodata).
+    /* When NETKIT_WEIGHTS_IN_RAM=0, `data` must outlive the network (flash .rodata).
        Misaligned payloads fall back to an arena copy. File load always copies. */
 
     LoadResult LoadCNN(const char* nk_path,

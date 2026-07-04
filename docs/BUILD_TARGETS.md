@@ -67,7 +67,7 @@ Compile-time macros (from `include/netkit_config.h`):
 | `NETKIT_DESKTOP` | CPU only — CLI, regression, debug tooling |
 | `NETKIT_ARENA_HEAP` | Heap arena API compiled in (CPU default; MCU/MPU when opted in) |
 | `NETKIT_GLOBAL_ARENA` | CPU only — force global/static arena instead of heap default |
-| `NETKIT_WEIGHTS_IN_FLASH` | `1` — buffer/AOT load binds weights in the `.nk` blob (default **MCU**); `0` — copy weights into arena (default **CPU/MPU**) |
+| `NETKIT_WEIGHTS_IN_RAM` | `1` — copy weight/bias payload into arena at buffer/AOT load (default **CPU/MPU**); `0` — coefs stay in `.nk` flash blob (default **MCU**) |
 | `NETKIT_USE_CMSIS_NN` | CMSIS-NN backends enabled (see CMSIS section) |
 | `NETKIT_USE_CMSIS_DSP` | CMSIS-DSP backends enabled (see CMSIS section) |
 | `NETKIT_HOST_SMOKE` | Host MCU/MPU smoke only — adds `__GNUC_PYTHON__` for CMSIS without CMSIS-Core |
@@ -106,8 +106,8 @@ make NETKIT_TARGET=mcu NETKIT_HEAP_ARENA=1 lib
 make NETKIT_TARGET=mpu NETKIT_HEAP_ARENA=1 lib
 
 # Override weight load policy (buffer/AOT path; file load always copies)
-make NETKIT_TARGET=mcu NETKIT_WEIGHTS_IN_FLASH=0 lib   # copy weights to SRAM (faster inference, more RAM)
-make NETKIT_TARGET=cpu NETKIT_WEIGHTS_IN_FLASH=1 lib    # test flash-backed load on desktop
+make NETKIT_TARGET=mcu NETKIT_WEIGHTS_IN_RAM=1 lib   # copy coefs to SRAM when RAM fits (faster inference)
+make NETKIT_TARGET=cpu NETKIT_WEIGHTS_IN_RAM=0 lib     # test flash-backed load on desktop
 
 # Convenience aliases
 make cpu              # NETKIT_TARGET=cpu (heap default)
@@ -136,7 +136,7 @@ cmake --build build-firmware
 cmake -B build-m55 -DCMAKE_TOOLCHAIN_FILE=... -DNETKIT_TARGET=mcu -DNETKIT_ARCH=M55 -DNETKIT_CMSIS_NN=ON
 ```
 
-CMake cache options mirror Make: `NETKIT_TARGET`, `NETKIT_ARCH`, `NETKIT_CMSIS_NN`, `NETKIT_CMSIS_DSP`, `NETKIT_GLOBAL_ARENA`, `NETKIT_HEAP_ARENA`, `NETKIT_WEIGHTS_IN_FLASH`.
+CMake cache options mirror Make: `NETKIT_TARGET`, `NETKIT_ARCH`, `NETKIT_CMSIS_NN`, `NETKIT_CMSIS_DSP`, `NETKIT_GLOBAL_ARENA`, `NETKIT_HEAP_ARENA`, `NETKIT_WEIGHTS_IN_RAM`.
 
 ## CPU (desktop)
 
