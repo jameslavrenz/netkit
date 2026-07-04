@@ -6,7 +6,6 @@
 #include "nk_format.hpp"
 #include <cstdint>
 #include <cstring>
-#include <vector>
 
 namespace nk_op_detail
 {
@@ -67,14 +66,13 @@ namespace nk_op_detail
         if (weight_elems > 0 && channels > 0 && weight_elems % channels == 0)
         {
             const std::size_t kernel_area = weight_elems / channels;
-            std::vector<DepthwiseMeta> candidates;
             if (kw_byte == kernel_h && static_cast<std::size_t>(kernel_h) * kernel_h == kernel_area)
-                candidates.push_back(literal(kernel_h));
+                return literal(kernel_h);
             if (static_cast<std::size_t>(kernel_h) * kernel_h == kernel_area && kw_byte != kernel_h)
-                candidates.push_back(pad_from_byte(kw_byte));
+                return pad_from_byte(kw_byte);
             const uint32_t literal_kw = kw_byte ? kw_byte : kernel_h;
             if (static_cast<std::size_t>(kernel_h) * literal_kw == kernel_area)
-                candidates.push_back(literal(literal_kw));
+                return literal(literal_kw);
             if ((kernel_area % kernel_h) == 0)
             {
                 const uint32_t actual_kw = static_cast<uint32_t>(kernel_area / kernel_h);
@@ -86,11 +84,9 @@ namespace nk_op_detail
                     meta.kernel_w = actual_kw;
                     DecodeConvPadExtra(layer.pad_h, layer.pad_w, kw_byte, meta.pad_h_end, meta.pad_w_end);
                     if (meta.pad_h_end != pad_h || meta.pad_w_end != pad_w)
-                        candidates.push_back(meta);
+                        return meta;
                 }
             }
-            if (!candidates.empty())
-                return candidates.front();
         }
 
         if (kw_byte == kernel_h)
