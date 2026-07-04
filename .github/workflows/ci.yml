@@ -57,6 +57,7 @@ jobs:
 
       - name: CLI smoke test
         run: |
+          make netkit
           ./netkit run models/test_mlp.nk --input 1,2
           ./netkit inspect models/test_mlp.nk
           ./netkit inspect models/mnist_cnn.nk --full || true

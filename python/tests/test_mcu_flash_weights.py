@@ -75,6 +75,24 @@ def _rebuild_lib(*make_args: str) -> None:
     )
 
 
+def _restore_desktop_build() -> None:
+    """Rebuild default cpu CLI + lib after MCU-only probe builds."""
+    subprocess.run(
+        ["make", "clean"],
+        cwd=ROOT,
+        check=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    subprocess.run(
+        ["make"],
+        cwd=ROOT,
+        check=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+
 def _write_probe_harness(tmp: Path, nk_bytes: bytes) -> Path:
     harness = tmp / "mcu_flash_harness.c"
     harness.write_text(
@@ -162,7 +180,7 @@ class TestMcuFlashWeights(unittest.TestCase):
                 _rebuild_lib("NETKIT_TARGET=mcu", "NETKIT_WEIGHTS_IN_RAM=1")
                 used_ram = _probe_arena_used(tmp, harness)
             finally:
-                _rebuild_lib()
+                _restore_desktop_build()
 
         self.assertGreater(used_ram, used_flash)
         self.assertGreaterEqual(used_ram - used_flash, payload_bytes)
