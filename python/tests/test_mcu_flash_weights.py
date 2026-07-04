@@ -85,7 +85,7 @@ def _restore_desktop_build() -> None:
         stderr=subprocess.DEVNULL,
     )
     subprocess.run(
-        ["make"],
+        ["make", "all"],
         cwd=ROOT,
         check=True,
         stdout=subprocess.DEVNULL,

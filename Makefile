@@ -235,6 +235,8 @@ all: netkit-config-sync $(LIB)
 build-all: netkit-config-sync $(LIB) examples embedded-smoke
 endif
 
+.DEFAULT_GOAL := all
+
 $(LIB): $(CORE_OBJECTS) $(CMSIS_NN_OBJECTS) $(CMSIS_DSP_OBJECTS)
 	ar rcs $@ $^
 
@@ -245,7 +247,8 @@ $(TRIM_LIB): $(TRIM_CORE_OBJECTS)
 
 trim-lib: $(TRIM_LIB)
 
-check-trim-lib: lib trim-lib
+check-trim-lib:
+	$(MAKE) NETKIT_TARGET=cpu lib trim-lib
 	chmod +x tools/check_trim_lib.sh && ./tools/check_trim_lib.sh
 
 ifeq ($(BUILD_CLI),1)
