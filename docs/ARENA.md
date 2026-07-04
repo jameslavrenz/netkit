@@ -99,7 +99,8 @@ The arena size is **not** stored in the model file. **You** (or your test harnes
 
 | Allocation | When | Notes |
 |------------|------|-------|
-| Weight blob (from `.nk`) | Load | Size fixed by layer dimensions |
+| Weight blob (from `.nk`) | Load | Copied into arena on **CPU/MPU** (`NETKIT_WEIGHTS_IN_FLASH=0`) and on **file load** everywhere |
+| Weight views (flash blob) | Load | **MCU default** (`NETKIT_WEIGHTS_IN_FLASH=1`) — buffer/AOT load binds pointers into `.rodata`; no arena weight copy |
 | Network structs | Load | `MLPNetwork` / `CNNNetwork`, layer metadata |
 | Ping-pong buffers | Load | **2 ×** largest intermediate activation (float32) |
 | Input / output tensors | Caller | Optional — CLI and `nk_model_run` allocate these per run |
@@ -108,7 +109,7 @@ Ping-pong buffers are reserved at **load time**, so a forward pass does not grow
 
 ### How to pick a size
 
-1. **Measure** — `./netkit inspect models/your_model.nk --full` or `nk_inspect_model()`. Use **arena bytes after forward** (includes load + ping buffers + a zero-input forward with caller I/O tensors).
+1. **Measure** — `./netkit inspect models/your_model.nk --full` or `nk_inspect_model()`. Use **arena bytes after forward** (includes load + ping buffers + a zero-input forward with caller I/O tensors). On **MCU + `NETKIT_WEIGHTS_IN_FLASH=1`**, subtract weight+bias bytes from that figure when sizing firmware RAM (weights stay in flash; `inspect` on CPU always copies weights).
 2. **Add headroom** — typically **1.5–2×** measured high-water for batch or future changes.
 3. **Declare static storage** — firmware usually uses a fixed `unsigned char memory[N]` sized from step 1–2.
 

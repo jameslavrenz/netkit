@@ -149,6 +149,17 @@ Python encode/decode: `python/netkit/pad_encoding.py` (`encode_pad_extra`, `enco
 - **Biases:** concatenated in the same layer order
 - All values IEEE-754 **float32**, little-endian
 
+### Weight load policy (runtime)
+
+Same `.nk` bytes on disk or in flash; the loader policy is compile-time (`NETKIT_WEIGHTS_IN_FLASH` in `netkit_config.h`):
+
+| Build | Default | Buffer / AOT load (`LoadFromBuffer`, `nk_model_load_memory`) | File load (`LoadMLP`, `nk_model_load`) |
+|-------|---------|----------------------------------------------------------------|----------------------------------------|
+| **MCU** | Flash-backed | Weight/bias tensors point into the blob (zero-copy); arena holds structs + activations | Always copies payload into arena |
+| **CPU / MPU** | Arena copy | Copies weight/bias payload into arena | Copies payload into arena |
+
+Override: `make NETKIT_WEIGHTS_IN_FLASH=0|1` or CMake `-DNETKIT_WEIGHTS_IN_FLASH=ON|OFF`. Misaligned payloads fall back to arena copy. See [ARENA.md](ARENA.md).
+
 ## Embedded regression tests (optional)
 
 When header `flags & 0x0001` is set, a test section follows the bias payload:

@@ -15,6 +15,12 @@
  *   MCU / MPU default — caller-owned static/global buffer via nk_arena_init().
  *                       NETKIT_HEAP_ARENA=1 allows one init_heap() at startup; never freed.
  *
+ * Optional weight storage (Makefile / CMake):
+ *   NETKIT_WEIGHTS_IN_FLASH — when 1, LoadFromBuffer / nk_model_load_memory bind weight and
+ *     bias tensors directly into the .nk blob (flash/XIP); arena holds activations only.
+ *     Default 1 on MCU, 0 on CPU and MPU. Override with NETKIT_WEIGHTS_IN_FLASH=0|1.
+ *     File-based load (LoadMLP path) always copies payload into the arena.
+ *
  * Optional kernel backends (Makefile / CMake):
  *   NETKIT_USE_CMSIS_NN  — ARM CMSIS-NN when NETKIT_TARGET_MCU + Cortex-M NETKIT_ARCH (flag ignored elsewhere)
  *   NETKIT_USE_CMSIS_DSP — ARM CMSIS-DSP float32 vector/matrix ops + clip
@@ -56,6 +62,19 @@
 #define NK_ARENA_DEFAULT_CAPACITY (64U * 1024U)
 #else
 #define NK_ARENA_DEFAULT_CAPACITY (4U * 1024U * 1024U)
+#endif
+
+/* Weight load policy: zero-copy from .nk blob (flash) vs copy into arena (SRAM). */
+#ifndef NETKIT_WEIGHTS_IN_FLASH
+#if defined(NETKIT_TARGET_MCU)
+#define NETKIT_WEIGHTS_IN_FLASH 1
+#else
+#define NETKIT_WEIGHTS_IN_FLASH 0
+#endif
+#endif
+
+#if NETKIT_WEIGHTS_IN_FLASH != 0 && NETKIT_WEIGHTS_IN_FLASH != 1
+#error "NETKIT_WEIGHTS_IN_FLASH must be 0 or 1"
 #endif
 
 /* CMSIS-NN: Cortex-M MCU firmware only (not desktop CPU or Cortex-A MPU). */

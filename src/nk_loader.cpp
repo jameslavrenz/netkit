@@ -3,6 +3,7 @@
 #include "resnet_basic_block.hpp"
 #include "tensor_factory.hpp"
 #include "nk_op_detail.hpp"
+#include "netkit_config.h"
 
 #include <cstdio>
 #include <cstring>
@@ -733,6 +734,51 @@ namespace NkLoader
             std::memcpy(weights, blob + parsed.payload_offset, weights_bytes);
             std::memcpy(biases, blob + parsed.payload_offset + weights_bytes, biases_bytes);
             return LoadResult{LoadStatus::Ok, FromNkNetwork(parsed.header.network_kind), nullptr};
+        }
+
+        LoadResult BindPayloadFromBlob(const ParsedModel& parsed,
+                                       const uint8_t* blob,
+                                       std::size_t blob_size,
+                                       float*& weights,
+                                       float*& biases)
+        {
+            const std::size_t weights_bytes = parsed.header.weights_bytes;
+            const std::size_t biases_bytes = parsed.header.biases_bytes;
+            const std::size_t total_bytes = weights_bytes + biases_bytes;
+            const std::size_t needed = parsed.payload_offset + total_bytes;
+
+            if (!blob || blob_size < needed)
+                return Fail(LoadStatus::TruncatedFile, ".nk buffer too small for payload");
+
+            if (total_bytes == 0)
+            {
+                weights = nullptr;
+                biases = nullptr;
+                return LoadResult{LoadStatus::Ok, FromNkNetwork(parsed.header.network_kind), nullptr};
+            }
+
+            if (parsed.payload_offset % alignof(float) != 0)
+                return Fail(LoadStatus::SizeMismatch, ".nk payload not float-aligned for flash weights");
+
+            weights = const_cast<float*>(reinterpret_cast<const float*>(blob + parsed.payload_offset));
+            biases = const_cast<float*>(
+                reinterpret_cast<const float*>(blob + parsed.payload_offset + weights_bytes));
+            return LoadResult{LoadStatus::Ok, FromNkNetwork(parsed.header.network_kind), nullptr};
+        }
+
+        LoadResult ResolvePayloadFromBuffer(const ParsedModel& parsed,
+                                            const uint8_t* blob,
+                                            std::size_t blob_size,
+                                            Arena& arena,
+                                            float*& weights,
+                                            float*& biases)
+        {
+#if NETKIT_WEIGHTS_IN_FLASH
+            const LoadResult bound = BindPayloadFromBlob(parsed, blob, blob_size, weights, biases);
+            if (bound.status == LoadStatus::Ok)
+                return bound;
+#endif
+            return CopyPayloadToArena(parsed, blob, blob_size, arena, weights, biases);
         }
 
         ActivationType ToMlpActivation(NkFormat::Activation activation)
@@ -1958,7 +2004,7 @@ namespace NkLoader
 
         float* weights = nullptr;
         float* biases = nullptr;
-        LoadResult copy_result = CopyPayloadToArena(parsed, data, size, arena, weights, biases);
+        LoadResult copy_result = ResolvePayloadFromBuffer(parsed, data, size, arena, weights, biases);
         if (copy_result.status != LoadStatus::Ok)
             return copy_result;
 
@@ -2039,7 +2085,7 @@ namespace NkLoader
 
         float* weights = nullptr;
         float* biases = nullptr;
-        LoadResult copy_result = CopyPayloadToArena(parsed, data, size, arena, weights, biases);
+        LoadResult copy_result = ResolvePayloadFromBuffer(parsed, data, size, arena, weights, biases);
         if (copy_result.status != LoadStatus::Ok)
             return copy_result;
 
