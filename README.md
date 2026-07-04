@@ -44,7 +44,7 @@ Application code is C++26. C23 is limited to the C header, the `extern "C"` brid
 - **CLI** — `test`, `run`, and `inspect` commands for desktop development
 - **MLP & CNN** — conv (with padding), max/avg pool, batch norm, flatten, dense; `.nk` loading
 - **Arena allocator** — Bump-pointer memory with aligned allocation (no heap in layer paths)
-- **Regression tests** — 71 embedded `.nk` cases (C++/C) plus Python ONNX parity (61), timm backbone pack/runtime parity, and AOT compile tests via `make test`
+- **Regression tests** — 71 embedded `.nk` cases (C++/C) plus Python ONNX parity (73), timm backbone pack/runtime parity, and AOT compile tests via `make test`
 - **GitHub Actions CI** — manual `workflow_dispatch` only (`gh workflow run ci.yml`)
 - **Embedded smoke** — MCU/MPU + `NETKIT_ARCH` + CMSIS bring-up harness on host (`test_mlp`, `cnn_4x4_single`; `make test-embedded-smoke-matrix`; local only)
 - **Float32 inference** — all tensors, weights, and math use IEEE-754 single precision (`float`)
@@ -146,7 +146,7 @@ make build-all    # cpu: netkit + examples + C API test binary
 make test         # C++ embedded regression + Python ONNX parity (cpu only)
 make test-cpp     # C++ embedded .nk cases only (71)
 make test-c       # C API regression only
-make test-python  # ONNX parity (61) + AOT compile tests (requires libnetkit.a)
+make test-python  # ONNX parity (73) + AOT compile tests (requires libnetkit.a)
 make test-embedded-smoke-matrix  # MCU/MPU + NETKIT_ARCH + CMSIS (host smoke; local only)
 make example-cpp  # C++26 usage demo
 make example-c    # C23 usage demo
@@ -199,7 +199,7 @@ make test-embedded-smoke-matrix   # lean MCU/MPU profiles (see docs/TESTING.md)
 |-------|----------|-------------|-------|
 | C++ embedded | C++26 | `./netkit test` → `src/test.cpp` | 71 (19 hand + 20 MNIST + 17 op matrix + 12 import extensions + 1 MobileNetV4 Small + 1 ResNet-18 + 1 ConvNeXt V2-Atto) |
 | C API | C23 | `tests/test_c_api.c` | Same 71 + API smoke tests |
-| ONNX parity | Python | `python/tests/test_onnx_parity.py` | 61 (.nk vs ONNX Runtime on bundled sidecars) |
+| ONNX parity | Python | `python/tests/test_onnx_parity.py` | 73 (.nk vs ONNX Runtime on bundled sidecars) |
 | Timm backbone parity | Python | `test_torch_backbone_pack.py`, `test_torch_backbone_runtime_parity.py` | Pack timm ResNet-18 / ConvNeXt V2-Atto / MobileNetV4 Small; C++ runtime vs PyTorch (see [TESTING.md](docs/TESTING.md)) |
 | AOT compile | Python | `python/tests/test_aot_compile.py` | Generates C/C++ from `.nk`, builds, runs vs reference |
 | Embedded smoke | C23 | `tests/embedded_smoke.c` | `test_mlp`, `cnn_4x4_single` load/run on 7 MCU/MPU host profiles (`make test-embedded-smoke-matrix`; local only) |

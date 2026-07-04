@@ -85,7 +85,7 @@ Requires `pip install -e "python[train]"` (torch + timm).
 | Suite | What it validates |
 |-------|-------------------|
 | C++ `make test-cpp` / `make test-c` | **`.nk` loader + inference** against embedded `TCAS` cases in each model (71 cases) |
-| Python `make test-python` | **`.nk` runtime vs ONNX Runtime** on embedded inputs (67 cases); **AOT compile** tests (C/C++ from `.nk`, requires `make lib`) |
+| Python `make test-python` | **`.nk` runtime vs ONNX Runtime** on embedded inputs (73 cases); **AOT compile** tests (C/C++ from `.nk`, requires `make lib`) |
 
 ```bash
 make                          # build netkit CLI
