@@ -1,5 +1,6 @@
 #include "layer_ops/nk_conv2d_op.hpp"
 
+#include "cmsis_buffer_size.hpp"
 #include "cnn.hpp"
 #include "nk_op_detail.hpp"
 #include "tensor_factory.hpp"
@@ -16,6 +17,14 @@ bool NkPlanConv2D(CnnBlock& block, NkCnnSpatialPlan& plan)
         plan.w, block.conv.conv.kernel_size, block.conv.conv.stride, block.conv.conv.pad_w, block.conv.conv.pad_w_end);
     const uint32_t out_c = static_cast<uint32_t>(block.conv.conv.out_channels);
     BumpMaxActivation(plan, out_h * out_w * out_c);
+    CmsisBumpConv2dWorkspace(plan.h,
+                             plan.w,
+                             block.conv.conv.kernel_size,
+                             block.conv.conv.stride,
+                             block.conv.conv.pad_h,
+                             block.conv.conv.pad_w,
+                             block.conv.conv.in_channels,
+                             block.conv.conv.out_channels);
     plan.h = out_h;
     plan.w = out_w;
     plan.channels = out_c;

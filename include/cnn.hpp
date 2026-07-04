@@ -152,6 +152,8 @@ private:
     float* ping_a{};
     float* ping_b{};
     uint32_t max_activation_elements{};
+    uint8_t* kernel_workspace_{};
+    std::size_t kernel_workspace_bytes_{};
     Tensor output_cache_{};
     NkOpsResolver op_resolver_{};
     bool has_custom_resolver_ = false;
@@ -324,6 +326,8 @@ public:
                         float leaky_alpha = 0.01f);
 
     Tensor& forward(const Tensor& input, Arena& arena);
+
+    std::size_t KernelWorkspaceBytes() const { return kernel_workspace_bytes_; }
 
     CnnBlock& GetBlock(uint32_t idx) { return blocks[idx]; }
 

@@ -4,13 +4,13 @@
  * CMSIS-NN is Apache-2.0 — see third_party/CMSIS-NN/LICENSE.
  */
 #include "cmsis_nn_kernel.hpp"
+#include "kernel_workspace.hpp"
 #include "netkit_config.h"
 
 #if defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN && NETKIT_CMSIS_NN_ALLOWED
 
 #include <arm_nnfunctions.h>
 
-#include <alloca.h>
 #include <cfloat>
 #include <cstdint>
 
@@ -131,13 +131,8 @@ bool CmsisNnKernel::TryConv2dForward(const Tensor& input,
         arm_convolve_wrapper_f32_get_buffer_size(&conv_params, &input_dims, &filter_dims, &output_dims);
 
     cmsis_nn_context ctx = {0};
-    if (buf_size > 0)
-    {
-        if (buf_size > 262144)
-            return false;
-        ctx.buf = alloca(static_cast<size_t>(buf_size));
-        ctx.size = buf_size;
-    }
+    if (!BindCmsisWorkspace(ctx.buf, ctx.size, buf_size))
+        return false;
 
     return cmsis_status_ok(arm_convolve_wrapper_f32(&ctx,
                                                     &conv_params,
@@ -209,13 +204,8 @@ bool CmsisNnKernel::TryDepthwiseConv2dForward(const Tensor& input,
         &dw_conv_params, &input_dims, &filter_dims, &output_dims);
 
     cmsis_nn_context ctx = {0};
-    if (buf_size > 0)
-    {
-        if (buf_size > 262144)
-            return false;
-        ctx.buf = alloca(static_cast<size_t>(buf_size));
-        ctx.size = buf_size;
-    }
+    if (!BindCmsisWorkspace(ctx.buf, ctx.size, buf_size))
+        return false;
 
     return cmsis_status_ok(arm_depthwise_conv_wrapper_f32(&ctx,
                                                           &dw_conv_params,
@@ -454,7 +444,12 @@ bool CmsisNnKernel::TryGeluForward(const Tensor& input, Tensor& output)
 
     const float* in = static_cast<const float*>(input.data);
     float* out = static_cast<float*>(output.data);
-    float* inner = static_cast<float*>(alloca(static_cast<size_t>(count) * sizeof(float)));
+    void* workspace_buf = nullptr;
+    int32_t workspace_size = 0;
+    if (!BindCmsisWorkspace(workspace_buf, workspace_size, count * static_cast<int32_t>(sizeof(float))))
+        return false;
+
+    float* inner = static_cast<float*>(workspace_buf);
 
     for (int32_t i = 0; i < count; ++i)
     {

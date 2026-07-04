@@ -74,6 +74,12 @@ On **MCU with both CMSIS flags**, CMSIS-NN owns layer kernels; CMSIS-DSP acceler
 
 **Fused blocks** (ResNet BasicBlock, MobileNetV4 UIB, ConvNeXt V2) route internal BN, ReLU, FC, LayerNorm, GELU, GRN, and residual adds through `fused_kernel_ops.hpp` → `Kernels::`, so CMSIS applies when enabled. Composite blocks do not introduce separate CMSIS entry points — they delegate to the same `Try*` paths as primitives. When CMSIS-NN rejects a case (e.g. depthwise conv with asymmetric padding), the reference kernel handles it automatically.
 
+### CMSIS kernel workspace
+
+On **CMSIS-NN** builds, CNN `InitActivationBuffers` walks the layer graph and sizes one **shared arena buffer** to the maximum CMSIS scratch requirement (conv, depthwise conv, GELU). `CNNNetwork::forward` activates this buffer for the duration of the pass; `CmsisNnKernel` binds it via `BindCmsisWorkspace` instead of stack `alloca`. If the workspace is missing or too small, `Try*` returns false and the reference kernel runs.
+
+Sizing is included in `./netkit inspect --full` and `nk_inspect_model()` arena high-water (reported separately as **kernel workspace** when non-zero).
+
 ### Arena sizing for composite models
 
 Fused blocks increase per-layer scratch (ConvNeXt V2 GRN norms, UIB ping-pong paths) but **ping-pong activation buffers** still dominate peak memory. Size firmware arenas from **`./netkit inspect models/your_model.nk --full`** (or `nk_inspect_model(..., full=1)`): use **arena bytes after forward** plus 1.5–2× headroom. Composite backbones (`resnet18.nk`, `mobilenetv4_small.nk`, `convnextv2_atto.nk`) typically need **multi‑MiB** CPU heap arenas; see [ARENA.md](ARENA.md#choosing-arena-size).

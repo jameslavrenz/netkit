@@ -1,6 +1,8 @@
 #include "cnn.hpp"
 #include "active_kernel.hpp"
 #include "activation_followup.hpp"
+#include "kernel_workspace.hpp"
+#include "cmsis_buffer_size.hpp"
 #include "ops_resolver.hpp"
 #include "reference_kernel.hpp"
 #include "tensor_factory.hpp"
@@ -91,6 +93,8 @@ bool CNNNetwork::InitActivationBuffers(Arena& arena, uint32_t in_h, uint32_t in_
 {
     ping_a = nullptr;
     ping_b = nullptr;
+    kernel_workspace_ = nullptr;
+    kernel_workspace_bytes_ = 0;
     max_activation_elements = 0;
     output_cache_ = {};
 
@@ -98,26 +102,51 @@ bool CNNNetwork::InitActivationBuffers(Arena& arena, uint32_t in_h, uint32_t in_
         return blocks != nullptr;
 
     const NkOpsResolver& resolver = GetOpsResolver();
+    std::size_t max_kernel_workspace_bytes = 0;
     NkCnnSpatialPlan plan{in_h, in_w, in_c, &max_activation_elements};
 
+    CmsisBeginKernelWorkspacePlan(&max_kernel_workspace_bytes);
     for (uint32_t i = 0; i < num_layers; ++i)
     {
         const NkLayerOpRegistration* registration =
             resolver.Find(static_cast<uint8_t>(ToOpCode(blocks[i].type)));
         if (!registration || !registration->plan_activation)
+        {
+            CmsisEndKernelWorkspacePlan();
             return false;
+        }
 
         if (!registration->plan_activation(blocks[i], plan))
+        {
+            CmsisEndKernelWorkspacePlan();
             return false;
+        }
     }
+    CmsisEndKernelWorkspacePlan();
 
     if (max_activation_elements == 0)
         return false;
 
+    const std::size_t gelu_workspace_bytes = CmsisGeluWorkspaceBytes(max_activation_elements);
+    if (gelu_workspace_bytes > max_kernel_workspace_bytes)
+        max_kernel_workspace_bytes = gelu_workspace_bytes;
+
     const std::size_t bytes = static_cast<std::size_t>(max_activation_elements) * sizeof(float);
     ping_a = static_cast<float*>(arena.alloc(bytes, alignof(float)));
     ping_b = static_cast<float*>(arena.alloc(bytes, alignof(float)));
-    return ping_a != nullptr && ping_b != nullptr;
+    if (!ping_a || !ping_b)
+        return false;
+
+    if (max_kernel_workspace_bytes > 0)
+    {
+        kernel_workspace_ = static_cast<uint8_t*>(
+            arena.alloc(max_kernel_workspace_bytes, alignof(std::max_align_t)));
+        if (!kernel_workspace_)
+            return false;
+        kernel_workspace_bytes_ = max_kernel_workspace_bytes;
+    }
+
+    return true;
 }
 
 void CNNNetwork::InitConvLayer(uint32_t layer_idx,
@@ -508,6 +537,9 @@ Tensor& CNNNetwork::forward(const Tensor& input, Arena& /*arena*/)
 
     if (!IsValid() || !HasActivationBuffers() || num_layers == 0)
         return empty;
+
+    KernelWorkspace workspace{kernel_workspace_, kernel_workspace_bytes_};
+    KernelWorkspaceScope workspace_scope(&workspace);
 
     const NkOpsResolver& resolver = GetOpsResolver();
     output_cache_ = {};

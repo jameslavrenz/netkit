@@ -75,7 +75,7 @@ CXXFLAGS = -fcolor-diagnostics -fansi-escape-codes -g -std=c++26 -Wall -Wextra -
 TARGET = netkit
 LIB = libnetkit.a
 
-RUNTIME_SOURCES = src/arena.cpp src/tensor_factory.cpp src/tensor_access.cpp src/reference_kernel.cpp src/ops.cpp \
+RUNTIME_SOURCES = src/arena.cpp src/tensor_factory.cpp src/tensor_access.cpp src/reference_kernel.cpp src/kernel_workspace.cpp src/cmsis_buffer_size.cpp src/ops.cpp \
                     src/conv2d.cpp src/depthwise_conv2d.cpp src/convnextv2_block.cpp src/mobilenetv4_uib.cpp src/resnet_basic_block.cpp src/yolox_decoupled_head.cpp src/mlp.cpp src/cnn.cpp \
                     src/layer_ops/nk_op_conv2d.cpp src/layer_ops/nk_op_depthwise_conv2d.cpp \
                     src/layer_ops/nk_op_convnextv2_block.cpp src/layer_ops/nk_op_mobilenetv4_uib.cpp src/layer_ops/nk_op_yolox_decoupled_head.cpp src/layer_ops/nk_op_resnet_basic_block.cpp src/layer_ops/nk_op_layernorm2d.cpp \
@@ -193,7 +193,7 @@ NK_INFER_SRC = tools/nk_infer.c
 NK_INFER_OBJ = tools/nk_infer.o
 
 TRIM_LIB = libnetkit_trim.a
-TRIM_RUNTIME_SOURCES = src/arena.cpp src/tensor_factory.cpp src/tensor_access.cpp src/reference_kernel.cpp src/ops.cpp \
+TRIM_RUNTIME_SOURCES = src/arena.cpp src/tensor_factory.cpp src/tensor_access.cpp src/reference_kernel.cpp src/kernel_workspace.cpp src/cmsis_buffer_size.cpp src/ops.cpp \
                        src/conv2d.cpp src/mlp.cpp src/cnn.cpp $(TRIM_LAYER_OP_SOURCES) src/ops_resolver.cpp \
                        src/nk_format.cpp src/nk_loader.cpp src/netkit_api.cpp
 TRIM_CORE_OBJECTS = $(TRIM_RUNTIME_SOURCES:.cpp=.o)

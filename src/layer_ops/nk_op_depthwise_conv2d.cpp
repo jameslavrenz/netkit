@@ -1,5 +1,6 @@
 #include "layer_ops/nk_depthwise_conv2d_op.hpp"
 
+#include "cmsis_buffer_size.hpp"
 #include "cnn.hpp"
 #include "nk_op_detail.hpp"
 #include "tensor_factory.hpp"
@@ -19,6 +20,14 @@ bool NkPlanDepthwiseConv2D(CnnBlock& block, NkCnnSpatialPlan& plan)
         plan.w, dw.kernel_w, dw.stride, dw.pad_w, pad_w_end);
     const uint32_t out_c = static_cast<uint32_t>(dw.channels);
     BumpMaxActivation(plan, out_h * out_w * out_c);
+    CmsisBumpDepthwiseConv2dWorkspace(plan.h,
+                                      plan.w,
+                                      dw.kernel_h,
+                                      dw.kernel_w,
+                                      dw.stride,
+                                      dw.pad_h,
+                                      dw.pad_w,
+                                      dw.channels);
     plan.h = out_h;
     plan.w = out_w;
     plan.channels = out_c;

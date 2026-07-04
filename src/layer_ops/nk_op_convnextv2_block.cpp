@@ -1,5 +1,6 @@
 #include "layer_ops/nk_convnextv2_block_op.hpp"
 
+#include "cmsis_buffer_size.hpp"
 #include "cnn.hpp"
 #include "convnextv2_block.hpp"
 #include "nk_op_detail.hpp"
@@ -14,8 +15,17 @@ bool NkPlanConvNeXtV2Block(CnnBlock& block, NkCnnSpatialPlan& plan)
     const uint32_t channels = static_cast<uint32_t>(block.convnextv2_block.block.channels);
     const uint32_t expanded = channels * static_cast<uint32_t>(ConvNeXtV2Block::kMlpRatio);
     const uint32_t spatial = plan.h * plan.w;
+    CmsisBumpDepthwiseConv2dWorkspace(plan.h,
+                                      plan.w,
+                                      ConvNeXtV2Block::kDwKernel,
+                                      ConvNeXtV2Block::kDwKernel,
+                                      1,
+                                      ConvNeXtV2Block::kDwPad,
+                                      ConvNeXtV2Block::kDwPad,
+                                      block.convnextv2_block.block.channels);
     BumpMaxActivation(plan, spatial * channels);
     BumpMaxActivation(plan, spatial * expanded);
+    CmsisBumpGeluWorkspace(spatial * expanded);
     return true;
 }
 

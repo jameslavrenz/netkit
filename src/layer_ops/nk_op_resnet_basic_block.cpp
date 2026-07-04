@@ -1,5 +1,6 @@
 #include "layer_ops/nk_resnet_basic_block_op.hpp"
 
+#include "cmsis_buffer_size.hpp"
 #include "cnn.hpp"
 #include "resnet_basic_block.hpp"
 #include "nk_op_detail.hpp"
@@ -15,6 +16,36 @@ bool NkPlanResNetBasicBlock(CnnBlock& block, NkCnnSpatialPlan& plan)
     uint32_t out_h = plan.h;
     uint32_t out_w = plan.w;
     resblock.output_spatial(plan.h, plan.w, out_h, out_w);
+
+    constexpr int kKernel = 3;
+    constexpr int kPad = 1;
+    CmsisBumpConv2dWorkspace(plan.h,
+                             plan.w,
+                             kKernel,
+                             resblock.stride,
+                             kPad,
+                             kPad,
+                             resblock.in_channels,
+                             resblock.out_channels);
+    CmsisBumpConv2dWorkspace(out_h,
+                             out_w,
+                             kKernel,
+                             1,
+                             kPad,
+                             kPad,
+                             resblock.out_channels,
+                             resblock.out_channels);
+    if (!resblock.has_identity_shortcut())
+    {
+        CmsisBumpConv2dWorkspace(plan.h,
+                                 plan.w,
+                                 1,
+                                 resblock.stride,
+                                 0,
+                                 0,
+                                 resblock.in_channels,
+                                 resblock.out_channels);
+    }
 
     BumpMaxActivation(plan, plan.h * plan.w * static_cast<uint32_t>(resblock.in_channels));
     BumpMaxActivation(plan, out_h * out_w * static_cast<uint32_t>(resblock.out_channels));

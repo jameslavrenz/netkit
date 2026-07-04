@@ -1,5 +1,6 @@
 #include "layer_ops/nk_mobilenetv4_uib_op.hpp"
 
+#include "cmsis_buffer_size.hpp"
 #include "cnn.hpp"
 #include "mobilenetv4_uib.hpp"
 #include "nk_op_detail.hpp"
@@ -16,6 +17,58 @@ bool NkPlanMobilenetV4Uib(CnnBlock& block, NkCnnSpatialPlan& plan)
     uint32_t out_h = plan.h;
     uint32_t out_w = plan.w;
     uib.output_spatial(plan.h, plan.w, out_h, out_w);
+
+    uint32_t cur_h = plan.h;
+    uint32_t cur_w = plan.w;
+    uint32_t cur_c = static_cast<uint32_t>(uib.in_channels);
+
+    if (uib.start_dw_kernel > 0)
+    {
+        const int pad = (uib.start_dw_kernel - 1) / 2;
+        CmsisBumpDepthwiseConv2dWorkspace(cur_h,
+                                          cur_w,
+                                          uib.start_dw_kernel,
+                                          uib.start_dw_kernel,
+                                          static_cast<int>(uib.start_dw_stride()),
+                                          pad,
+                                          pad,
+                                          uib.in_channels);
+        cur_h = CalcOutputDim(cur_h, uib.start_dw_kernel, static_cast<int>(uib.start_dw_stride()), pad);
+        cur_w = CalcOutputDim(cur_w, uib.start_dw_kernel, static_cast<int>(uib.start_dw_stride()), pad);
+    }
+
+    CmsisBumpConv2dWorkspace(cur_h,
+                             cur_w,
+                             1,
+                             1,
+                             0,
+                             0,
+                             static_cast<int>(cur_c),
+                             static_cast<int>(expand_c));
+
+    if (uib.middle_dw_kernel > 0)
+    {
+        const int pad = (uib.middle_dw_kernel - 1) / 2;
+        CmsisBumpDepthwiseConv2dWorkspace(cur_h,
+                                          cur_w,
+                                          uib.middle_dw_kernel,
+                                          uib.middle_dw_kernel,
+                                          static_cast<int>(uib.middle_dw_stride()),
+                                          pad,
+                                          pad,
+                                          static_cast<int>(expand_c));
+        cur_h = CalcOutputDim(cur_h, uib.middle_dw_kernel, static_cast<int>(uib.middle_dw_stride()), pad);
+        cur_w = CalcOutputDim(cur_w, uib.middle_dw_kernel, static_cast<int>(uib.middle_dw_stride()), pad);
+    }
+
+    CmsisBumpConv2dWorkspace(cur_h,
+                             cur_w,
+                             1,
+                             1,
+                             0,
+                             0,
+                             static_cast<int>(expand_c),
+                             uib.out_channels);
 
     BumpMaxActivation(plan, plan.h * plan.w * static_cast<uint32_t>(uib.in_channels));
     BumpMaxActivation(plan, plan.h * plan.w * expand_c);

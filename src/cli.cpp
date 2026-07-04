@@ -371,6 +371,11 @@ namespace Cli
 
                     std::cout << "\nArena (" << arena.capacity << " bytes capacity):\n";
                     std::cout << "  after load:           " << bytes_after_load << " bytes\n";
+                    if (network->KernelWorkspaceBytes() > 0)
+                    {
+                        std::cout << "  kernel workspace:     " << network->KernelWorkspaceBytes()
+                                  << " bytes (shared CMSIS scratch)\n";
+                    }
                     std::cout << "  after forward (zero): " << arena.offset << " bytes\n";
                     std::cout << "  remaining:            " << arena.remaining() << " bytes\n";
 #if !NETKIT_WEIGHTS_IN_RAM

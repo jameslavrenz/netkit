@@ -29,6 +29,12 @@ base ──► [ used ........ | free ........................ ] ◄── capac
 
 At **load time**, MLP and CNN networks scan layer output sizes and allocate **two** float32 buffers large enough for the biggest intermediate tensor. During `forward()`, layers alternate writing into those buffers (A → B → A → …). Peak activation memory is roughly **2 × largest layer output** instead of the sum of all layer outputs.
 
+### Kernel workspace (CMSIS-NN)
+
+When **CMSIS-NN** is enabled, CNN models also reserve a **single shared kernel workspace** in the same arena at load time. The size is the maximum `arm_*_get_buffer_size` over every conv, depthwise conv, and GELU in the graph (including convs inside fused blocks). During inference, CMSIS-NN conv/depthwise/GELU ops bind this buffer instead of using stack scratch — same idea as TensorFlow Lite Micro accounting op scratch inside the tensor arena.
+
+On reference-only builds the workspace size is zero. `inspect --full` reports **kernel workspace** bytes separately when non-zero; those bytes are included in **after load** / **after forward** totals.
+
 Weights and ping buffers are allocated together during load, so a forward pass does not grow the arena unless the caller allocates separate input/output tensors (e.g. CLI `run` or `nk_model_run`).
 
 ### Alignment
@@ -103,6 +109,7 @@ The arena size is **not** stored in the model file. **You** (or your test harnes
 | Weight views (flash blob) | Load | When **`NETKIT_WEIGHTS_IN_RAM=0`** (MCU default) — buffer/AOT load binds pointers into `.rodata`; no arena weight copy |
 | Network structs | Load | `MLPNetwork` / `CNNNetwork`, layer metadata |
 | Ping-pong buffers | Load | **2 ×** largest intermediate activation (float32) |
+| Kernel workspace | Load (CNN, CMSIS-NN builds) | **1 ×** max CMSIS conv/dw/GELU scratch across the graph |
 | Input / output tensors | Caller | Optional — CLI and `nk_model_run` allocate these per run |
 
 Ping-pong buffers are reserved at **load time**, so a forward pass does not grow the arena for hidden activations. Peak activation memory is roughly **2 × largest layer output**, not the sum of every layer.
