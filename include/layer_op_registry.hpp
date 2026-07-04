@@ -4,7 +4,7 @@
  * Full layer-op registry — includes every descriptor.
  *
  * For trimmed firmware, include only the headers under layer_ops/ that you need
- * and build NkOpList<YourOps...>::View() with the matching src/layer_ops/*.cpp units.
+ * and build NkOpList<YourOps...>::View() with the matching layer-op .cpp units under src/layer_ops/.
  */
 
 #include "layer_ops/nk_avg_pool2d_op.hpp"

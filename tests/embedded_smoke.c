@@ -1,13 +1,13 @@
 /*
- * embedded_smoke.c — lean MCU/MPU bring-up smoke (no NETKIT_DESKTOP APIs).
+ * embedded_smoke.c — lean runtime smoke (no NETKIT_DESKTOP-only APIs).
  *
  * Exercises nk_parse_architecture, nk_model_load, and nk_model_run against
  * small hand-checked models (test_mlp, cnn_4x4_single) using a caller-owned
- * static arena.
+ * static arena. Primary use: MCU/MPU bring-up; also runs on CPU for host validation.
  *
- * Build: make NETKIT_TARGET=mcu embedded-smoke
+ * Build: make embedded-smoke  (CPU)  or  make NETKIT_TARGET=mcu embedded-smoke
  * Run:   ./tests/embedded_smoke
- * Matrix: ./tools/run_embedded_smoke.sh
+ * Matrix: ./tools/run_embedded_smoke.sh  (MCU/MPU + CMSIS profiles)
  */
 #include "netkit.h"
 
@@ -15,10 +15,6 @@
 #include <stdio.h>
 #include <stdalign.h>
 #include <stdint.h>
-
-#if defined(NETKIT_DESKTOP)
-#error "embedded_smoke requires NETKIT_TARGET=mcu or NETKIT_TARGET=mpu"
-#endif
 
 static int g_failures = 0;
 
@@ -72,6 +68,8 @@ static void TestTargetProfile(void)
     printf("target: MCU (arena default %u bytes)\n", NK_ARENA_DEFAULT_CAPACITY);
 #elif defined(NETKIT_TARGET_MPU)
     printf("target: MPU (arena default %u bytes)\n", NK_ARENA_DEFAULT_CAPACITY);
+#elif defined(NETKIT_TARGET_CPU)
+    printf("target: CPU host smoke (arena default %u bytes)\n", NK_ARENA_DEFAULT_CAPACITY);
 #else
     printf("target: unknown\n");
 #endif
@@ -170,7 +168,7 @@ static void TestModelLoadRun(void)
 
 int main(void)
 {
-    printf("embedded smoke: netkit MCU/MPU runtime\n");
+    printf("embedded smoke: netkit lean runtime\n");
 
     TestTargetProfile();
     TestParseArchitecture();

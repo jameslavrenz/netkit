@@ -32,6 +32,7 @@ namespace Cli
                                                parsed.header.biases_bytes);
         }
 
+#if !NETKIT_WEIGHTS_IN_RAM
         bool ReadNkFile(const char* path, std::vector<uint8_t>& out)
         {
             std::FILE* file = std::fopen(path, "rb");
@@ -74,6 +75,7 @@ namespace Cli
             return static_cast<std::size_t>(parsed.header.weights_bytes) +
                    static_cast<std::size_t>(parsed.header.biases_bytes);
         }
+#endif
 
         void PrintHelp(const char* program)
         {

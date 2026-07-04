@@ -15,11 +15,12 @@ namespace NkRegression
 {
     namespace
     {
-        constexpr std::size_t kHandArenaCapacity = ArenaUtil::kHandCapacity;
-        constexpr std::size_t kMnistMlpArenaCapacity = ArenaUtil::kMnistMlpCapacity;
         constexpr std::size_t kMnistCnnArenaCapacity = ArenaUtil::kMnistCnnCapacity;
 
 #if !defined(NETKIT_ARENA_HEAP)
+        constexpr std::size_t kHandArenaCapacity = ArenaUtil::kHandCapacity;
+        constexpr std::size_t kMnistMlpArenaCapacity = ArenaUtil::kMnistMlpCapacity;
+
         alignas(std::max_align_t) unsigned char g_hand_arena[kHandArenaCapacity];
         alignas(std::max_align_t) unsigned char g_mnist_mlp_arena[kMnistMlpArenaCapacity];
         alignas(std::max_align_t) unsigned char g_mnist_cnn_arena[kMnistCnnArenaCapacity];

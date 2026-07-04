@@ -829,6 +829,7 @@ namespace NkLoader
             return LoadResult{LoadStatus::Ok, FromNkNetwork(parsed.header.network_kind), nullptr};
         }
 
+#if !NETKIT_WEIGHTS_IN_RAM
         LoadResult BindPayloadFromBlob(const ParsedModel& parsed,
                                        const uint8_t* blob,
                                        std::size_t blob_size,
@@ -859,6 +860,7 @@ namespace NkLoader
             biases = const_cast<float*>(reinterpret_cast<const float*>(payload + weights_bytes));
             return LoadResult{LoadStatus::Ok, FromNkNetwork(parsed.header.network_kind), nullptr};
         }
+#endif
 
         LoadResult ResolvePayloadFromBuffer(const ParsedModel& parsed,
                                             const uint8_t* blob,

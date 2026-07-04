@@ -77,7 +77,6 @@ void MobileNetV4Uib::forward(const Tensor& input, Tensor& output)
     const uint32_t in_w = input.shape[1];
     const uint32_t in_c = static_cast<uint32_t>(in_channels);
     const uint32_t expand_c = expanded_channels();
-    const uint32_t out_c = static_cast<uint32_t>(out_channels);
 
     uint32_t out_h = 0;
     uint32_t out_w = 0;
