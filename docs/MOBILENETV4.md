@@ -89,6 +89,8 @@ python tools/pack_mobilenetv4_small_checkpoint.py -o models/my_mobilenetv4_small
 
 Uses `python/netkit/torch_backbone_pack.py` to fold BatchNorm and map timm `mobilenetv4_conv_small` weights into composite UIB blocks and the 1×1 conv classifier head.
 
+Parity: `python/tests/test_torch_backbone_pack.py` and `test_torch_backbone_runtime_parity.py` — see [TESTING.md](TESTING.md).
+
 ## Python
 
 ```python

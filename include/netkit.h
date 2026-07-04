@@ -35,6 +35,7 @@ extern "C" {
 #define NK_VERSION_PATCH 0
 
 #define NK_MAX_TENSOR_RANK 4
+#define NK_MAX_CASE_FLOATS 16384
 #define NK_MAX_LAYERS      16
 #define NK_MAX_PATH_LEN    256
 #define NK_MAX_MESSAGE_LEN 128
@@ -445,6 +446,9 @@ nk_status_t nk_parse_architecture_memory(const uint8_t* data,
                                          size_t size,
                                          nk_arch_info_t* info);
 nk_status_t nk_arch_print(const char* nk_path);
+
+/** Recommended bump arena size (bytes) for load + one forward pass on CPU builds. Returns 0 on error. */
+size_t nk_recommended_arena_bytes(const char* nk_path);
 
 nk_status_t nk_mlp_load(const char* nk_path,
                         nk_arena_t* arena,

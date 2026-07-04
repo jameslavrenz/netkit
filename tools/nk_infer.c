@@ -28,13 +28,17 @@ int main(int argc, char** argv)
     if ((uint32_t)input_arg_count != arch.input_elements)
         return 1;
 
-    float input[4096];
+    float input[NK_MAX_CASE_FLOATS];
     for (int i = 0; i < input_arg_count; ++i)
         input[i] = strtof(argv[i + 2], NULL);
 
 #if defined(NETKIT_ARENA_HEAP)
+    const size_t arena_capacity = nk_recommended_arena_bytes(nk_path);
+    if (arena_capacity == 0)
+        return 1;
+
     nk_arena_t arena;
-    if (nk_arena_init_heap(&arena, NK_ARENA_DEFAULT_CAPACITY) != NK_OK)
+    if (nk_arena_init_heap(&arena, arena_capacity) != NK_OK)
         return 1;
 #else
     alignas(max_align_t) static unsigned char arena_memory[NK_ARENA_DEFAULT_CAPACITY];
@@ -51,7 +55,7 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    float output[4096];
+    float output[NK_MAX_CASE_FLOATS];
     uint32_t output_count = 0;
     if (nk_model_run(&model, &arena, input, arch.input_elements, output,
                      (uint32_t)(sizeof(output) / sizeof(output[0])), &output_count) != NK_OK)

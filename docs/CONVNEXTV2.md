@@ -71,6 +71,8 @@ python tools/pack_convnextv2_atto_checkpoint.py -o models/my_convnextv2_atto.nk
 
 Uses `python/netkit/torch_backbone_pack.py` to map timm `convnextv2_atto` weights into composite block tensors (LayerNorm2d, ConvNeXt V2 blocks, classifier head).
 
+Parity: `python/tests/test_torch_backbone_pack.py` and `test_torch_backbone_runtime_parity.py` — see [TESTING.md](TESTING.md).
+
 ## Python
 
 ```python

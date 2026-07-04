@@ -58,6 +58,17 @@ make lib
 make test-python
 ```
 
+## PyTorch backbone pack parity (timm)
+
+With train extras installed (`pip install -e "python[train]"`), Python tests pack random-init **timm** backbones to flat `.nk` weights and compare forwards:
+
+| Test | What it checks |
+|------|----------------|
+| `python/tests/test_torch_backbone_pack.py` | Packed weights vs NumPy reference vs timm (ResNet-18, ConvNeXt V2-Atto, MobileNetV4 Small) |
+| `python/tests/test_torch_backbone_runtime_parity.py` | Same pack path, then **C++ runtime** (`tools/nk_infer`) vs timm and NumPy reference on random inputs |
+
+Requires **`make tools/nk_infer`** (model-sized heap arena via `nk_recommended_arena_bytes`). Not part of the 59 embedded cases — uses ephemeral `.nk` files in a temp directory.
+
 ## AOT compile tests
 
 `python/tests/test_aot_compile.py` generates C++26 and C23 sources from hand `.nk` models, compiles them against `libnetkit.a`, and checks outputs against the NumPy reference forward pass (embedded TCAS inputs). Generated headers are checked for arena sizing constants; an MCU-target compile (`-DNETKIT_TARGET_MCU=1`) is exercised against `mlp_hand.nk`.

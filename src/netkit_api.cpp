@@ -1,4 +1,5 @@
 #include "netkit.h"
+#include "arena_util.hpp"
 #include "nk_loader.hpp"
 #include "tensor_factory.hpp"
 #include "tensor_access.hpp"
@@ -907,6 +908,48 @@ nk_status_t nk_parse_architecture(const char* nk_path, nk_arch_info_t* info)
     return NK_OK;
 }
 
+size_t nk_recommended_arena_bytes(const char* nk_path)
+{
+    if (!nk_path)
+        return 0;
+    NkLoader::ParsedModel parsed{};
+    if (ParseNkModel(nk_path, parsed, nullptr) != NK_OK)
+        return 0;
+    const bool is_cnn = parsed.header.network_kind == NkFormat::NetworkKind::Cnn;
+    std::size_t capacity = ArenaUtil::CapacityForModel(NkLoader::InputElements(parsed),
+                                                       is_cnn,
+                                                       parsed.header.weights_bytes,
+                                                       parsed.header.biases_bytes);
+#if defined(NETKIT_ARENA_HEAP)
+    for (int attempt = 0; attempt < 8; ++attempt)
+    {
+        nk_arena_t arena{};
+        if (nk_arena_init_heap(&arena, capacity) != NK_OK)
+        {
+            capacity *= 2;
+            continue;
+        }
+
+        nk_inspect_info_t info{};
+        const nk_status_t status = nk_inspect_model(nk_path, &arena, &info);
+        nk_arena_destroy_heap(&arena);
+        if (status == NK_OK)
+        {
+            const std::size_t peak = info.arena_bytes_after_forward;
+            const std::size_t headroom = peak / 8 + 65536;
+            return peak + headroom;
+        }
+
+        if (status != NK_ERR_ARENA_OVERFLOW)
+            return 0;
+        capacity *= 2;
+    }
+    return 0;
+#else
+    return capacity;
+#endif
+}
+
 nk_status_t nk_parse_architecture_memory(const uint8_t* data, size_t size, nk_arch_info_t* info)
 {
     if (!data || size == 0 || !info)
@@ -1235,8 +1278,8 @@ nk_status_t nk_model_run(const nk_model_t* model,
     }
     else if (state->kind == NK_NETWORK_CNN)
     {
-        float input_buffer[4096] = {};
-        if (input_count > 4096)
+        float input_buffer[NK_MAX_CASE_FLOATS] = {};
+        if (input_count > NK_MAX_CASE_FLOATS)
             return NK_ERR_INVALID_ARGUMENT;
         for (uint32_t i = 0; i < input_count; ++i)
             input_buffer[i] = input[i];
@@ -1277,18 +1320,18 @@ nk_status_t nk_inspect_model(const char* nk_path, nk_arena_t* arena, nk_inspect_
     info->arena_bytes_after_load = nk_arena_used(arena);
     info->weight_floats = info->arch.expected_weight_floats;
 
-    float zero_input[4096] = {};
-    if (info->arch.input_elements > 4096)
+    float zero_input[NK_MAX_CASE_FLOATS] = {};
+    if (info->arch.input_elements > NK_MAX_CASE_FLOATS)
         return NK_ERR_INVALID_ARGUMENT;
 
-    float output_buffer[4096] = {};
+    float output_buffer[NK_MAX_CASE_FLOATS] = {};
     uint32_t output_count = 0;
     const nk_status_t run_status = nk_model_run(&model,
                                                 arena,
                                                 zero_input,
                                                 info->arch.input_elements,
                                                 output_buffer,
-                                                4096,
+                                                NK_MAX_CASE_FLOATS,
                                                 &output_count);
     if (run_status != NK_OK)
         return run_status;

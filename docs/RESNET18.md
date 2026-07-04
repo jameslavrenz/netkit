@@ -63,6 +63,8 @@ python tools/pack_resnet18_checkpoint.py -o models/my_resnet18.nk
 
 Uses `python/netkit/torch_backbone_pack.py` to fold BatchNorm and map timm `resnet18` weights into composite BasicBlock tensors.
 
+Parity: `python/tests/test_torch_backbone_pack.py` (NumPy reference vs timm) and `test_torch_backbone_runtime_parity.py` (C++ `tools/nk_infer` vs timm) — see [TESTING.md](TESTING.md).
+
 ## Python
 
 ```python

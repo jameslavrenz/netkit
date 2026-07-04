@@ -345,6 +345,7 @@ For **embedded** models (AOT firmware), pass the static `.nk` byte array to `nk_
 | C function | C++ equivalent | Notes |
 |------------|----------------|-------|
 | `nk_parse_architecture` | `NkLoader::ParseFile` + `FillArchInfo` | Populates `nk_arch_info_t` |
+| `nk_recommended_arena_bytes` | `ArenaUtil::CapacityForModel` + inspect probe | Load + forward peak sizing (CPU heap builds) |
 | `nk_parse_architecture_memory` | `NkLoader::ParseBuffer` + `FillArchInfo` | Parse embedded blob without a file |
 | `nk_arch_print` | `NkLoader::PrintNetworkSummary` | Boxed summary to stdout |
 | `nk_mlp_load` | `NkLoader::LoadMLP` | |
