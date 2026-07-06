@@ -285,10 +285,13 @@ def compile_aot(
     use_lowered = lang is AotLanguage.CPP and lower and can_lower_arch(arch)
 
     if use_lowered:
-        plan = plan_lowered(arch, weights)
+        plan = plan_lowered(arch, weights, weights_in_ram=weights_in_ram)
         after_load = plan.arena_after_load
         after_forward = plan.arena_after_forward
-        arena_recommended = max(64, _recommend_arena_bytes(after_forward, headroom_percent=0))
+        arena_recommended = max(
+            64,
+            _recommend_arena_bytes(after_forward, headroom_percent=arena_headroom_percent),
+        )
     else:
         after_load, after_forward, arena_recommended = _resolve_arena_bytes(
             path,
@@ -331,6 +334,7 @@ def compile_aot(
                     plan,
                     include_main,
                     flash_section,
+                    weights_in_ram=weights_in_ram,
                 ),
                 encoding="utf-8",
             )

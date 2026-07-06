@@ -174,6 +174,8 @@ typedef struct nk_arch_info {
     uint32_t input_rank;
     uint32_t num_layers;
     size_t expected_weight_floats;
+    size_t weights_bytes;
+    size_t biases_bytes;
     uint32_t input_elements;   // product of input_shape
     uint32_t output_elements;  // computed from architecture
 } nk_arch_info_t;
@@ -190,6 +192,7 @@ typedef struct nk_inspect_info {
     size_t arena_bytes_after_load;
     size_t arena_bytes_after_forward;
     size_t arena_remaining;
+    size_t flash_payload_bytes;  /* non-zero when NETKIT_WEIGHTS_IN_RAM=0 */
 } nk_inspect_info_t;
 ```
 
@@ -223,7 +226,7 @@ Returns `NULL` when the arena is uninitialized, arguments are invalid (`size == 
 
 `nk_arena_init_heap()` performs **one** `malloc` for the backing buffer; inference uses bump allocation inside it. `nk_arena_destroy_heap()` frees that buffer on **CPU only**; on MCU/MPU it is a no-op.
 
-**Sizing:** CPU examples use `NK_ARENA_DEFAULT_CAPACITY` (**4 MiB**) so MNIST-scale models fit. MCU/MPU use 64 KiB / 128 KiB. For custom firmware, use `nk_inspect_model()` and read `arena_bytes_after_forward`. See [ARENA.md](ARENA.md).
+**Sizing:** CPU examples use `NK_ARENA_DEFAULT_CAPACITY` (**4 MiB**) so MNIST-scale models fit. MCU/MPU use 64 KiB / 128 KiB. For custom firmware, use `nk_inspect_model()` and read `arena_bytes_after_forward`. When `NETKIT_WEIGHTS_IN_RAM=0` (MCU default), coefs stay in flash — use `flash_payload_bytes` plus arena peaks (see [ARENA.md](ARENA.md)).
 
 Model load / run APIs allocate internally with the correct alignment; you only need `nk_arena_alloc` when building custom integrations on top of the C API.
 
@@ -449,6 +452,7 @@ High-level combined handle:
 
 ```c
 nk_status_t nk_model_load(const char* nk_path, nk_arena_t* arena, nk_model_t* model);
+/* When NETKIT_WEIGHTS_IN_RAM=0, embedded blob must outlive the model (flash .rodata). */
 nk_status_t nk_model_load_memory(const uint8_t* data, size_t size, nk_arena_t* arena, nk_model_t* model);
 nk_status_t nk_model_get_arch(const nk_model_t* model, nk_arch_info_t* info);
 uint32_t nk_model_input_count(const nk_model_t* model);
@@ -456,6 +460,7 @@ uint32_t nk_model_output_count(const nk_model_t* model);
 nk_network_kind_t nk_model_kind(const nk_model_t* model);
 nk_status_t nk_model_run(...);
 nk_status_t nk_inspect_model(...);
+nk_status_t nk_inspect_model_memory(const uint8_t* data, size_t size, nk_arena_t* arena, nk_inspect_info_t* info);
 ```
 
 ## Tests and CLI (CPU / desktop builds only)
@@ -512,9 +517,18 @@ Runs one forward pass.
 
 ```c
 nk_status_t nk_inspect_model(const char* nk_path, nk_arena_t* arena, nk_inspect_info_t* info);
+nk_status_t nk_inspect_model_memory(const uint8_t* data, size_t size,
+                                      nk_arena_t* arena, nk_inspect_info_t* info);
 ```
 
-Loads the model, runs a zero-input forward pass, and reports arena high-water marks. C++ equivalent: load via `NkLoader::Load`, run forward, read `arena.offset` — or use `./netkit inspect --full`. Use this to size embedded memory regions.
+Loads the model, runs a zero-input forward pass, and reports arena high-water marks. Matches `./netkit inspect --full` for the active `NETKIT_WEIGHTS_IN_RAM` policy:
+
+| `NETKIT_WEIGHTS_IN_RAM` | Load path | `flash_payload_bytes` |
+|-------------------------|-----------|------------------------|
+| `0` (MCU default) | Buffer load — coefs stay in flash | `weights_bytes + biases_bytes` |
+| `1` (CPU/MPU default) | File load — coefs copied into arena | `0` |
+
+Use `arena_bytes_after_forward` to size embedded SRAM. On MCU with flash-backed weights, add `flash_payload_bytes` to flash budget (not arena). See [ARENA.md](ARENA.md).
 
 ## Complete examples
 

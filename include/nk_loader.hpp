@@ -114,6 +114,8 @@ namespace NkLoader
                                  CNNNetwork*& network,
                                  std::array<uint32_t, kMaxTensorRank>& input_shape,
                                  uint32_t& input_rank);
+    /* When NETKIT_WEIGHTS_IN_RAM=0, `data` must outlive the network (flash .rodata).
+       Misaligned payloads fall back to an arena copy. File load always copies. */
 
     LoadResult Load(const char* nk_path,
                     Arena& arena,

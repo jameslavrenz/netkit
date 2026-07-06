@@ -196,26 +196,34 @@ This is the **compiled deployment path** — bake a validated `.nk` into firmwar
 After you have a validated `.nk`, the Python packager can embed it as a static byte array and generate load/run wrappers for the runtime:
 
 ```bash
-# Default: C++26 (.hpp + .cpp)
+# Default: C++26 lowered static Kernels:: chain (.hpp + .cpp)
 python -m netkit aot models/test_mlp.nk -o build/aot
 
-# C23 (.h + .c)
+# Embed .nk + interpreter loader instead of lowered kernels
+python -m netkit aot models/test_mlp.nk -o build/aot --no-lower
+
+# C23 (.h + .c) — interpreter path only (no lowered emitter)
 python -m netkit aot models/test_mlp.nk -o build/aot --language c
+
+# MCU: flash-backed coefs (default for --target mcu), size arena without weight copy
+python -m netkit aot models/mlp_hand.nk -o build/aot --target mcu --no-weights-in-ram --arena-headroom 15
+
+# Copy coefs into arena at load (when SRAM fits weights + activations)
+python -m netkit aot models/mlp_hand.nk -o build/aot --weights-in-ram
 
 # Optional smoke main (compile with -DNETKIT_AOT_MAIN)
 python -m netkit aot models/test_mlp.nk -o build/aot --main
-
-# MCU firmware sizing (arena bytes probed via ./netkit inspect when available)
-python -m netkit aot models/mlp_hand.nk -o build/aot --arena-headroom 15
 
 # Optional graph optimizations (fewer ops at runtime; verified against original .nk)
 python -m netkit aot models/cnn_extended_ops.nk -o build/aot --optimize
 ```
 
+**Lowered C++ AOT** (default for `--language cpp`) emits a static `Kernels::` call chain — no runtime `.nk` loader. **C AOT** always embeds the `.nk` blob and calls `nk_model_load_memory`. See [boards/nucleo-f446re/README.md](../boards/nucleo-f446re/README.md) for an MCU firmware example (MNIST MLP, flash weights, CMSIS-DSP).
+
 Generated headers expose measured arena usage for static buffer allocation:
 
-- **C++** — `kArenaBytesAfterLoad`, `kArenaBytesAfterForward`, `kArenaBytesRecommended`, plus `InitArena()`
-- **C** — `MODEL_AOT_ARENA_BYTES_*` macros and `{symbol}_aot_init_arena()`
+- **C++ lowered** — `kArenaBytesRecommended`, `kLowered = true`, `Model::load` / `Model::forward`
+- **C++ / C interpreter** — `kArenaBytesAfterLoad`, `kArenaBytesAfterForward`, `kArenaBytesRecommended`, plus `InitArena()` / `{symbol}_aot_init_arena()`
 
 The `.nk` blob is placed in flash-friendly `.rodata` by default (GCC `__attribute__((section(".rodata")))`). Pass `--no-flash-section` to omit the attribute.
 
@@ -237,7 +245,10 @@ model.onnx  →  convert  →  model.nk  →  aot  →  model_aot.{hpp,cpp}
                          make test / ./netkit test
 ```
 
-At runtime the generated code calls `NkLoader::LoadMLPFromBuffer` / `LoadCNNFromBuffer` (C++) or `nk_model_load_memory` (C) — same `.nk` format, loaded from flash/RAM instead of a filesystem path.
+At runtime:
+
+- **Lowered C++ AOT** — static `Kernels::` chain; coefs in `.rodata` unless `--weights-in-ram`
+- **Interpreter AOT** — `NkLoader::LoadMLPFromBuffer` / `LoadCNNFromBuffer` (C++) or `nk_model_load_memory` (C) on the embedded `.nk` blob
 
 With `--optimize`, the packager applies stable graph passes before embedding (conv+BN fusion, BN folded into the following dense head, consecutive linear dense merge, identity BN removal). Each pass is checked against the original model numerically before the optimized `.nk` is emitted.
 

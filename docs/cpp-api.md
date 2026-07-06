@@ -445,7 +445,7 @@ LoadResult Load(const char* nk_path, Arena& arena, NetworkKind& kind,
 
 **High-level C++ usage** loads with `Load` / `LoadMLP` / `LoadCNN` (file) or `LoadMLPFromBuffer` / `LoadCNNFromBuffer` (embedded `.nk` bytes) and calls `forward` directly — the **interpreter path** via `NkOpsResolver`. The C API adds `nk_model_t` + `nk_model_run` as a convenience wrapper — see [c-api.md](c-api.md).
 
-**Compiled firmware:** `python -m netkit aot` generates C++26 or C23 sources with an embedded `.nk` blob, arena sizing constants, and thin wrappers — optionally with `--optimize` for fewer runtime dispatches. See [GETTING_STARTED.md](GETTING_STARTED.md#5-aot-compile-embed-nk-in-firmware) and [PHILOSOPHY.md](PHILOSOPHY.md#deployment-modes-interpreter-or-compiled).
+**Compiled firmware:** `python -m netkit aot` generates C++26 or C23 sources. Default **C++ lowered** output is a static `Kernels::` call chain (`kLowered = true`) with optional `--weights-in-ram` (arena copy at load) or `--no-weights-in-ram` (MCU flash default). **C AOT** embeds the `.nk` blob and uses `nk_model_load_memory`. See [GETTING_STARTED.md](GETTING_STARTED.md#5-aot-compile-embed-nk-in-firmware), [API_PARITY.md](API_PARITY.md), and [PHILOSOPHY.md](PHILOSOPHY.md#deployment-modes-interpreter-or-compiled).
 
 **Format** — full binary layout in [NK_FILE_SPECIFICATION.md](NK_FILE_SPECIFICATION.md) (byte-level) and [NK_FORMAT.md](NK_FORMAT.md) (overview). Convert ONNX with `python -m netkit convert`.
 

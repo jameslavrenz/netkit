@@ -176,6 +176,8 @@ typedef struct nk_arch_info
     uint32_t input_rank;
     uint32_t num_layers;
     size_t expected_weight_floats;
+    size_t weights_bytes;
+    size_t biases_bytes;
     uint32_t input_elements;
     uint32_t output_elements;
 } nk_arch_info_t;
@@ -187,6 +189,8 @@ typedef struct nk_inspect_info
     size_t arena_bytes_after_load;
     size_t arena_bytes_after_forward;
     size_t arena_remaining;
+    /** When NETKIT_WEIGHTS_IN_RAM=0: weight+bias payload kept in flash (not in arena peaks). */
+    size_t flash_payload_bytes;
 } nk_inspect_info_t;
 
 typedef struct nk_test_summary
@@ -507,6 +511,7 @@ nk_status_t nk_model_load_auto(const char* nk_path,
 
 /* High-level loaded model handle (combines MLP or CNN for inference) */
 nk_status_t nk_model_load(const char* nk_path, nk_arena_t* arena, nk_model_t* model);
+/** Load embedded .nk bytes. When NETKIT_WEIGHTS_IN_RAM=0, `data` must outlive the model (flash .rodata). */
 nk_status_t nk_model_load_memory(const uint8_t* data,
                                  size_t size,
                                  nk_arena_t* arena,
@@ -523,6 +528,11 @@ nk_status_t nk_model_run(const nk_model_t* model,
                          uint32_t output_capacity,
                          uint32_t* output_count);
 nk_status_t nk_inspect_model(const char* nk_path, nk_arena_t* arena, nk_inspect_info_t* info);
+/** Inspect embedded .nk bytes (same arena peaks as CLI inspect --full for buffer load). */
+nk_status_t nk_inspect_model_memory(const uint8_t* data,
+                                    size_t size,
+                                    nk_arena_t* arena,
+                                    nk_inspect_info_t* info);
 
 #if defined(NETKIT_DESKTOP)
 /* -------------------------------------------------------------------------- */

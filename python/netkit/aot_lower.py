@@ -55,6 +55,33 @@ def _round_up(value: int, alignment: int) -> int:
     return ((value + alignment - 1) // alignment) * alignment
 
 
+def _weight_runtime_ref(name: str, weights_in_ram: bool) -> str:
+    return f"g{name}" if weights_in_ram else name
+
+
+def _weight_data_expr(name: str, weights_in_ram: bool) -> str:
+    if weights_in_ram:
+        return f"g{name}"
+    return f"const_cast<float*>({name})"
+
+
+def _build_load_body(weight_arrays: list[tuple[str, np.ndarray]], *, weights_in_ram: bool) -> str:
+    if not weights_in_ram:
+        return "    loaded_ = true;\n    return true;\n"
+    lines: list[str] = []
+    for name, array in weight_arrays:
+        nbytes = int(np.asarray(array, dtype=np.float32).nbytes)
+        lines.append(f"    g{name} = static_cast<float*>(arena.alloc({nbytes}u, 16u));\n")
+        lines.append(f"    if (!g{name})\n        return false;\n")
+        lines.append(f"    std::memcpy(g{name}, {name}_src, {nbytes}u);\n")
+    lines.append("    loaded_ = true;\n    return true;\n")
+    return "".join(lines)
+
+
+def _total_weight_bytes(weight_arrays: list[tuple[str, np.ndarray]]) -> int:
+    return sum(int(np.asarray(array, dtype=np.float32).nbytes) for _, array in weight_arrays)
+
+
 def _format_float_array(name: str, values: np.ndarray, *, const: bool = True) -> str:
     flat = np.asarray(values, dtype=np.float32).reshape(-1)
     row: list[str] = []
@@ -106,7 +133,7 @@ def _view3d(data: str, h: int, w: int, c: int, var: str) -> str:
     )
 
 
-def _plan_mlp(arch: dict[str, Any], layers: list[_GraphLayer]) -> LoweredPlan:
+def _plan_mlp(arch: dict[str, Any], layers: list[_GraphLayer], *, weights_in_ram: bool) -> LoweredPlan:
     batch, in_features = arch["input"]
     weight_arrays: list[tuple[str, np.ndarray]] = []
     forward_lines: list[str] = [
@@ -137,8 +164,8 @@ def _plan_mlp(arch: dict[str, Any], layers: list[_GraphLayer]) -> LoweredPlan:
             write_ptr = "scratch_a"
             out_rows, out_cols = batch, out_features
 
-        forward_lines.append(_view2d(f"const_cast<float*>({w_name})", out_features, in_features, "weights"))
-        forward_lines.append(_view2d(f"const_cast<float*>({b_name})", 1, out_features, "bias"))
+        forward_lines.append(_view2d(_weight_data_expr(w_name, weights_in_ram), out_features, in_features, "weights"))
+        forward_lines.append(_view2d(_weight_data_expr(b_name, weights_in_ram), 1, out_features, "bias"))
         forward_lines.append(_view2d(write_ptr, out_rows, out_cols, "layer_out"))
         forward_lines.append(
             f"    act_fused = Kernels::FullyConnectedWithBias("
@@ -153,13 +180,14 @@ def _plan_mlp(arch: dict[str, Any], layers: list[_GraphLayer]) -> LoweredPlan:
             in_features = out_features
 
     arena_forward = _round_up(scratch_floats * 4, 64)
+    weight_bytes = _round_up(_total_weight_bytes(weight_arrays), 64) if weights_in_ram else 0
     return LoweredPlan(
         scratch_floats=scratch_floats,
         scratch_buffers=1,
-        arena_after_load=0,
-        arena_after_forward=arena_forward,
+        arena_after_load=weight_bytes,
+        arena_after_forward=max(arena_forward, weight_bytes),
         weight_arrays=weight_arrays,
-        load_body="    loaded_ = true;\n    return true;",
+        load_body=_build_load_body(weight_arrays, weights_in_ram=weights_in_ram),
         forward_body="".join(forward_lines),
     )
 
@@ -183,7 +211,7 @@ def _append_ping_pong(
         forward_lines.append(_view3d("read_buffer", height, width, channels, "current"))
 
 
-def _plan_cnn(arch: dict[str, Any], layers: list[_GraphLayer]) -> LoweredPlan:
+def _plan_cnn(arch: dict[str, Any], layers: list[_GraphLayer], *, weights_in_ram: bool) -> LoweredPlan:
     height, width, channels = arch["input"]
     dense_in = 0
     weight_arrays: list[tuple[str, np.ndarray]] = []
@@ -221,8 +249,8 @@ def _plan_cnn(arch: dict[str, Any], layers: list[_GraphLayer]) -> LoweredPlan:
             weight_arrays.append((b_name, layer.tensors.bias))
             forward_lines.append(_view3d(dest, out_h, out_w, out_c, "layer_out"))
             forward_lines.append(
-                f"    act_fused = Kernels::Conv2dForward(current, const_cast<float*>({w_name}), "
-                f"const_cast<float*>({b_name}), {k}, {stride}, {pad_h}, {pad_w}, "
+                f"    act_fused = Kernels::Conv2dForward(current, {_weight_data_expr(w_name, weights_in_ram)}, "
+                f"{_weight_data_expr(b_name, weights_in_ram)}, {k}, {stride}, {pad_h}, {pad_w}, "
                 f"{in_c}, {out_c}, {act_cpp}, layer_out);\n"
             )
             followup = _emit_activation_followup("layer_out", activation, alpha=alpha, only_if_not_fused=True)
@@ -260,8 +288,8 @@ def _plan_cnn(arch: dict[str, Any], layers: list[_GraphLayer]) -> LoweredPlan:
             weight_arrays.append((b_name, layer.tensors.bias))
             forward_lines.append(_view3d(dest, out_h, out_w, ch, "layer_out"))
             forward_lines.append(
-                f"    act_fused = Kernels::DepthwiseConv2dForward(current, const_cast<float*>({w_name}), "
-                f"const_cast<float*>({b_name}), {kh}, {kw}, {stride}, {pad_h}, {pad_w}, "
+                f"    act_fused = Kernels::DepthwiseConv2dForward(current, {_weight_data_expr(w_name, weights_in_ram)}, "
+                f"{_weight_data_expr(b_name, weights_in_ram)}, {kh}, {kw}, {stride}, {pad_h}, {pad_w}, "
                 f"{pad_h_end}, {pad_w_end}, {ch}, {act_cpp}, layer_out);\n"
             )
             followup = _emit_activation_followup("layer_out", activation, alpha=alpha, only_if_not_fused=True)
@@ -336,7 +364,9 @@ def _plan_cnn(arch: dict[str, Any], layers: list[_GraphLayer]) -> LoweredPlan:
             weight_arrays.append((bias_name, layer.tensors.bias))
             forward_lines.append(_view3d(dest, height, width, ch, "layer_out"))
             forward_lines.append(
-                f"    Kernels::BatchNorm2dForward(current, {scale_name}, {bias_name}, "
+                f"    Kernels::BatchNorm2dForward(current, "
+                f"{_weight_runtime_ref(scale_name, weights_in_ram)}, "
+                f"{_weight_runtime_ref(bias_name, weights_in_ram)}, "
                 f"{ch}, layer_out);\n"
             )
             if not is_last:
@@ -382,8 +412,12 @@ def _plan_cnn(arch: dict[str, Any], layers: list[_GraphLayer]) -> LoweredPlan:
                 forward_lines.append(_view2d("output", 1, out_features, "layer_out"))
             else:
                 forward_lines.append(_view2d("write_buffer", 1, out_features, "layer_out"))
-            forward_lines.append(_view2d(f"const_cast<float*>({w_name})", out_features, dense_in, "weights"))
-            forward_lines.append(_view2d(f"const_cast<float*>({b_name})", 1, out_features, "bias"))
+            forward_lines.append(
+                _view2d(_weight_data_expr(w_name, weights_in_ram), out_features, dense_in, "weights")
+            )
+            forward_lines.append(
+                _view2d(_weight_data_expr(b_name, weights_in_ram), 1, out_features, "bias")
+            )
             forward_lines.append(
                 f"    act_fused = Kernels::FullyConnectedWithBias("
                 f"current, weights, bias, {act_cpp}, layer_out);\n"
@@ -410,25 +444,26 @@ def _plan_cnn(arch: dict[str, Any], layers: list[_GraphLayer]) -> LoweredPlan:
     body = "".join(forward_lines)
 
     arena_forward = _round_up(max_activation * 4 * 2, 64)
+    weight_bytes = _round_up(_total_weight_bytes(weight_arrays), 64) if weights_in_ram else 0
     return LoweredPlan(
         scratch_floats=max_activation * 2,
         scratch_buffers=2,
-        arena_after_load=0,
-        arena_after_forward=arena_forward,
+        arena_after_load=weight_bytes,
+        arena_after_forward=max(arena_forward, weight_bytes),
         weight_arrays=weight_arrays,
-        load_body="    loaded_ = true;\n    return true;",
+        load_body=_build_load_body(weight_arrays, weights_in_ram=weights_in_ram),
         forward_body=body,
     )
 
 
-def plan_lowered(arch: dict[str, Any], weights: np.ndarray) -> LoweredPlan:
+def plan_lowered(arch: dict[str, Any], weights: np.ndarray, *, weights_in_ram: bool = False) -> LoweredPlan:
     if not can_lower_arch(arch):
         raise ValueError("architecture contains layers that cannot be lowered")
     layers, _state = _decompose(arch, weights)
     if arch["network"] == "mlp":
-        return _plan_mlp(arch, layers)
+        return _plan_mlp(arch, layers, weights_in_ram=weights_in_ram)
     if arch["network"] == "cnn":
-        return _plan_cnn(arch, layers)
+        return _plan_cnn(arch, layers, weights_in_ram=weights_in_ram)
     raise ValueError(f"unsupported network: {arch['network']}")
 
 
@@ -493,8 +528,18 @@ def render_lowered_cpp_source(
     plan: LoweredPlan,
     include_main: bool,
     flash_section: bool,
+    *,
+    weights_in_ram: bool = False,
 ) -> str:
-    weight_blocks = "\n\n".join(_format_float_array(name, array) for name, array in plan.weight_arrays)
+    if weights_in_ram:
+        weight_blocks = "\n\n".join(
+            _format_float_array(f"{name}_src", array) for name, array in plan.weight_arrays
+        )
+        ptr_decls = "\n".join(f"static float* g{name} = nullptr;" for name, _ in plan.weight_arrays)
+        weight_section = f"{weight_blocks}\n\n{ptr_decls}\n"
+    else:
+        weight_blocks = "\n\n".join(_format_float_array(name, array) for name, array in plan.weight_arrays)
+        weight_section = f"{weight_blocks}\n"
     scratch_decl = ""
     if plan.scratch_floats > 0:
         scratch_decl = f"alignas(16) static float scratch_a[{plan.scratch_floats}];\n"
@@ -535,7 +580,8 @@ int main(void)
 """
 
     flash_attr = ""
-    if flash_section:
+    place_weights_in_flash = flash_section or weights_in_ram
+    if place_weights_in_flash:
         flash_attr = (
             "\n#if defined(__GNUC__)\n"
             "#if defined(__ELF__)\n"
@@ -549,6 +595,8 @@ int main(void)
         )
     else:
         flash_attr = "\n#define NETKIT_AOT_FLASH_CONST\n"
+
+    load_arena_param = "arena" if weights_in_ram else "/*arena*/"
 
     return f"""/* Generated by netkit AOT compiler (lowered) — compile with -std=c++26 for firmware */
 {flash_attr}
@@ -565,12 +613,11 @@ namespace netkit::aot::{symbol} {{
 
 namespace {{
 
-{weight_blocks}
-
+{weight_section}
 {scratch_decl}
 }}  // namespace
 
-bool Model::load(Arena& /*arena*/)
+bool Model::load(Arena& {load_arena_param})
 {{
     if (loaded_)
         return true;

@@ -131,7 +131,15 @@ Layers (7)
 
 The C API equivalent is `nk_arch_print()`.
 
-**`--full`:** Load weights, run a zero-input forward pass, and report arena memory usage after load and forward. Use this to size embedded arena buffers before deployment. The C API equivalent is `nk_inspect_model()`.
+**`--full`:** Load weights, run a zero-input forward pass, and report arena memory usage after load and forward. Use this to size embedded arena buffers before deployment. C API: `nk_inspect_model()` / `nk_inspect_model_memory()`.
+
+When built with **`NETKIT_WEIGHTS_IN_RAM=0`** (MCU default), inspect uses flash-backed buffer load — arena peaks exclude the weight/bias payload. The CLI prints:
+
+```text
+  flash payload:        N bytes (not in arena)
+```
+
+When **`NETKIT_WEIGHTS_IN_RAM=1`**, coefs are copied into the arena at load; `nk_inspect_info_t.flash_payload_bytes` is zero.
 
 On the default **CPU (heap arena)** build, the CLI allocates a model-appropriate arena automatically (64 KiB hand / 2 MiB MNIST MLP / 4 MiB MNIST CNN). Examples use **`NK_ARENA_DEFAULT_CAPACITY` (4 MiB)**. Build with `NETKIT_GLOBAL_ARENA=1` for static backing — see [BUILD_TARGETS.md](BUILD_TARGETS.md).
 

@@ -163,7 +163,8 @@ Both suites exercise the same **88 embedded `.nk` inference cases**; `nk_run_all
 | `LoadCNN` | `nk_cnn_load` |
 | `LoadCNNFromBuffer` | (via `nk_model_load_memory` for CNN) |
 | `Load` | `nk_model_load_auto` |
-| `ArchInfo` | `nk_arch_info_t` |
+| `ArchInfo` | `nk_arch_info_t` (`weights_bytes`, `biases_bytes` from `.nk` header) |
+| `inspect --full` (flash-aware buffer load) | `nk_inspect_model`, `nk_inspect_model_memory` |
 
 High-level combined handle (C convenience):
 
@@ -171,7 +172,26 @@ High-level combined handle (C convenience):
 |-------------------|---|
 | Load + run inference | `nk_model_load`, `nk_model_run`, `nk_inspect_model` |
 | Load embedded `.nk` blob + run | `nk_model_load_memory`, `nk_model_run` |
+| Inspect embedded blob arena peaks | `nk_inspect_model_memory` |
 | Query loaded model | `nk_model_get_arch`, `nk_model_input_count`, `nk_model_output_count`, `nk_model_kind` |
+
+### Weight storage (`NETKIT_WEIGHTS_IN_RAM`)
+
+| Policy | C++ buffer load | C buffer load |
+|--------|-----------------|---------------|
+| `NETKIT_WEIGHTS_IN_RAM=1` | Copies weight/bias payload into arena | `nk_model_load_memory` copies into arena |
+| `NETKIT_WEIGHTS_IN_RAM=0` (MCU default) | Binds views into flash blob; `data` must outlive network | Same — embed `.nk` in `.rodata` |
+
+File-based load (`nk_model_load`, `NkLoader::LoadMLP`) **always** copies payload into the arena regardless of the flag.
+
+### AOT deployment
+
+| Path | C++ | C |
+|------|-----|---|
+| Interpreter (embed `.nk` + loader) | `netkit::aot::*::Model` or `*_aot_load` + `nk_model_load_memory` | `*_aot.h` + `nk_model_load_memory` |
+| Lowered (static `Kernels::` chain) | `netkit::aot::*::Model` in `*_aot.hpp` | **C++ only** — no lowered C emitter |
+
+Lowered AOT with `--weights-in-ram` copies coef arrays from flash `.rodata` sources into the arena at `Model::load()`. MCU firmware typically uses `--no-weights-in-ram` (see `boards/nucleo-f446re/`).
 
 ### Intentional C++-only symbols
 

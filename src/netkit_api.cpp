@@ -15,6 +15,7 @@
 #include <cstdio>
 #include <cstring>
 #include <span>
+#include <vector>
 
 namespace
 {
@@ -177,6 +178,173 @@ namespace
             info->input_shape[i] = i < arch.input_rank ? arch.input_shape[i] : 0;
     }
 
+    void FillArchInfoFromParsed(const NkLoader::ParsedModel& parsed, nk_arch_info_t* info)
+    {
+        NkLoader::ArchInfo arch{};
+        NkLoader::FillArchInfo(parsed, arch);
+        FillArchInfo(arch, info);
+        info->weights_bytes = parsed.header.weights_bytes;
+        info->biases_bytes = parsed.header.biases_bytes;
+    }
+
+    std::size_t WeightPayloadBytes(const NkLoader::ParsedModel& parsed)
+    {
+        return static_cast<std::size_t>(parsed.header.weights_bytes) +
+               static_cast<std::size_t>(parsed.header.biases_bytes);
+    }
+
+    bool ReadNkFile(const char* path, std::vector<uint8_t>& out)
+    {
+        if (!path)
+            return false;
+        FILE* file = std::fopen(path, "rb");
+        if (!file)
+            return false;
+        if (std::fseek(file, 0, SEEK_END) != 0)
+        {
+            std::fclose(file);
+            return false;
+        }
+        const long file_size = std::ftell(file);
+        if (file_size < 0)
+        {
+            std::fclose(file);
+            return false;
+        }
+        if (std::fseek(file, 0, SEEK_SET) != 0)
+        {
+            std::fclose(file);
+            return false;
+        }
+        out.resize(static_cast<std::size_t>(file_size));
+        if (file_size > 0 &&
+            std::fread(out.data(), 1, static_cast<std::size_t>(file_size), file) !=
+                static_cast<std::size_t>(file_size))
+        {
+            std::fclose(file);
+            return false;
+        }
+        std::fclose(file);
+        return true;
+    }
+
+    Tensor MakeNhwcInput(float* data, uint32_t h, uint32_t w, uint32_t c)
+    {
+        Tensor input{};
+        input.data = data;
+        input.type = DataType::Float32;
+        input.rank = 3;
+        input.shape[0] = h;
+        input.shape[1] = w;
+        input.shape[2] = c;
+        input.stride[0] = w * c;
+        input.stride[1] = c;
+        input.stride[2] = 1;
+        input.num_elements = h * w * c;
+        input.bytes = input.num_elements * sizeof(float);
+        return input;
+    }
+
+    nk_status_t InspectModelFull(const NkLoader::ParsedModel& parsed,
+                                 const char* resolved_path,
+                                 const uint8_t* buffer,
+                                 std::size_t buffer_size,
+                                 nk_arena_t* arena,
+                                 nk_inspect_info_t* info)
+    {
+        FillArchInfoFromParsed(parsed, &info->arch);
+        info->weight_floats = info->arch.expected_weight_floats;
+#if NETKIT_WEIGHTS_IN_RAM
+        info->flash_payload_bytes = 0;
+#else
+        info->flash_payload_bytes = WeightPayloadBytes(parsed);
+#endif
+
+        if (info->arch.input_elements > NK_MAX_CASE_FLOATS)
+            return NK_ERR_INVALID_ARGUMENT;
+
+        std::vector<uint8_t> file_blob;
+        const uint8_t* load_data = buffer;
+        std::size_t load_size = buffer_size;
+#if !NETKIT_WEIGHTS_IN_RAM
+        if (!load_data)
+        {
+            if (!resolved_path || !ReadNkFile(resolved_path, file_blob))
+                return NK_ERR_MODEL_READ;
+            load_data = file_blob.data();
+            load_size = file_blob.size();
+        }
+#endif
+
+        std::array<uint32_t, kMaxTensorRank> input_shape{};
+        uint32_t input_rank = 0;
+        Arena& arena_ref = *ArenaPtr(arena);
+
+        if (parsed.header.network_kind == NkFormat::NetworkKind::Mlp)
+        {
+            MLPNetwork* network = nullptr;
+#if NETKIT_WEIGHTS_IN_RAM
+            const NkLoader::LoadResult load_result =
+                resolved_path
+                    ? NkLoader::LoadMLP(resolved_path, arena_ref, network, input_shape, input_rank)
+                    : NkLoader::LoadMLPFromBuffer(
+                          load_data, load_size, arena_ref, network, input_shape, input_rank);
+#else
+            const NkLoader::LoadResult load_result = NkLoader::LoadMLPFromBuffer(
+                load_data, load_size, arena_ref, network, input_shape, input_rank);
+#endif
+            if (load_result.status != NkLoader::LoadStatus::Ok || !network || !network->IsValid())
+            {
+                SetLastError(load_result.message ? load_result.message : "MLP load failed");
+                return FromLoadStatus(load_result.status);
+            }
+
+            info->arena_bytes_after_load = nk_arena_used(arena);
+            Tensor input = TensorFactory::Create2D(arena_ref, input_shape[0], input_shape[1]);
+            const uint32_t output_cols = NkLoader::OutputElements(parsed) / input_shape[0];
+            Tensor output = TensorFactory::Create2D(arena_ref, input_shape[0], output_cols);
+            network->forward(input, output, arena_ref);
+            info->arena_bytes_after_forward = nk_arena_used(arena);
+            info->arena_remaining = nk_arena_remaining(arena);
+            SetLastError(nullptr);
+            return NK_OK;
+        }
+
+        if (parsed.header.network_kind == NkFormat::NetworkKind::Cnn)
+        {
+            CNNNetwork* network = nullptr;
+#if NETKIT_WEIGHTS_IN_RAM
+            const NkLoader::LoadResult load_result =
+                resolved_path
+                    ? NkLoader::LoadCNN(resolved_path, arena_ref, network, input_shape, input_rank)
+                    : NkLoader::LoadCNNFromBuffer(
+                          load_data, load_size, arena_ref, network, input_shape, input_rank);
+#else
+            const NkLoader::LoadResult load_result = NkLoader::LoadCNNFromBuffer(
+                load_data, load_size, arena_ref, network, input_shape, input_rank);
+#endif
+            if (load_result.status != NkLoader::LoadStatus::Ok || !network || !network->IsValid())
+            {
+                SetLastError(load_result.message ? load_result.message : "CNN load failed");
+                return FromLoadStatus(load_result.status);
+            }
+
+            info->arena_bytes_after_load = nk_arena_used(arena);
+            float zero_input[NK_MAX_CASE_FLOATS] = {};
+            Tensor input = MakeNhwcInput(
+                zero_input, input_shape[0], input_shape[1], input_shape[2]);
+            Tensor& output = network->forward(input, arena_ref);
+            if (!output.data)
+                return NK_ERR_ARENA_OVERFLOW;
+            info->arena_bytes_after_forward = nk_arena_used(arena);
+            info->arena_remaining = nk_arena_remaining(arena);
+            SetLastError(nullptr);
+            return NK_OK;
+        }
+
+        return NK_ERR_UNSUPPORTED_NETWORK;
+    }
+
     nk_status_t ParseNkModel(const char* nk_path, NkLoader::ParsedModel& parsed, const char** resolved_out)
     {
 #if defined(NETKIT_TARGET_MCU) || defined(NETKIT_TARGET_MPU)
@@ -205,23 +373,6 @@ namespace
             return FromLoadStatus(result.status);
         }
         return NK_OK;
-    }
-
-    Tensor MakeNhwcInput(float* data, uint32_t h, uint32_t w, uint32_t c)
-    {
-        Tensor input{};
-        input.data = data;
-        input.type = DataType::Float32;
-        input.rank = 3;
-        input.shape[0] = h;
-        input.shape[1] = w;
-        input.shape[2] = c;
-        input.stride[0] = w * c;
-        input.stride[1] = c;
-        input.stride[2] = 1;
-        input.num_elements = h * w * c;
-        input.bytes = input.num_elements * sizeof(float);
-        return input;
     }
 }
 
@@ -966,7 +1117,7 @@ nk_status_t nk_parse_architecture(const char* nk_path, nk_arch_info_t* info)
     NkLoader::ArchInfo arch{};
     NkLoader::FillArchInfo(parsed, arch);
     std::memset(info, 0, sizeof(*info));
-    FillArchInfo(arch, info);
+    FillArchInfoFromParsed(parsed, info);
     SetLastError(nullptr);
     return NK_OK;
 }
@@ -1009,6 +1160,8 @@ size_t nk_recommended_arena_bytes(const char* nk_path)
     }
     return 0;
 #else
+    if (!NETKIT_WEIGHTS_IN_RAM)
+        capacity = capacity > WeightPayloadBytes(parsed) ? capacity - WeightPayloadBytes(parsed) : 0;
     return capacity;
 #endif
 }
@@ -1024,7 +1177,7 @@ nk_status_t nk_parse_architecture_memory(const uint8_t* data, size_t size, nk_ar
     NkLoader::ArchInfo arch{};
     NkLoader::FillArchInfo(parsed, arch);
     std::memset(info, 0, sizeof(*info));
-    FillArchInfo(arch, info);
+    FillArchInfoFromParsed(parsed, info);
     SetLastError(nullptr);
     return NK_OK;
 }
@@ -1068,11 +1221,7 @@ nk_status_t nk_mlp_load(const char* nk_path, nk_arena_t* arena, nk_mlp_t* mlp, n
     }
     MlpPtr(mlp)->net = network;
     if (info)
-    {
-        NkLoader::ArchInfo arch{};
-        NkLoader::FillArchInfo(parsed, arch);
-        FillArchInfo(arch, info);
-    }
+        FillArchInfoFromParsed(parsed, info);
     SetLastError(nullptr);
     return NK_OK;
 }
@@ -1102,11 +1251,7 @@ nk_status_t nk_cnn_load(const char* nk_path, nk_arena_t* arena, nk_cnn_t* cnn, n
     }
     CnnPtr(cnn)->net = network;
     if (info)
-    {
-        NkLoader::ArchInfo arch{};
-        NkLoader::FillArchInfo(parsed, arch);
-        FillArchInfo(arch, info);
-    }
+        FillArchInfoFromParsed(parsed, info);
     SetLastError(nullptr);
     return NK_OK;
 }
@@ -1157,11 +1302,7 @@ nk_status_t nk_model_load_auto(const char* nk_path,
         CnnPtr(cnn)->net = cnn_net;
     }
     if (info)
-    {
-        NkLoader::ArchInfo arch{};
-        NkLoader::FillArchInfo(parsed, arch);
-        FillArchInfo(arch, info);
-    }
+        FillArchInfoFromParsed(parsed, info);
     SetLastError(nullptr);
     return NK_OK;
 }
@@ -1185,7 +1326,7 @@ nk_status_t nk_model_load(const char* nk_path, nk_arena_t* arena, nk_model_t* mo
     ModelState* state = ModelPtr(model);
     NkLoader::ArchInfo arch{};
     NkLoader::FillArchInfo(parsed, arch);
-    FillArchInfo(arch, &state->arch);
+    FillArchInfoFromParsed(parsed, &state->arch);
     std::array<uint32_t, kMaxTensorRank> input_shape{};
     for (uint32_t i = 0; i < state->arch.input_rank; ++i)
         input_shape[i] = state->arch.input_shape[i];
@@ -1238,7 +1379,7 @@ nk_status_t nk_model_load_memory(const uint8_t* data, size_t size, nk_arena_t* a
     ModelState* state = ModelPtr(model);
     NkLoader::ArchInfo arch{};
     NkLoader::FillArchInfo(parsed, arch);
-    FillArchInfo(arch, &state->arch);
+    FillArchInfoFromParsed(parsed, &state->arch);
     std::array<uint32_t, kMaxTensorRank> input_shape{};
     for (uint32_t i = 0; i < state->arch.input_rank; ++i)
         input_shape[i] = state->arch.input_shape[i];
@@ -1376,37 +1517,31 @@ nk_status_t nk_inspect_model(const char* nk_path, nk_arena_t* arena, nk_inspect_
     if (!nk_path || !arena || !info)
         return NK_ERR_INVALID_ARGUMENT;
     std::memset(info, 0, sizeof(*info));
-    const nk_status_t arch_status = nk_parse_architecture(nk_path, &info->arch);
-    if (arch_status != NK_OK)
-        return arch_status;
 
-    nk_model_t model{};
-    const nk_status_t load_status = nk_model_load(nk_path, arena, &model);
-    if (load_status != NK_OK)
-        return load_status;
+    NkLoader::ParsedModel parsed{};
+    const char* resolved = nullptr;
+    const nk_status_t parse_status = ParseNkModel(nk_path, parsed, &resolved);
+    if (parse_status != NK_OK)
+        return parse_status;
 
-    info->arena_bytes_after_load = nk_arena_used(arena);
-    info->weight_floats = info->arch.expected_weight_floats;
+    return InspectModelFull(parsed, resolved, nullptr, 0, arena, info);
+}
 
-    float zero_input[NK_MAX_CASE_FLOATS] = {};
-    if (info->arch.input_elements > NK_MAX_CASE_FLOATS)
+nk_status_t nk_inspect_model_memory(const uint8_t* data,
+                                    size_t size,
+                                    nk_arena_t* arena,
+                                    nk_inspect_info_t* info)
+{
+    if (!data || size == 0 || !arena || !info)
         return NK_ERR_INVALID_ARGUMENT;
+    std::memset(info, 0, sizeof(*info));
 
-    float output_buffer[NK_MAX_CASE_FLOATS] = {};
-    uint32_t output_count = 0;
-    const nk_status_t run_status = nk_model_run(&model,
-                                                arena,
-                                                zero_input,
-                                                info->arch.input_elements,
-                                                output_buffer,
-                                                NK_MAX_CASE_FLOATS,
-                                                &output_count);
-    if (run_status != NK_OK)
-        return run_status;
+    NkLoader::ParsedModel parsed{};
+    const nk_status_t parse_status = ParseNkBuffer(data, size, parsed);
+    if (parse_status != NK_OK)
+        return parse_status;
 
-    info->arena_bytes_after_forward = nk_arena_used(arena);
-    info->arena_remaining = nk_arena_remaining(arena);
-    return NK_OK;
+    return InspectModelFull(parsed, nullptr, data, size, arena, info);
 }
 
 #if defined(NETKIT_DESKTOP)

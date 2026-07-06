@@ -329,6 +329,12 @@ static void TestInspectModel(void)
     ExpectTrue(info.arena_bytes_after_load > 0, "inspect arena after load");
     ExpectTrue(info.arena_bytes_after_forward >= info.arena_bytes_after_load,
                "inspect arena after forward");
+    ExpectTrue(info.arch.weights_bytes > 0, "inspect weights_bytes");
+#if !NETKIT_WEIGHTS_IN_RAM
+    ExpectTrue(info.flash_payload_bytes > 0, "inspect flash_payload_bytes");
+    ExpectTrue(info.flash_payload_bytes == info.arch.weights_bytes + info.arch.biases_bytes,
+               "flash payload matches header");
+#endif
 }
 
 static void TestManualMlpActivationBuffers(void)

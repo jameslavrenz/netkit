@@ -52,9 +52,12 @@ INCLUDES := \
 	-I$(NETKIT_ROOT)/third_party/CMSIS-DSP/PrivateInclude \
 	-I$(NETKIT_ROOT)/third_party/CMSIS-Core/CMSIS/Core/Include
 
+# Override: make NETKIT_WEIGHTS_IN_RAM=1  (MNIST needs ~489 KiB arena — exceeds 128 KiB SRAM on F446)
+NETKIT_WEIGHTS_IN_RAM ?= 0
+
 NETKIT_CPPFLAGS := \
 	-DNETKIT_TARGET_MCU=1 \
-	-DNETKIT_WEIGHTS_IN_RAM=0 \
+	-DNETKIT_WEIGHTS_IN_RAM=$(NETKIT_WEIGHTS_IN_RAM) \
 	-DNETKIT_USE_CMSIS_DSP=1 \
 	-DNETKIT_LOOP_UNROLL=0 \
 	-DARM_MATH_CM4 \
@@ -121,10 +124,11 @@ check-deps:
 
 export-aot: $(GEN_DIR)/.aot_stamp
 
-$(GEN_DIR)/.aot_stamp: $(NETKIT_ROOT)/models/mnist_mlp.nk
+$(GEN_DIR)/.aot_stamp: $(NETKIT_ROOT)/models/mnist_mlp.nk $(NETKIT_ROOT)/python/netkit/aot_lower.py
 	@mkdir -p $(GEN_DIR)
 	cd $(NETKIT_ROOT) && PYTHONPATH=$(NETKIT_ROOT)/python python3 -m netkit aot models/mnist_mlp.nk \
-		-o $(abspath $(GEN_DIR)) --language cpp --target mcu --optimize --arena-headroom 20
+		-o $(abspath $(GEN_DIR)) --language cpp --target mcu --optimize --arena-headroom 20 \
+		$(if $(filter 1,$(NETKIT_WEIGHTS_IN_RAM)),--weights-in-ram,--no-weights-in-ram)
 	@touch $(GEN_DIR)/.aot_stamp
 
 $(LIBNETKIT): $(NETKIT_MLP_SOURCES) $(CMSIS_DSP_SOURCES)
