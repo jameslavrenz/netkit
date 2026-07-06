@@ -58,6 +58,7 @@ set(NETKIT_RUNTIME_SOURCES
     src/cmsis_buffer_size.cpp
     src/ops.cpp
     src/conv2d.cpp
+    src/conv2d_layout.cpp
     src/depthwise_conv2d.cpp
     src/convnextv2_block.cpp
     src/mobilenetv4_uib.cpp

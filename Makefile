@@ -200,7 +200,7 @@ NK_INFER_OBJ = tools/nk_infer.o
 
 TRIM_LIB = libnetkit_trim.a
 TRIM_RUNTIME_SOURCES = src/arena.cpp src/tensor_factory.cpp src/tensor_access.cpp src/reference_kernel.cpp src/kernel_workspace.cpp src/cmsis_buffer_size.cpp src/ops.cpp \
-                       src/conv2d.cpp src/mlp.cpp src/cnn.cpp $(TRIM_LAYER_OP_SOURCES) src/ops_resolver.cpp \
+                       src/conv2d.cpp src/conv2d_layout.cpp src/mlp.cpp src/cnn.cpp $(TRIM_LAYER_OP_SOURCES) src/ops_resolver.cpp \
                        src/nk_format.cpp src/nk_loader.cpp src/netkit_api.cpp
 TRIM_CORE_OBJECTS = $(TRIM_RUNTIME_SOURCES:.cpp=.o)
 
