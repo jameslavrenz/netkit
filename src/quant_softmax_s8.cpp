@@ -1,6 +1,7 @@
 #include "quant_output.hpp"
 
 #include "cmsis_nn_quant.hpp"
+#include "cmsis_dsp_util.hpp"
 #include "quant_trace.hpp"
 
 #include <algorithm>
@@ -247,13 +248,7 @@ namespace QuantOps
 
     uint32_t ArgMaxInt8(const int8_t* values, uint32_t count)
     {
-        uint32_t best = 0;
-        for (uint32_t i = 1; i < count; ++i)
-        {
-            if (values[i] > values[best])
-                best = i;
-        }
-        return best;
+        return CmsisQuantUtil::ArgMaxInt8(values, count);
     }
 }
 

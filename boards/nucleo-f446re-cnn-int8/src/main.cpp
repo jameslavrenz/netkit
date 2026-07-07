@@ -4,6 +4,7 @@
 // Dequantized confidence is computed offline — see benchmark/tools/parse_mcu_cnn_int8_log.py.
 
 #include "dwt_time.h"
+#include "cmsis_dsp_util.hpp"
 #include "mnist_cnn_int8_aot.hpp"
 #include "mnist_cnn_int8_test_images.h"
 #include "netkit_config.h"
@@ -29,16 +30,16 @@ constexpr std::size_t kArenaCapacity = 64u * 1024u;
 
 alignas(std::max_align_t) static unsigned char g_arena_memory[kArenaCapacity];
 alignas(std::max_align_t) static int8_t g_output_i8[aot::kOutputElements];
+alignas(std::max_align_t) static int8_t g_input_staging[kInputSize];
 
 int ArgMax10Int8(const int8_t* values)
 {
-    int best = 0;
-    for (int i = 1; i < 10; ++i)
-    {
-        if (values[i] > values[best])
-            best = i;
-    }
-    return best;
+    return static_cast<int>(CmsisQuantUtil::ArgMaxInt8(values, kOutputClasses));
+}
+
+void CopyInputInt8(int8_t* dst, const int8_t* src)
+{
+    CmsisQuantUtil::CopyInt8(src, dst, static_cast<uint32_t>(kInputSize));
 }
 
 void PrintOutI8Uart(const int8_t* values)
@@ -84,7 +85,7 @@ extern "C" int main(void)
     dwt_time_init();
 
     uart_write("\r\nnetkit NUCLEO-F446RE MNIST CNN int8 benchmark\r\n");
-    uart_printf("  backend:     cmsis-nn int8 (MCU CM4%s)\r\n",
+    uart_printf("  backend:     cmsis-nn int8 + cmsis-dsp utils (MCU CM4%s)\r\n",
                 aot::kQuantLowered ? ", quant lowered AOT" : ", .nk loader");
     uart_printf("  weights:     %s\r\n",
                 aot::kQuantLowered ? "flash (static .rodata)"
@@ -114,7 +115,8 @@ extern "C" int main(void)
 
     {
         const MnistCnnInt8BenchmarkSample& probe = kMnistCnnInt8BenchmarkImages[0];
-        if (!model.forwardInt8(arena, probe.pixels, g_output_i8))
+        CopyInputInt8(g_input_staging, probe.pixels);
+        if (!model.forwardInt8(arena, g_input_staging, g_output_i8))
         {
             uart_write("ERR probe forward\r\n");
             for (;;)
@@ -145,8 +147,10 @@ extern "C" int main(void)
         {
             const MnistCnnInt8BenchmarkSample& sample = kMnistCnnInt8BenchmarkImages[i];
 
+            CopyInputInt8(g_input_staging, sample.pixels);
+
             const uint32_t start_cycles = dwt_cycles();
-            if (!model.forwardInt8(arena, sample.pixels, g_output_i8))
+            if (!model.forwardInt8(arena, g_input_staging, g_output_i8))
             {
                 uart_printf("ERR invoke image %d\r\n", i);
                 for (;;)

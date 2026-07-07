@@ -12,18 +12,18 @@ Runs the **same MNIST CNN benchmark** as `benchmark/netkit/` and `benchmark/tflm
 |---------|--------|
 | Target | `NETKIT_TARGET_MCU` |
 | Arch | `NETKIT_ARCH=CM4` (Cortex-M4F) |
-| CMSIS | **CMSIS-NN** enabled; float **CMSIS-DSP** off in quant-only profile (`NETKIT_MCU_QUANT_ONLY=1`) |
+| CMSIS | **CMSIS-NN** + **CMSIS-DSP** (q7 copy/max utils; layer kernels are CMSIS-NN) |
 | Weights | **Flash** — embedded `.nk` blob in `.rodata` (`NETKIT_WEIGHTS_IN_RAM=0`) |
 | Deployment | **Interpreter embed** — `NkLoader` + `NkOpsResolver` (same class as TFLM blob + interpreter) |
 | Dtype | int8 weights / activations; int8 softmax output; prequantized int8 test inputs |
 
-Int8 conv/pool/dense/softmax use CMSIS-NN kernels on Cortex-M4 (`QuantOps` + `CmsisQuantPlan`).
+Int8 conv/pool/dense/softmax use CMSIS-NN kernels on Cortex-M4 (`CmsisQuantPlan`). Benchmark firmware copies each test image into SRAM (`g_input_staging`) before the timed forward pass — same pattern as TFLM’s input tensor copy.
 
 ## Verified on-device results (NUCLEO-F446RE @ 180 MHz, interpreter embed)
 
 | Metric | Value |
 |--------|-------|
-| Mean invoke | **~144 ms** |
+| Mean invoke | **~95 ms** (interpreter embed; CMSIS-NN s8) |
 | Accuracy | **10/10** |
 | Arena | **64 KiB** static buffer (fixed; verified 10/10 on-device) |
 | Flash (text + data) | **~353 KiB** (of 512 KiB) |

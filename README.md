@@ -60,8 +60,8 @@ Application code is C++26. C23 is limited to the C header, the `extern "C"` brid
 - **GitHub Actions CI** — fast suite on push/PR (`make test`); full suite manual only (`gh workflow run test-full.yml`)
 - **Embedded smoke** — MCU/MPU + `NETKIT_ARCH` + CMSIS bring-up harness on host (`test_mlp`, `cnn_4x4_single`; `make test-embedded-smoke-matrix`; local only)
 - **Float32 inference** — default path; all tensors, weights, and math use IEEE-754 single precision (`float`)
-- **Int8 MNIST CNN** — post-training quant export (`make export-mnist-cnn-int8`), CMSIS-NN kernels on MCU, quant lowered AOT (~145 ms / 10×10 on NUCLEO-F446RE)
-- **Optional CMSIS backends** — CMSIS-NN (MCU + Cortex-M): conv, depthwise, pool, FC, BN, activations, GELU; CMSIS-DSP: MatMul, add/mul, LayerNorm, GRN; reference fallback always linked ([KERNELS.md](docs/KERNELS.md))
+- **Int8 MNIST CNN** — post-training quant export (`make export-mnist-cnn-int8`), CMSIS-NN kernels on MCU, interpreter embed (~95 ms / 10×10 on NUCLEO-F446RE)
+- **Optional CMSIS backends** — CMSIS-NN (MCU + Cortex-M): conv, depthwise, pool, FC, BN, activations, GELU; CMSIS-DSP: MatMul, add/mul, dot/copy/argmax via `cmsis_dsp_util`, LayerNorm, GRN; reference fallback always linked ([KERNELS.md](docs/KERNELS.md))
 
 ## Quick start
 

@@ -1,5 +1,6 @@
 #include "conv_direct_kernel.hpp"
 
+#include "cmsis_dsp_util.hpp"
 #include "kernel_activation.hpp"
 #include "netkit_loop_unroll.hpp"
 
@@ -44,23 +45,23 @@ bool ConvDirectForward3x3S1P0(const float* in,
                 const float* filter = weights + static_cast<uint32_t>(oc) * filter_elems;
                 float sum = bias ? bias[oc] : 0.0f;
 
-                sum += NetkitLoopUnroll::dot_contiguous(
+                sum += CmsisDspUtil::DotProductF32(
                     in + (in_row0 + iw0) * in_ch, filter + 0u * in_ch, in_ch);
-                sum += NetkitLoopUnroll::dot_contiguous(
+                sum += CmsisDspUtil::DotProductF32(
                     in + (in_row0 + iw0 + 1u) * in_ch, filter + 1u * in_ch, in_ch);
-                sum += NetkitLoopUnroll::dot_contiguous(
+                sum += CmsisDspUtil::DotProductF32(
                     in + (in_row0 + iw0 + 2u) * in_ch, filter + 2u * in_ch, in_ch);
-                sum += NetkitLoopUnroll::dot_contiguous(
+                sum += CmsisDspUtil::DotProductF32(
                     in + (in_row1 + iw0) * in_ch, filter + 3u * in_ch, in_ch);
-                sum += NetkitLoopUnroll::dot_contiguous(
+                sum += CmsisDspUtil::DotProductF32(
                     in + (in_row1 + iw0 + 1u) * in_ch, filter + 4u * in_ch, in_ch);
-                sum += NetkitLoopUnroll::dot_contiguous(
+                sum += CmsisDspUtil::DotProductF32(
                     in + (in_row1 + iw0 + 2u) * in_ch, filter + 5u * in_ch, in_ch);
-                sum += NetkitLoopUnroll::dot_contiguous(
+                sum += CmsisDspUtil::DotProductF32(
                     in + (in_row2 + iw0) * in_ch, filter + 6u * in_ch, in_ch);
-                sum += NetkitLoopUnroll::dot_contiguous(
+                sum += CmsisDspUtil::DotProductF32(
                     in + (in_row2 + iw0 + 1u) * in_ch, filter + 7u * in_ch, in_ch);
-                sum += NetkitLoopUnroll::dot_contiguous(
+                sum += CmsisDspUtil::DotProductF32(
                     in + (in_row2 + iw0 + 2u) * in_ch, filter + 8u * in_ch, in_ch);
 
                 out[out_spatial_base + static_cast<uint32_t>(oc)] =
@@ -111,7 +112,7 @@ bool ConvDirectForwardNoPad(const float* in,
                     {
                         const uint32_t in_base = (in_row + iw_base + kw) * in_ch;
                         const uint32_t w_base = (oc_u * filter_spatial + kh * k_kernel + kw) * in_ch;
-                        sum += NetkitLoopUnroll::dot_contiguous(in + in_base, weights + w_base, in_ch);
+                        sum += CmsisDspUtil::DotProductF32(in + in_base, weights + w_base, in_ch);
                     }
                 }
 
@@ -175,7 +176,7 @@ bool ConvDirectForwardPadded(const float* in,
                              static_cast<uint32_t>(kw)) *
                             in_ch;
 
-                        sum += NetkitLoopUnroll::dot_contiguous(in + in_base, weights + w_base, in_ch);
+                        sum += CmsisDspUtil::DotProductF32(in + in_base, weights + w_base, in_ch);
                     }
                 }
 

@@ -1,25 +1,11 @@
 #include "im2col_partial.hpp"
 
+#include "cmsis_dsp_util.hpp"
 #include "kernel_activation.hpp"
 #include "netkit_config.h"
-#include "netkit_loop_unroll.hpp"
-
-#if defined(NETKIT_USE_CMSIS_DSP) && NETKIT_USE_CMSIS_DSP
-#include <arm_math.h>
-#endif
 
 namespace
 {
-    float dot_contiguous_f32(const float* a, const float* b, uint32_t count)
-    {
-#if defined(NETKIT_USE_CMSIS_DSP) && NETKIT_USE_CMSIS_DSP
-        float sum = 0.0f;
-        arm_dot_prod_f32(const_cast<float*>(a), const_cast<float*>(b), count, &sum);
-        return sum;
-#else
-        return NetkitLoopUnroll::dot_contiguous(a, b, count);
-#endif
-    }
     float ConvOutputValue(float sum, NetkitKernelActivation fuse_activation)
     {
         return ApplyKernelActivation(sum, fuse_activation);
@@ -126,7 +112,7 @@ bool ConvPartialIm2ColForward(const float* in,
                 const float* wt_row = weights_oki + static_cast<uint32_t>(oc) * patch_elems;
                 const float b = bias ? bias[oc] : 0.0f;
                 const float sum =
-                    b + dot_contiguous_f32(wt_row, patch_workspace, patch_elems);
+                    b + CmsisDspUtil::DotProductF32(wt_row, patch_workspace, patch_elems);
                 out[spatial_idx * out_ch + static_cast<uint32_t>(oc)] =
                     ConvOutputValue(sum, fuse_activation);
             }

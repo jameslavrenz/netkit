@@ -1,4 +1,5 @@
 #include "reference_kernel.hpp"
+#include "cmsis_dsp_util.hpp"
 #include "conv_dispatch.hpp"
 #include "conv_depthwise_kernel.hpp"
 #include "kernel_activation.hpp"
@@ -66,7 +67,7 @@ namespace
             for (uint32_t oc = 0; oc < out_features; ++oc)
             {
                 const float sum =
-                    NetkitLoopUnroll::dot_contiguous(in_row, wt + oc * in_features, in_features);
+                    CmsisDspUtil::DotProductF32(in_row, wt + oc * in_features, in_features);
                 const float value = ApplyKernelActivation(sum + bias[oc], fuse_activation);
                 out_row[oc] = value;
             }
@@ -123,18 +124,18 @@ namespace
 
 void ReferenceKernel::MulImpl(const Tensor& a, const Tensor& b, Tensor& c)
 {
-    NetkitLoopUnroll::mul_contiguous(static_cast<const float*>(a.data),
-                                     static_cast<const float*>(b.data),
-                                     static_cast<float*>(c.data),
-                                     a.num_elements);
+    CmsisDspUtil::MulF32(static_cast<const float*>(a.data),
+                         static_cast<const float*>(b.data),
+                         static_cast<float*>(c.data),
+                         a.num_elements);
 }
 
 void ReferenceKernel::MulScalarImpl(const Tensor& a, float scalar, Tensor& c)
 {
-    NetkitLoopUnroll::mul_scalar_contiguous(static_cast<const float*>(a.data),
-                                            scalar,
-                                            static_cast<float*>(c.data),
-                                            a.num_elements);
+    CmsisDspUtil::MulScalarF32(static_cast<const float*>(a.data),
+                               scalar,
+                               static_cast<float*>(c.data),
+                               a.num_elements);
 }
 
 void ReferenceKernel::MatAddImpl(const Tensor& a, const Tensor& b, Tensor& c)
@@ -149,7 +150,7 @@ void ReferenceKernel::MatAddImpl(const Tensor& a, const Tensor& b, Tensor& c)
     if (a.stride[0] == cols && a.stride[1] == 1 && b.stride[0] == cols && b.stride[1] == 1 &&
         c.stride[0] == cols && c.stride[1] == 1)
     {
-        NetkitLoopUnroll::add_contiguous(a_data, b_data, c_data, rows * cols);
+        CmsisDspUtil::AddF32(a_data, b_data, c_data, rows * cols);
         return;
     }
 
@@ -167,10 +168,10 @@ void ReferenceKernel::MatAddImpl(const Tensor& a, const Tensor& b, Tensor& c)
 
 void ReferenceKernel::MatAddNDImpl(const Tensor& a, const Tensor& b, Tensor& c)
 {
-    NetkitLoopUnroll::add_contiguous(static_cast<const float*>(a.data),
-                                     static_cast<const float*>(b.data),
-                                     static_cast<float*>(c.data),
-                                     a.num_elements);
+    CmsisDspUtil::AddF32(static_cast<const float*>(a.data),
+                         static_cast<const float*>(b.data),
+                         static_cast<float*>(c.data),
+                         a.num_elements);
 }
 
 void ReferenceKernel::MatMulImpl(const Tensor& a, const Tensor& b, Tensor& c)
@@ -197,10 +198,10 @@ void ReferenceKernel::MatMulImpl(const Tensor& a, const Tensor& b, Tensor& c)
 
 void ReferenceKernel::MulNDImpl(const Tensor& a, const Tensor& b, Tensor& c)
 {
-    NetkitLoopUnroll::mul_contiguous(static_cast<const float*>(a.data),
-                                     static_cast<const float*>(b.data),
-                                     static_cast<float*>(c.data),
-                                     a.num_elements);
+    CmsisDspUtil::MulF32(static_cast<const float*>(a.data),
+                         static_cast<const float*>(b.data),
+                         static_cast<float*>(c.data),
+                         a.num_elements);
 }
 
 void ReferenceKernel::FullyConnectedImpl(const Tensor& input, const Tensor& kernel, Tensor& output)
@@ -342,7 +343,7 @@ void ReferenceKernel::SoftmaxImpl(const Tensor& a, Tensor& c)
         sum += e;
     });
 
-    NetkitLoopUnroll::scale_contiguous(c_data, 1.0f / sum, n);
+    CmsisDspUtil::ScaleF32(c_data, 1.0f / sum, n);
 }
 
 namespace

@@ -77,6 +77,10 @@ On **MCU with both CMSIS flags**, CMSIS-NN owns layer kernels; CMSIS-DSP acceler
 
 **Float im2col conv** (reference path when CMSIS-NN is off or rejects a case): partial and full im2col use `Kernels::MatMulImpl` and `arm_dot_prod_f32` when `NETKIT_USE_CMSIS_DSP=1`, not hard-coded reference matmul/dot loops. Asymmetric-padding conv fallbacks go through `Conv2dDispatchForward` so specialized kernels remain in the dispatch chain.
 
+**Float32 path:** when `NETKIT_USE_CMSIS_DSP=1`, `cmsis_dsp_util.cpp` provides contiguous f32/q7 helpers (`arm_copy_f32`, `arm_max_f32`, `arm_dot_prod_f32`, `arm_add_f32`, `arm_mult_f32`, `arm_scale_f32`) used by reference fallbacks, im2col/direct conv kernels, and board firmware staging/argmax. Asymmetric pool layers route through `Kernels::MaxPool2dForwardPadded` / `AvgPool2dForwardPadded` instead of bypassing to `ReferenceKernel`.
+
+**Int8 quant path:** layer compute is CMSIS-NN (`arm_convolve_wrapper_s8`, pool, FC, softmax). When `NETKIT_USE_CMSIS_DSP=1`, the same util module uses CMSIS-DSP for int8 copy/argmax (`arm_copy_q7`, `arm_max_q7`). MCU firmware should stage int8 inputs in SRAM before the first conv (TFLM copies into the tensor arena; netkit benchmark firmware uses `g_input_staging` in `main.cpp`) so the conv kernel reads activations from SRAM, not flash-resident test vectors.
+
 ### CMSIS kernel workspace
 
 On **CMSIS-NN** builds, CNN `InitActivationBuffers` walks the layer graph and sizes one **shared arena buffer** to the maximum CMSIS scratch requirement (conv, depthwise conv, GELU). `CNNNetwork::forward` activates this buffer for the duration of the pass; `CmsisNnKernel` binds it via `BindCmsisWorkspace` instead of stack `alloca`. If the workspace is missing or too small, `Try*` returns false and the reference kernel runs.

@@ -14,7 +14,7 @@ Runs the **same MNIST MLP benchmark** as `benchmark/netkit/`:
 |---------|--------|
 | Target | `NETKIT_TARGET_MCU` |
 | Arch | `NETKIT_ARCH=CM4` (Cortex-M4F + hard float) |
-| CMSIS | **CMSIS-DSP** enabled (`NETKIT_USE_CMSIS_DSP=1`) |
+| CMSIS | **CMSIS-DSP** enabled (`NETKIT_USE_CMSIS_DSP=1`); inputs staged in SRAM before timed invoke |
 | Weights | **Flash** — lowered AOT embeds coef arrays in `.rodata` (no SRAM copy; `NETKIT_WEIGHTS_IN_RAM=0` policy) |
 | Deployment | **Lowered AOT** — static `Kernels::` FC chain (no runtime `.nk` loader) |
 

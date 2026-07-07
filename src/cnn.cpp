@@ -6,9 +6,6 @@
 #include "cmsis_buffer_size.hpp"
 #include "ops_resolver.hpp"
 #include "tensor_factory.hpp"
-#if !defined(NETKIT_MCU_QUANT_ONLY) || !NETKIT_MCU_QUANT_ONLY
-#include "reference_kernel.hpp"
-#endif
 #include <array>
 #include <chrono>
 #include <cstring>
@@ -48,7 +45,7 @@ void MaxPool2DLayer::forward(const Tensor& input, Tensor& output)
     if (pool_h == pool_w && pad_h == pad_h_end && pad_w == pad_w_end)
         Kernels::MaxPool2dForward(input, pool_h, stride, pad_h, pad_w, output);
     else
-        ReferenceKernel::MaxPool2dForwardImpl(
+        Kernels::MaxPool2dForwardPadded(
             input, pool_h, pool_w, stride, pad_h, pad_w, pad_h_end, pad_w_end, output);
 }
 
@@ -59,7 +56,7 @@ void AvgPool2DLayer::forward(const Tensor& input, Tensor& output)
     if (pool_h == pool_w && pad_h == pad_h_end && pad_w == pad_w_end)
         Kernels::AvgPool2dForward(input, pool_h, stride, pad_h, pad_w, output);
     else
-        ReferenceKernel::AvgPool2dForwardImpl(
+        Kernels::AvgPool2dForwardPadded(
             input, pool_h, pool_w, stride, pad_h, pad_w, pad_h_end, pad_w_end, output);
 }
 

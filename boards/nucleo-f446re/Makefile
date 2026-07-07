@@ -63,7 +63,8 @@ NETKIT_MLP_SOURCES := \
 	$(NETKIT_ROOT)/src/kernel_workspace.cpp \
 	$(NETKIT_ROOT)/src/cmsis_buffer_size.cpp \
 	$(NETKIT_ROOT)/src/ops.cpp \
-	$(NETKIT_ROOT)/src/cmsis_dsp_backend.cpp
+	$(NETKIT_ROOT)/src/cmsis_dsp_backend.cpp \
+	$(NETKIT_ROOT)/src/cmsis_dsp_util.cpp
 
 CMSIS_DSP_SOURCES := \
 	$(NETKIT_ROOT)/third_party/CMSIS-DSP/Source/BasicMathFunctions/arm_add_f32.c \
@@ -74,6 +75,8 @@ CMSIS_DSP_SOURCES := \
 	$(NETKIT_ROOT)/third_party/CMSIS-DSP/Source/BasicMathFunctions/arm_clip_f32.c \
 	$(NETKIT_ROOT)/third_party/CMSIS-DSP/Source/StatisticsFunctions/arm_mean_f32.c \
 	$(NETKIT_ROOT)/third_party/CMSIS-DSP/Source/StatisticsFunctions/arm_var_f32.c \
+	$(NETKIT_ROOT)/third_party/CMSIS-DSP/Source/StatisticsFunctions/arm_max_f32.c \
+	$(NETKIT_ROOT)/third_party/CMSIS-DSP/Source/SupportFunctions/arm_copy_f32.c \
 	$(NETKIT_ROOT)/third_party/CMSIS-DSP/Source/MatrixFunctions/arm_mat_init_f32.c \
 	$(NETKIT_ROOT)/third_party/CMSIS-DSP/Source/MatrixFunctions/arm_mat_vec_mult_f32.c \
 	$(NETKIT_ROOT)/third_party/CMSIS-DSP/Source/MatrixFunctions/arm_mat_mult_f32.c

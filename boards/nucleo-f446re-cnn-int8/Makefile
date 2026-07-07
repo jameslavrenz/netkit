@@ -59,10 +59,6 @@ NETKIT_CMSIS_NN ?= 1
 NETKIT_QUANT_TRACE ?= 0
 NETKIT_MCU_QUANT_ONLY ?= 1
 
-ifeq ($(NETKIT_MCU_QUANT_ONLY),1)
-NETKIT_CMSIS_DSP := 0
-endif
-
 NETKIT_CPPFLAGS := \
 	-DNETKIT_TARGET_MCU=1 \
 	-DNETKIT_MCU_QUANT_ONLY=$(NETKIT_MCU_QUANT_ONLY) \
@@ -87,6 +83,7 @@ NETKIT_RUNTIME_SOURCES := \
 	$(NETKIT_ROOT)/src/cmsis_buffer_size.cpp \
 	$(NETKIT_ROOT)/src/quant_ops.cpp \
 	$(NETKIT_ROOT)/src/quant_softmax_s8.cpp \
+	$(NETKIT_ROOT)/src/cmsis_dsp_util.cpp \
 	$(NETKIT_ROOT)/src/cmsis_nn_quant_backend.cpp \
 	$(NETKIT_ROOT)/src/cmsis_quant_plan.cpp \
 	$(NETKIT_ROOT)/src/cnn_quant.cpp \
@@ -182,7 +179,19 @@ CMSIS_NN_SOURCES := \
 	$(CMSIS_NN_S8_SOURCES) \
 	$(CMSIS_NN_DIR)/Source/SoftmaxFunctions/arm_softmax_s8.c \
 	$(CMSIS_NN_DIR)/Source/SoftmaxFunctions/arm_nn_softmax_common_s8.c
+ifeq ($(NETKIT_CMSIS_DSP),1)
+CMSIS_DSP_SOURCES := \
+	$(CMSIS_DSP_DIR)/Source/SupportFunctions/arm_copy_q7.c \
+	$(CMSIS_DSP_DIR)/Source/SupportFunctions/arm_copy_f32.c \
+	$(CMSIS_DSP_DIR)/Source/StatisticsFunctions/arm_max_q7.c \
+	$(CMSIS_DSP_DIR)/Source/StatisticsFunctions/arm_max_f32.c \
+	$(CMSIS_DSP_DIR)/Source/BasicMathFunctions/arm_dot_prod_q7.c \
+	$(CMSIS_DSP_DIR)/Source/BasicMathFunctions/arm_dot_prod_f32.c \
+	$(CMSIS_DSP_DIR)/Source/BasicMathFunctions/arm_scale_f32.c \
+	$(CMSIS_DSP_DIR)/Source/BasicMathFunctions/arm_offset_f32.c
+else
 CMSIS_DSP_SOURCES :=
+endif
 endif
 
 BOARD_C_SOURCES := \

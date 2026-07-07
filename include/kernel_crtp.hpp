@@ -153,6 +153,20 @@ struct KernelBase
             input, pool_size, pool_size, stride, pad_h, pad_w, pad_h, pad_w, output);
     }
 
+    static void MaxPool2dForwardPadded(const Tensor& input,
+                                      int pool_h,
+                                      int pool_w,
+                                      int stride,
+                                      int pad_h,
+                                      int pad_w,
+                                      int pad_h_end,
+                                      int pad_w_end,
+                                      Tensor& output)
+    {
+        Derived::MaxPool2dForwardImpl(
+            input, pool_h, pool_w, stride, pad_h, pad_w, pad_h_end, pad_w_end, output);
+    }
+
     static void AvgPool2dForward(const Tensor& input,
                                  int pool_size,
                                  int stride,
@@ -162,6 +176,20 @@ struct KernelBase
     {
         Derived::AvgPool2dForwardImpl(
             input, pool_size, pool_size, stride, pad_h, pad_w, pad_h, pad_w, output);
+    }
+
+    static void AvgPool2dForwardPadded(const Tensor& input,
+                                       int pool_h,
+                                       int pool_w,
+                                       int stride,
+                                       int pad_h,
+                                       int pad_w,
+                                       int pad_h_end,
+                                       int pad_w_end,
+                                       Tensor& output)
+    {
+        Derived::AvgPool2dForwardImpl(
+            input, pool_h, pool_w, stride, pad_h, pad_w, pad_h_end, pad_w_end, output);
     }
 
     static void BatchNorm2dForward(const Tensor& input,

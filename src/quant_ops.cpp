@@ -1,6 +1,7 @@
 #include "quant_ops.hpp"
 
 #include "cmsis_nn_quant.hpp"
+#include "cmsis_dsp_util.hpp"
 #include "netkit_config.h"
 #include "nk_op_detail.hpp"
 #include "quant_trace.hpp"
@@ -377,7 +378,6 @@ namespace QuantOps
 
     void FlattenNhwcInt8(const int8_t* input, uint32_t num_elements, int8_t* output)
     {
-        for (uint32_t i = 0; i < num_elements; ++i)
-            output[i] = input[i];
+        CmsisQuantUtil::CopyInt8(input, output, num_elements);
     }
 }

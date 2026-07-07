@@ -113,6 +113,10 @@ function(netkit_add_cmsis_dsp target)
         Source/MatrixFunctions/arm_mat_init_f32.c
         Source/MatrixFunctions/arm_mat_vec_mult_f32.c
         Source/MatrixFunctions/arm_mat_mult_f32.c
+        Source/SupportFunctions/arm_copy_q7.c
+        Source/SupportFunctions/arm_copy_f32.c
+        Source/StatisticsFunctions/arm_max_q7.c
+        Source/StatisticsFunctions/arm_max_f32.c
     )
 
     foreach(src ${CMSIS_DSP_SOURCES})

@@ -17,7 +17,11 @@ CMSIS_DSP_SOURCES = \
 	$(CMSIS_DSP_DIR)/Source/StatisticsFunctions/arm_var_f32.c \
 	$(CMSIS_DSP_DIR)/Source/MatrixFunctions/arm_mat_init_f32.c \
 	$(CMSIS_DSP_DIR)/Source/MatrixFunctions/arm_mat_vec_mult_f32.c \
-	$(CMSIS_DSP_DIR)/Source/MatrixFunctions/arm_mat_mult_f32.c
+	$(CMSIS_DSP_DIR)/Source/MatrixFunctions/arm_mat_mult_f32.c \
+	$(CMSIS_DSP_DIR)/Source/SupportFunctions/arm_copy_q7.c \
+	$(CMSIS_DSP_DIR)/Source/SupportFunctions/arm_copy_f32.c \
+	$(CMSIS_DSP_DIR)/Source/StatisticsFunctions/arm_max_q7.c \
+	$(CMSIS_DSP_DIR)/Source/StatisticsFunctions/arm_max_f32.c
 
 CMSIS_DSP_OBJECTS = $(CMSIS_DSP_SOURCES:$(CMSIS_DSP_DIR)/%.c=build/cmsis_dsp/%.o)
 

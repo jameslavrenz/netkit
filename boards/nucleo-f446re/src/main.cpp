@@ -2,6 +2,7 @@
 // Lowered AOT (static Kernels:: FC chain), CMSIS-DSP, flash-backed weights by default.
 
 #include "dwt_time.h"
+#include "cmsis_dsp_util.hpp"
 #include "mnist_mlp_aot.hpp"
 #include "mnist_test_images.h"
 #include "netkit_config.h"
@@ -21,20 +22,16 @@ constexpr int kInputSize = kMnistBenchmarkInputSize;
 
 alignas(std::max_align_t) static unsigned char g_arena_memory[aot::kArenaBytesRecommended];
 alignas(std::max_align_t) static float g_output[aot::kOutputElements];
+alignas(std::max_align_t) static float g_input_staging[kInputSize];
 
 int ArgMax10(const float* values)
 {
-    int best = 0;
-    float max_val = values[0];
-    for (int i = 1; i < 10; ++i)
-    {
-        if (values[i] > max_val)
-        {
-            max_val = values[i];
-            best = i;
-        }
-    }
-    return best;
+    return static_cast<int>(CmsisDspUtil::ArgMaxF32(values, 10));
+}
+
+void CopyInputF32(float* dst, const float* src)
+{
+    CmsisDspUtil::CopyF32(src, dst, static_cast<uint32_t>(kInputSize));
 }
 
 }  // namespace
@@ -84,8 +81,10 @@ extern "C" int main(void)
         {
             const MnistBenchmarkSample& sample = kMnistBenchmarkImages[i];
 
+            CopyInputF32(g_input_staging, sample.pixels);
+
             const uint32_t start_cycles = dwt_cycles();
-            if (!model.forward(arena, sample.pixels, g_output))
+            if (!model.forward(arena, g_input_staging, g_output))
             {
                 uart_printf("ERR invoke image %d\r\n", i);
                 for (;;)

@@ -223,6 +223,10 @@ Optional compile-time kernel backends (Apache-2.0). Fetch once with `make cmsis-
 
 [ARM CMSIS-DSP](https://github.com/ARM-software/CMSIS-DSP) accelerates vector/matrix ops: elementwise add/mul, scale, clip (ReLU/ReLU6 fallback), `MatMul`, fully-connected / batch-norm fallbacks, **LayerNorm2d**, and **GRN** on **desktop, MPU, and MCU** (vector role when both NN and DSP are enabled).
 
+When enabled, **`cmsis_dsp_util`** (`include/cmsis_dsp_util.hpp`) routes contiguous f32/q7 copy, argmax, dot-product, mul/add/scale through CMSIS-DSP in float conv/im2col paths, reference fallbacks, and MCU benchmark firmware. See [KERNELS.md](KERNELS.md).
+
+**MCU firmware:** stage inputs in SRAM before timed inference (flash-resident test vectors + conv from XIP is slower than TFLM’s tensor-arena copy). Both NUCLEO board `main.cpp` files use `g_input_staging` + `CmsisDspUtil::CopyInt8` / `CopyF32`.
+
 Both backends are **compile-time only** — one binary, one backend set; no runtime switching.
 
 **NN vs DSP:** On **MCU with both flags**, CMSIS-NN owns layer kernels — CMSIS-DSP does not substitute. On **desktop and MPU**, use CMSIS-DSP (CMSIS-NN is not linked).
