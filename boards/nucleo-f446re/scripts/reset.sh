@@ -1,23 +1,14 @@
 #!/usr/bin/env bash
-# Flash NUCLEO-F446RE firmware via onboard ST-Link (USB).
+# Reset NUCLEO-F446RE via onboard ST-Link (no flash).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-ELF="${1:-$ROOT/build/mnist_mlp_nucleo_f446re.elf}"
 OPENOCD_BOARD_CFG="$ROOT/openocd/nucleo_f446re.cfg"
-
-if [[ ! -f "$ELF" ]]; then
-  echo "ELF not found: $ELF (run make first)" >&2
-  exit 1
-fi
 
 if ! command -v openocd >/dev/null 2>&1; then
   echo "openocd not found — install with: brew install openocd" >&2
   exit 1
 fi
 
-echo "Flashing $ELF via ST-Link (adapter speed 1800 kHz)..."
 openocd -f interface/stlink.cfg -f "$OPENOCD_BOARD_CFG" \
-  -c "program $ELF verify reset exit"
-
-echo "Done."
+  -c "init; reset run; shutdown"

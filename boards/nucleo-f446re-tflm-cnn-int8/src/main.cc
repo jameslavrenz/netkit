@@ -1,9 +1,10 @@
 // NUCLEO-F446RE TFLM MNIST CNN int8 invoke benchmark — same 10 images as benchmark/netkit.
-// Full int8 graph (input/output int8). CMSIS-NN optimized kernels via TFLM microlite build.
+// Full int8 graph (int8 input/output). CMSIS-NN optimized kernels via TFLM microlite build.
+// Test inputs are prequantized int8 (export_int8_test_images.py) — no float conversion.
 
 #include "dwt_time.h"
 #include "generated/mnist_cnn_int8_model_data.h"
-#include "generated/mnist_cnn_test_images.h"
+#include "generated/mnist_cnn_int8_test_images.h"
 #include "stm32f446xx.h"
 #include "uart.h"
 
@@ -20,7 +21,6 @@
 #include "tensorflow/lite/schema/schema_generated.h"
 
 #include <array>
-#include <cmath>
 #include <cstring>
 
 namespace {
@@ -44,26 +44,9 @@ int ArgMax10Int8(const int8_t* values)
     return best;
 }
 
-void FillInputInt8(TfLiteTensor* input, const float* pixels)
+void CopyInputInt8(TfLiteTensor* input, const int8_t* pixels)
 {
-    const float scale = input->params.scale;
-    const int32_t zero_point = input->params.zero_point;
-    int8_t* dst = input->data.int8;
-
-    for (int i = 0; i < kMnistCnnBenchmarkInputSize; ++i)
-    {
-        const float v = pixels[i];
-        int32_t q = static_cast<int32_t>(std::lround(v / scale) + zero_point);
-        if (q < -128)
-        {
-            q = -128;
-        }
-        if (q > 127)
-        {
-            q = 127;
-        }
-        dst[i] = static_cast<int8_t>(q);
-    }
+    std::memcpy(input->data.int8, pixels, kMnistCnnInt8BenchmarkInputSize);
 }
 
 }  // namespace
@@ -121,16 +104,16 @@ extern "C" int main(void)
     uart_write("\r\nTFLM NUCLEO-F446RE MNIST CNN int8 benchmark\r\n");
     uart_printf("  backend:     tflm cmsis-nn int8 (MCU CM4)\r\n");
     uart_printf("  model bytes: %u\r\n", g_mnist_cnn_int8_model_data_size);
-    uart_printf("  input type:  int8 (quantize float pixels at boundary)\r\n");
-    uart_printf("  output type: int8 (argmax on logits)\r\n");
-    uart_printf("  images:      %d per run\r\n", kMnistCnnBenchmarkImageCount);
+    uart_write("  input type:  int8 (prequantized test vectors)\r\n");
+    uart_write("  output type: int8 (argmax on logits)\r\n");
+    uart_printf("  images:      %d per run\r\n", kMnistCnnInt8BenchmarkImageCount);
     uart_printf("  runs:        %d (discard first invoke each run)\r\n", kRuns);
     uart_printf("  arena bytes: %d\r\n", kTensorArenaSize);
     uart_printf("  sysclk:      %lu Hz\r\n", static_cast<unsigned long>(SystemCoreClock));
 
     {
-        const MnistCnnBenchmarkSample& probe = kMnistCnnBenchmarkImages[0];
-        FillInputInt8(input, probe.pixels);
+        const MnistCnnInt8BenchmarkSample& probe = kMnistCnnInt8BenchmarkImages[0];
+        CopyInputInt8(input, probe.pixels);
         if (interpreter.Invoke() != kTfLiteOk)
         {
             uart_write("ERR probe invoke\r\n");
@@ -156,11 +139,11 @@ extern "C" int main(void)
         double run_total_us = 0.0;
         int counted = 0;
 
-        for (int i = 0; i < kMnistCnnBenchmarkImageCount; ++i)
+        for (int i = 0; i < kMnistCnnInt8BenchmarkImageCount; ++i)
         {
-            const MnistCnnBenchmarkSample& sample = kMnistCnnBenchmarkImages[i];
+            const MnistCnnInt8BenchmarkSample& sample = kMnistCnnInt8BenchmarkImages[i];
 
-            FillInputInt8(input, sample.pixels);
+            CopyInputInt8(input, sample.pixels);
 
             const uint32_t start_cycles = dwt_cycles();
             const TfLiteStatus invoke_status = interpreter.Invoke();
@@ -202,7 +185,7 @@ extern "C" int main(void)
     }
     mean_us /= static_cast<double>(kRuns);
 
-    uart_printf("  accuracy:    %d/%d on final run\r\n", correct, kMnistCnnBenchmarkImageCount);
+    uart_printf("  accuracy:    %d/%d on final run\r\n", correct, kMnistCnnInt8BenchmarkImageCount);
     uart_write("\r\nTFLM MNIST cnn int8 benchmark summary (cmsis-nn)\r\n");
     uart_printf("  method:      %d runs x 10 images, discard first invoke each run\r\n", kRuns);
     uart_write("  per-run avg: avg of images 1-9 (us)\r\n\r\n");

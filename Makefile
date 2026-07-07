@@ -400,6 +400,7 @@ export-mnist-int8:
 
 export-mnist-cnn-int8:
 	PYTHONPATH=python python3 tools/export_mnist_cnn_int8.py --from-nk models/mnist_cnn.nk --fast
+	python3 benchmark/tflm/tools/export_int8_test_images.py
 
 export-mnist-cnn-int8-retrain:
 	PYTHONPATH=python python3 tools/export_mnist_cnn_int8.py --retrain

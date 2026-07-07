@@ -169,7 +169,7 @@ make example-c    # C23 usage demo
 make cmsis-init   # fetch CMSIS-NN + CMSIS-DSP (optional backends)
 make export-mnist # regenerate MNIST MLP model (requires PyTorch: pip install -e "python[train]")
 make export-mnist-cnn # regenerate MNIST CNN model (requires PyTorch)
-make export-mnist-cnn-int8 # quantize MNIST CNN to int8 .nk (reuses float weights)
+make export-mnist-cnn-int8 # quantize MNIST CNN to int8 .nk + prequantized test vectors
 make flash-mnist-cnn-int8  # build + flash + UART capture on NUCLEO-F446RE
 make clean
 make rebuild

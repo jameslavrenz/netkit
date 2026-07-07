@@ -34,6 +34,7 @@ The [MNIST MLP suite](MNIST.md) on the same data reaches **98.06%** test accurac
 | `models/mnist_cnn_int8.nk` | Int8 quantized model (MCU / CMSIS-NN) |
 | `tools/export_mnist_cnn.py` | Train + export float script |
 | `tools/export_mnist_cnn_int8.py` | Quantize float `.nk` to int8 (optional TFLite input-quant alignment) |
+| `benchmark/tflm/tools/export_int8_test_images.py` | Preqantized int8 benchmark test vectors (separate from float images) |
 | `tools/compare_nk_tflite_quant.py` | Compare activation quant params vs TFLite |
 
 The MNIST CNN suite uses a **4 MiB** dedicated arena in `src/nk_regression.cpp`. See [ARENA.md](ARENA.md).
@@ -50,14 +51,14 @@ Same 10 TCAS vectors as the MLP suite; compared against TFLM in [benchmark/READM
 
 ```bash
 make export-mnist-cnn-int8
-python3 benchmark/tflm/tools/export_assets.py --model cnn-int8 --images-only
+python3 benchmark/tflm/tools/export_int8_test_images.py
 make -C boards/nucleo-f446re-cnn-int8
 cd boards/nucleo-f446re-cnn-int8 && ./scripts/flash.sh && ./scripts/monitor.sh
 ```
 
-Verified: **10/10** accuracy, **~145 ms** mean invoke (quant lowered AOT, 64-byte arena). See [boards/nucleo-f446re-cnn-int8/README.md](../boards/nucleo-f446re-cnn-int8/README.md).
+Verified: **10/10** accuracy, **~137 ms** mean invoke (quant lowered AOT, 64-byte arena). See [boards/nucleo-f446re-cnn-int8/README.md](../boards/nucleo-f446re-cnn-int8/README.md).
 
-Int8 export aligns **layer-0 input quant** with TFLite when `benchmark/tflm/generated/mnist_cnn_int8.tflite` is present (`input_scale=1/255`, `zero_point=-128`). Weight and per-layer output scales are calibrated from netkit float weights — do not copy TFLite weight scales onto netkit weights.
+Int8 export aligns **layer-0 input quant** with TFLite when `benchmark/tflm/generated/mnist_cnn_int8.tflite` is present (`input_scale=1/255`, `zero_point=-128`). Weight and per-layer output scales are calibrated from netkit float weights. Benchmark inputs are prequantized in `mnist_cnn_int8_test_images.*` — no float→int8 conversion at invoke on netkit or TFLM MCU firmware.
 
 ## Regenerating
 

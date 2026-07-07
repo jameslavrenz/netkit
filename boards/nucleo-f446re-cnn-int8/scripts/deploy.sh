@@ -14,13 +14,14 @@ ELF="$ROOT/build/mnist_cnn_int8_nucleo_f446re.elf"
 CAPTURE_SEC="${CAPTURE_SEC:-120}"
 
 step_export() {
-  echo "=== [1/4] export mnist_cnn_int8.nk (from float .nk, no training) ==="
+  echo "=== [1/4] export mnist_cnn_int8.nk + int8 test images ==="
   if [[ ! -f "$REPO/models/mnist_cnn.nk" ]]; then
     echo "Missing $REPO/models/mnist_cnn.nk — run: make -C $REPO export-mnist-cnn" >&2
     exit 1
   fi
   make -C "$REPO" export-mnist-cnn-int8
   ls -la "$REPO/models/mnist_cnn_int8.nk"
+  ls -la "$REPO/benchmark/tflm/generated/mnist_cnn_int8_test_images.cc"
 }
 
 step_build() {

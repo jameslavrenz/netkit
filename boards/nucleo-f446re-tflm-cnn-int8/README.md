@@ -8,7 +8,7 @@ Bare-metal **TensorFlow Lite Micro** firmware with a **full int8** MNIST CNN gra
 | Item | Value |
 |------|--------|
 | Model | `benchmark/tflm/generated/mnist_cnn_int8.tflite` (full int8 I/O) |
-| Images | 10 embedded digits from `mnist_cnn_test_images.*` (shared with netkit/TFLM host) |
+| Images | 10 prequantized int8 digits from `mnist_cnn_int8_test_images.*` (TFLite input quant; `memcpy` at invoke) |
 | Runs | **10** outer × 10 images; discard first invoke each run |
 | Metric | Mean of per-run averages (images 1–9), DWT µs @ 180 MHz |
 | UART | USART2 @ 115200 (ST-Link VCP) |

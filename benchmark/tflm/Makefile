@@ -25,6 +25,9 @@ export-assets:
 export-cnn-int8:
 	@python3 tools/export_assets.py --model cnn-int8
 
+export-int8-test-images:
+	@python3 tools/export_int8_test_images.py
+
 install-benchmark: fetch-tflm
 	@cp Makefile.inc $(TFLM_ROOT)/tensorflow/lite/micro/tools/make/additional_tests.inc
 

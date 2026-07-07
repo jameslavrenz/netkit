@@ -21,8 +21,8 @@ Int8 conv/pool/dense/softmax use CMSIS-NN kernels on Cortex-M4 (`QuantOps` + `Cm
 
 | Metric | Value |
 |--------|-------|
-| Mean invoke | **145,287 µs** (~145 ms) |
-| Accuracy | **10/10** (final run) |
+| Mean invoke | **~137 ms** |
+| Accuracy | **10/10** (with TFLite-aligned layer-0 input quant) |
 | Arena | **64 bytes** (activation ping-pong + workspace in BSS) |
 | Flash (text + data) | **~309 KiB** |
 
@@ -37,7 +37,7 @@ make export-mnist-cnn
 make export-mnist-cnn-int8
 
 # Refresh int8 test vectors after re-exporting the .nk model
-python3 benchmark/tflm/tools/export_assets.py --model cnn-int8 --images-only
+python3 benchmark/tflm/tools/export_int8_test_images.py
 
 # Toolchain + OpenOCD (macOS examples)
 brew install openocd
@@ -83,10 +83,10 @@ Connect the NUCLEO via USB (onboard ST-Link). USART2 virtual COM port @ **115200
 
 ```bash
 ./scripts/flash.sh
-./scripts/monitor.sh    # start monitor first, then press RESET
+./scripts/monitor.sh    # start monitor first, then press RESET (or ../nucleo-f446re/scripts/reset.sh)
 ```
 
-Press the black **RESET** button to re-run the benchmark. Avoid flashing while the serial monitor holds the VCP port open.
+Press the black **RESET** button to re-run the benchmark. Avoid flashing while the serial monitor holds the VCP port open. ST-Link SWD runs at **1800 kHz** (`boards/nucleo-f446re/openocd/nucleo_f446re.cfg`).
 
 From repo root:
 

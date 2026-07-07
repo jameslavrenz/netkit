@@ -81,7 +81,7 @@ OBJS := \
 	$(BUILD_DIR)/main.o \
 	$(BUILD_DIR)/tflm_debug_log.o \
 	$(BUILD_DIR)/mnist_cnn_int8_model_data.o \
-	$(BUILD_DIR)/mnist_cnn_test_images.o
+	$(BUILD_DIR)/mnist_cnn_int8_test_images.o
 
 .PHONY: all clean flash monitor run setup-deps fetch-tflm check-deps size microlite export-cnn-int8
 
@@ -96,6 +96,7 @@ check-deps:
 	@test -f $(TFLM_MAKE) || (echo "Run: make fetch-tflm" >&2; exit 1)
 	@test -f $(BENCH_DIR)/generated/mnist_cnn_int8.tflite || (echo "Run: make export-cnn-int8" >&2; exit 1)
 	@test -f $(BENCH_DIR)/generated/mnist_cnn_int8_model_data.cc || (echo "Run: make export-cnn-int8" >&2; exit 1)
+	@test -f $(BENCH_DIR)/generated/mnist_cnn_int8_test_images.cc || (echo "Run: python3 benchmark/tflm/tools/export_int8_test_images.py" >&2; exit 1)
 
 export-cnn-int8:
 	@$(MAKE) -C $(BENCH_DIR) export-cnn-int8
@@ -149,7 +150,7 @@ $(BUILD_DIR)/mnist_cnn_int8_model_data.o: $(BENCH_DIR)/generated/mnist_cnn_int8_
 
 $(TFLM_LIB): microlite
 
-$(BUILD_DIR)/mnist_cnn_test_images.o: $(BENCH_DIR)/generated/mnist_cnn_test_images.cc
+$(BUILD_DIR)/mnist_cnn_int8_test_images.o: $(BENCH_DIR)/generated/mnist_cnn_int8_test_images.cc
 	@mkdir -p $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 

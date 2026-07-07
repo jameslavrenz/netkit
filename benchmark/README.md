@@ -141,11 +141,13 @@ Host `compare.sh` numbers are not a direct preview of Cortex-M ratios. For firmw
 | [boards/nucleo-f446re-cnn-int8](../boards/nucleo-f446re-cnn-int8/README.md) | MNIST CNN int8 | CMSIS-NN quant lowered AOT | ~145 ms, 10/10 |
 | [boards/nucleo-f446re-tflm-cnn-int8](../boards/nucleo-f446re-tflm-cnn-int8/README.md) | MNIST CNN int8 | TFLite Micro | comparison baseline |
 
-Shared int8 test vectors: `benchmark/tflm/generated/mnist_cnn_test_images.{h,cc}` (`pixels_i8`, `input_scale=1/255`, `zp=-128`).
+Shared **float** test vectors: `benchmark/tflm/generated/mnist_*_test_images.{h,cc}`
+
+**Int8** benchmarks use separate prequantized vectors: `benchmark/tflm/generated/mnist_cnn_int8_test_images.{h,cc}` (export via `export_int8_test_images.py`; quant params from TFLite input tensor). No float→int8 conversion at test time.
 
 ```bash
 make export-mnist-cnn-int8
-python3 benchmark/tflm/tools/export_assets.py --model cnn-int8 --images-only
+python3 benchmark/tflm/tools/export_int8_test_images.py
 make -C boards/nucleo-f446re-cnn-int8 && cd boards/nucleo-f446re-cnn-int8 && ./scripts/flash.sh
 ./scripts/monitor.sh   # press RESET
 ```

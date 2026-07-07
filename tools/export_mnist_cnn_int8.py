@@ -22,6 +22,7 @@ from netkit.quantize import forward_quantized_cnn, quantize_cnn, quantized_cnn_t
 from netkit.reader import read_nk
 from netkit.tflite_quant_align import (
     extract_tflite_cnn_quant_specs,
+    load_tflite_quant_json,
     write_tflite_quant_json,
 )
 from netkit.torch_models import TutorialCnn28
@@ -208,9 +209,13 @@ def main() -> None:
         json_out = args.write_tflite_quant_json
         if json_out is None:
             json_out = DEFAULT_TFLITE_QUANT_JSON
-        aligned_quants = write_tflite_quant_json(tflite_path, json_out)
-        print(f"Aligned quant params from {tflite_path} ({len(aligned_quants)} layers)")
-        print(f"Wrote {json_out}")
+        if json_out.is_file():
+            aligned_quants = load_tflite_quant_json(json_out)
+            print(f"Aligned quant params from {json_out} ({len(aligned_quants)} layers)")
+        else:
+            aligned_quants = write_tflite_quant_json(tflite_path, json_out)
+            print(f"Aligned quant params from {tflite_path} ({len(aligned_quants)} layers)")
+            print(f"Wrote {json_out}")
     elif args.align_tflite is not None:
         print(f"TFLite model not found: {args.align_tflite}", file=sys.stderr)
         sys.exit(1)

@@ -146,7 +146,7 @@ BOARD_C_SOURCES := \
 
 BOARD_CXX_SOURCES := \
 	src/main.cpp \
-	$(NETKIT_ROOT)/benchmark/tflm/generated/mnist_cnn_test_images.cc
+	$(NETKIT_ROOT)/benchmark/tflm/generated/mnist_cnn_int8_test_images.cc
 
 BOARD_ASM_SOURCES := $(BOARD_COMMON)/startup/startup_stm32f446xx.S
 
@@ -176,8 +176,8 @@ check-deps:
 		(echo "Run: make -C $(NETKIT_ROOT) cmsis-init" >&2; exit 1)
 	@test -f $(NETKIT_ROOT)/models/mnist_cnn_int8.nk || \
 		(echo "Missing models/mnist_cnn_int8.nk — run: make -C $(NETKIT_ROOT) export-mnist-cnn-int8" >&2; exit 1)
-	@test -f $(NETKIT_ROOT)/benchmark/tflm/generated/mnist_cnn_test_images.cc || \
-		(echo "Missing mnist_cnn_test_images.cc — run benchmark export" >&2; exit 1)
+	@test -f $(NETKIT_ROOT)/benchmark/tflm/generated/mnist_cnn_int8_test_images.cc || \
+		(echo "Missing int8 test images — run: python3 benchmark/tflm/tools/export_int8_test_images.py" >&2; exit 1)
 
 export-aot: $(GEN_DIR)/.aot_stamp
 
@@ -212,7 +212,7 @@ OBJS := \
 	$(BUILD_DIR)/dwt_time.o \
 	$(BUILD_DIR)/syscalls.o \
 	$(BUILD_DIR)/main.o \
-	$(BUILD_DIR)/mnist_cnn_test_images.o \
+	$(BUILD_DIR)/mnist_cnn_int8_test_images.o \
 	$(BUILD_DIR)/mnist_cnn_int8_aot.o
 
 $(BUILD_DIR)/startup.o: $(BOARD_ASM_SOURCES)
@@ -239,7 +239,7 @@ $(BUILD_DIR)/main.o: src/main.cpp
 	@mkdir -p $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-$(BUILD_DIR)/mnist_cnn_test_images.o: $(NETKIT_ROOT)/benchmark/tflm/generated/mnist_cnn_test_images.cc
+$(BUILD_DIR)/mnist_cnn_int8_test_images.o: $(NETKIT_ROOT)/benchmark/tflm/generated/mnist_cnn_int8_test_images.cc
 	@mkdir -p $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 

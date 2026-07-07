@@ -1,9 +1,10 @@
 // NUCLEO-F446RE MNIST CNN int8 invoke benchmark — same 10 images as benchmark/netkit.
-// Quant lowered AOT: static weights + CmsisQuantPlan call chain (no .nk loader).
+// Quant lowered AOT: static int8 weights + CmsisQuantPlan call chain (no .nk loader).
+// Test inputs are prequantized int8 (export_int8_test_images.py) — no float conversion.
 
 #include "dwt_time.h"
 #include "mnist_cnn_int8_aot.hpp"
-#include "mnist_cnn_test_images.h"
+#include "mnist_cnn_int8_test_images.h"
 #include "netkit_config.h"
 #include "quant_output.hpp"
 #include "quant_trace.hpp"
@@ -18,8 +19,8 @@ namespace aot = netkit::aot::mnist_cnn_int8;
 namespace {
 
 constexpr int kRuns = 10;
-constexpr int kImageCount = kMnistCnnBenchmarkImageCount;
-constexpr int kInputSize = kMnistCnnBenchmarkInputSize;
+constexpr int kImageCount = kMnistCnnInt8BenchmarkImageCount;
+constexpr int kInputSize = kMnistCnnInt8BenchmarkInputSize;
 
 alignas(std::max_align_t) static unsigned char g_arena_memory[aot::kArenaBytesRecommended];
 alignas(std::max_align_t) static int8_t g_output_i8[aot::kOutputElements];
@@ -44,15 +45,6 @@ void PrintStorageInfo()
         uart_printf("  nk bytes:    %u\r\n", static_cast<unsigned>(aot::kNkBytes));
 }
 
-bool RunForward(aot::Model& model, Arena& arena, const MnistCnnBenchmarkSample& sample)
-{
-#if kMnistCnnBenchmarkHasInt8Pixels
-    return model.forwardInt8(arena, sample.pixels_i8, g_output_i8);
-#else
-    return model.forward(arena, sample.pixels, g_output_i8);
-#endif
-}
-
 }  // namespace
 
 extern "C" int main(void)
@@ -67,8 +59,7 @@ extern "C" int main(void)
                 aot::kQuantLowered ? "flash (static .rodata)"
                                    : (NETKIT_WEIGHTS_IN_RAM ? "ram (arena copy at load)"
                                                             : "flash (embedded .nk blob)"));
-    uart_printf("  dtype:       int8 end-to-end (softmax int8%s)\r\n",
-                kMnistCnnBenchmarkHasInt8Pixels ? ", prequantized inputs" : "");
+    uart_write("  dtype:       int8 end-to-end (weights, activations, inputs, softmax)\r\n");
     uart_printf("  images:      %d per run\r\n", kImageCount);
     uart_printf("  runs:        %d (discard first invoke each run)\r\n", kRuns);
     uart_printf("  arena bytes: %u\r\n", static_cast<unsigned>(aot::kArenaBytesRecommended));
@@ -97,8 +88,8 @@ extern "C" int main(void)
     uart_write("  model:       loaded\r\n");
 
     {
-        const MnistCnnBenchmarkSample& probe = kMnistCnnBenchmarkImages[0];
-        if (!RunForward(model, arena, probe))
+        const MnistCnnInt8BenchmarkSample& probe = kMnistCnnInt8BenchmarkImages[0];
+        if (!model.forwardInt8(arena, probe.pixels, g_output_i8))
         {
             uart_write("ERR probe forward\r\n");
             for (;;)
@@ -126,10 +117,10 @@ extern "C" int main(void)
 
         for (int i = 0; i < kImageCount; ++i)
         {
-            const MnistCnnBenchmarkSample& sample = kMnistCnnBenchmarkImages[i];
+            const MnistCnnInt8BenchmarkSample& sample = kMnistCnnInt8BenchmarkImages[i];
 
             const uint32_t start_cycles = dwt_cycles();
-            if (!RunForward(model, arena, sample))
+            if (!model.forwardInt8(arena, sample.pixels, g_output_i8))
             {
                 uart_printf("ERR invoke image %d\r\n", i);
                 for (;;)

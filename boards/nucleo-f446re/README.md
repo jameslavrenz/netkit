@@ -76,7 +76,7 @@ Connect the NUCLEO via USB (onboard ST-Link). Programming uses **SWD**, not UART
 make flash
 ```
 
-Requires [OpenOCD](https://openocd.org/) (`interface/stlink.cfg` + `target/stm32f4x.cfg`).
+Requires [OpenOCD](https://openocd.org/) (`interface/stlink.cfg` + `openocd/nucleo_f446re.cfg` at **1800 kHz** SWD).
 
 ## Read benchmark results (UART)
 
@@ -86,7 +86,7 @@ The ST-Link exposes a **virtual COM port** wired to USART2 (PA2/PA3) at **115200
 ./scripts/monitor.sh
 ```
 
-Press the black **RESET** button on the board to re-run the benchmark.
+Press the black **RESET** button on the board to re-run the benchmark (or `./scripts/reset.sh` via OpenOCD while the monitor is open).
 
 One-shot build + flash + monitor:
 

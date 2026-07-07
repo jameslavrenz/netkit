@@ -108,46 +108,6 @@ def _import_reader():
     return read_test_suite
 
 
-def _read_first_conv_quant(nk_path: Path) -> tuple[float, int] | None:
-    """Return (input_scale, input_zero_point) from first quant layer in int8 .nk."""
-    import io
-    import struct
-
-    sys.path.insert(0, str(ROOT / "python"))
-    from netkit.format import (
-        FLAG_HAS_QUANT,
-        HEADER_BYTES,
-        MLP_LAYER_QUANT_BYTES,
-        QUANT_MAGIC,
-        skip_payload_alignment_padding,
-        unpack_header,
-    )
-
-    from netkit.inspect import _read_layer_body, _read_tensor_desc
-
-    stream = io.BytesIO(nk_path.read_bytes())
-    header = unpack_header(stream.read(HEADER_BYTES))
-    if not (header.get("flags", 0) & FLAG_HAS_QUANT):
-        return None
-
-    for _ in range(header["num_layers"]):
-        kind = struct.unpack("<B", stream.read(1))[0]
-        stream.read(3)
-        _read_layer_body(stream, kind)
-
-    for _ in range(header["num_weight_tensors"] + header["num_bias_tensors"]):
-        _read_tensor_desc(stream)
-
-    magic = stream.read(4)
-    if magic != QUANT_MAGIC:
-        return None
-    num_layers, _reserved = struct.unpack("<HH", stream.read(4))
-    if num_layers == 0:
-        return None
-    input_scale, input_zp = struct.unpack("<fi", stream.read(MLP_LAYER_QUANT_BYTES)[:8])
-    return float(input_scale), int(input_zp)
-
-
 def _onnx2tf_bin() -> str:
     found = shutil.which("onnx2tf")
     if found:
@@ -253,9 +213,6 @@ def _export_tflite_via_onnx2tf(onnx_path: Path, out: Path, saved_model_dir: Path
 
 
 def _write_test_image_arrays(read_test_suite, spec: dict) -> None:
-    sys.path.insert(0, str(ROOT / "python"))
-    from netkit.quantize import quantize_float_input
-
     suite = read_test_suite(spec["nk"])
     if suite is None:
         raise RuntimeError(f"missing TCAS section in {spec['nk']}")
@@ -266,16 +223,11 @@ def _write_test_image_arrays(read_test_suite, spec: dict) -> None:
     input_size = spec["input_size"]
     legacy = spec.get("legacy_names", False)
 
-    int8_nk = spec.get("int8_nk", ROOT / "models" / "mnist_cnn_int8.nk")
-    quant = _read_first_conv_quant(int8_nk) if int8_nk.is_file() else None
-    emit_int8 = quant is not None and prefix == "MnistCnn"
-
     count_name = "kMnistBenchmarkImageCount" if legacy else f"k{prefix}BenchmarkImageCount"
     size_name = "kMnistBenchmarkInputSize" if legacy else f"k{prefix}BenchmarkInputSize"
     sample_name = "MnistBenchmarkSample" if legacy else f"{prefix}BenchmarkSample"
     images_name = "kMnistBenchmarkImages" if legacy else f"k{prefix}BenchmarkImages"
     image_symbol = f"{array_prefix}Image" if legacy else f"{array_prefix}Image"
-    image_i8_symbol = f"{array_prefix}ImageI8" if legacy else f"{array_prefix}ImageI8"
 
     hdr_lines = [
         "#pragma once",
@@ -284,37 +236,16 @@ def _write_test_image_arrays(read_test_suite, spec: dict) -> None:
         "",
         f"constexpr int {count_name} = {len(cases)};",
         f"constexpr int {size_name} = {input_size};",
+        "",
+        f"struct {sample_name} {{",
+        "  const char* name;",
+        "  int label;",
+        "  const float* pixels;",
+        "};",
+        "",
+        f"extern const {sample_name} {images_name}[{len(cases)}];",
+        "",
     ]
-    if emit_int8:
-        input_scale, input_zp = quant
-        hdr_lines.extend(
-            [
-                f"constexpr bool k{prefix}BenchmarkHasInt8Pixels = true;",
-                f"constexpr float k{prefix}BenchmarkInputScale = {input_scale:.8f}f;",
-                f"constexpr int k{prefix}BenchmarkInputZeroPoint = {input_zp};",
-            ]
-        )
-    else:
-        hdr_lines.append(f"constexpr bool k{prefix}BenchmarkHasInt8Pixels = false;")
-    hdr_lines.extend(
-        [
-            "",
-            f"struct {sample_name} {{",
-            "  const char* name;",
-            "  int label;",
-            "  const float* pixels;",
-        ]
-    )
-    if emit_int8:
-        hdr_lines.append("  const int8_t* pixels_i8;")
-    hdr_lines.extend(
-        [
-            "};",
-            "",
-            f"extern const {sample_name} {images_name}[{len(cases)}];",
-            "",
-        ]
-    )
     cc_lines = [f'#include "{spec["images_h"].name}"', ""]
 
     for idx, case in enumerate(cases):
@@ -325,24 +256,13 @@ def _write_test_image_arrays(read_test_suite, spec: dict) -> None:
         cc_lines.append(
             f"alignas(16) static const float {image_symbol}{idx}[{input_size}] = {{{pixel_text}}};"
         )
-        if emit_int8:
-            pixels_i8 = quantize_float_input(pixels, quant[0], quant[1])
-            i8_text = ", ".join(str(int(v)) for v in pixels_i8)
-            cc_lines.append(
-                f"alignas(16) static const int8_t {image_i8_symbol}{idx}[{input_size}] = {{{i8_text}}};"
-            )
         cc_lines.append("")
 
     cc_lines.append(f"const {sample_name} {images_name}[{len(cases)}] = {{")
     for idx, case in enumerate(cases):
-        if emit_int8:
-            cc_lines.append(
-                f'  {{"{case.name}", {int(case.label)}, {image_symbol}{idx}, {image_i8_symbol}{idx}}},'
-            )
-        else:
-            cc_lines.append(
-                f'  {{"{case.name}", {int(case.label)}, {image_symbol}{idx}}},'
-            )
+        cc_lines.append(
+            f'  {{"{case.name}", {int(case.label)}, {image_symbol}{idx}}},'
+        )
     cc_lines.append("};")
     cc_lines.append("")
 
@@ -360,6 +280,13 @@ def export_model(name: str, read_test_suite, *, images_only: bool) -> None:
     if images_only:
         if not spec["tflite"].is_file():
             raise SystemExit(f"{spec['tflite']} missing — run export without --images-only")
+        if name == "cnn-int8":
+            subprocess.run(
+                [sys.executable, str(TOOLS / "export_int8_test_images.py")],
+                check=True,
+                cwd=ROOT,
+            )
+            return
     elif name == "cnn-int8":
         if not spec["saved_model"].is_dir():
             print(f"SavedModel missing — converting {spec['onnx'].name} first ...")
@@ -376,6 +303,13 @@ def export_model(name: str, read_test_suite, *, images_only: bool) -> None:
 
     _write_test_image_arrays(read_test_suite, spec)
     print(f"Wrote {spec['images_h'].name} and {spec['images_cc'].name}")
+
+    if name == "cnn-int8":
+        subprocess.run(
+            [sys.executable, str(TOOLS / "export_int8_test_images.py")],
+            check=True,
+            cwd=ROOT,
+        )
 
 
 def main() -> None:
