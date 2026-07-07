@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import tempfile
 import unittest
@@ -65,6 +66,11 @@ class TestQuantizeMlp(unittest.TestCase):
         header = unpack_header(blob[:HEADER_BYTES])
         self.assertEqual(header["version"], 4)
         self.assertTrue(header["flags"] & FLAG_HAS_QUANT)
+
+        if os.environ.get("NETKIT_FAST_TESTS") == "1":
+            # Host desktop builds lack CMSIS-NN quant runtime (see docs/DATATYPES.md).
+            # Python forward_quantized_mlp above validates pack math; MCU / test-full covers runtime.
+            return
 
         with tempfile.TemporaryDirectory() as tmp:
             nk_path = Path(tmp) / "tiny_int8.nk"
