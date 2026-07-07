@@ -262,13 +262,16 @@ def _resolve_arena_bytes(
             network=network,
             quantized=quantized,
         )
-    if probed:
         after_load, after_forward = _adjust_arena_for_flash(
             after_load,
             after_forward,
             payload_bytes,
             weights_in_ram=weights_in_ram,
         )
+    elif weights_in_ram and payload_bytes > 0:
+        # Host inspect probes flash-backed load (NETKIT_WEIGHTS_IN_RAM=0); add payload for SRAM copy.
+        after_load += payload_bytes
+        after_forward += payload_bytes
     workspace_slack = 0 if quantized else _cmsis_s8_workspace_slack(
         network=network, quantized=quantized, weights_in_ram=weights_in_ram
     )
@@ -301,9 +304,9 @@ def compile_aot(
 
     Emits measured arena sizing constants for MCU firmware (static buffer allocation).
     When ``./netkit inspect --full`` is available, arena bytes come from a probe load +
-    zero-input forward; otherwise a conservative estimate is used. When
-    ``weights_in_ram=False`` (default), ``weights_bytes + biases_bytes`` are
-    subtracted from probe/estimate peaks because coefs stay in the embedded blob.
+    zero-input forward (already flash-backed when ``weights_in_ram=False``). Otherwise a
+    conservative estimate is used and ``weights_bytes + biases_bytes`` are subtracted
+    when coefs stay in the embedded blob.
 
     C++ output is lowered by default (``lower=True``): static ``Kernels::`` call chain
     with embedded weight arrays, no ``.nk`` blob, loader, or ops resolver. Pass

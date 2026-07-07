@@ -10,6 +10,9 @@ jobs:
   build-and-test:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    env:
+      CC: clang
+      CXX: clang++
 
     steps:
       - name: Checkout

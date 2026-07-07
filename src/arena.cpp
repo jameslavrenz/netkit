@@ -35,7 +35,7 @@ bool Arena::init_heap(std::size_t size)
 {
     if (!size || base)
         return false;
-    void* memory = std::malloc(size);
+    void* memory = std::calloc(1, size);
     if (!memory)
         return false;
     base = static_cast<std::byte*>(memory);
