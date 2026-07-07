@@ -25,6 +25,7 @@ struct Runtime
     uint32_t logits_elements = 0;
     int8_t* input_quant = nullptr;
     uint32_t input_quant_elements = 0;
+    Arena* staging_arena = nullptr;
     uint8_t* workspace = nullptr;
     std::size_t workspace_bytes = 0;
     float input_scale = 0.0f;

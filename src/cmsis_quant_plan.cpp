@@ -376,13 +376,7 @@ bool BuildRuntime(CNNNetwork& network, Arena& arena, uint32_t in_h, uint32_t in_
     }
 
     runtime->input_quant_elements = in_h * in_w * in_c;
-    if (runtime->input_quant_elements > 0)
-    {
-        runtime->input_quant = static_cast<int8_t*>(
-            arena.alloc(runtime->input_quant_elements * sizeof(int8_t), alignof(int8_t)));
-        if (!runtime->input_quant)
-            return false;
-    }
+    runtime->staging_arena = &arena;
 
     runtime->act_a_bytes = even_max;
     runtime->act_b_bytes = odd_max;
@@ -531,6 +525,20 @@ namespace
         output_cache = View2DInt8(current, 1, last.output_elements);
         return true;
     }
+    bool EnsureInputQuantBuffer(Runtime& runtime)
+    {
+        if (runtime.input_quant_elements == 0)
+            return true;
+        if (runtime.input_quant != nullptr)
+            return true;
+        if (runtime.staging_arena == nullptr)
+            return false;
+
+        runtime.input_quant = static_cast<int8_t*>(
+            runtime.staging_arena->alloc(runtime.input_quant_elements * sizeof(int8_t),
+                                         alignof(int8_t)));
+        return runtime.input_quant != nullptr;
+    }
 }  // namespace
 
 bool Forward(Runtime& runtime,
@@ -550,7 +558,7 @@ bool Forward(Runtime& runtime,
     }
 
     const float* input_f = static_cast<const float*>(input.data);
-    if (!input_f || !runtime.input_quant)
+    if (!input_f || !EnsureInputQuantBuffer(runtime))
         return false;
 
     for (uint32_t i = 0; i < runtime.input_quant_elements; ++i)
