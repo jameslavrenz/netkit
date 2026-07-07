@@ -4,6 +4,8 @@
 #   NETKIT_TARGET=mcu, NETKIT_ARCH=CM4
 #   NETKIT_CMSIS_DSP=1, NETKIT_CMSIS_NN=1
 #   NETKIT_WEIGHTS_IN_RAM=0 (coefs in flash .rodata)
+#   Toolchain: boards/nucleo-f446re/mcu_tflm_toolchain.mk (TFLM microlite tiers:
+#     CORE -Os, KERNEL/THIRD_PARTY_KERNEL -O2, -flto link)
 #   Default: interpreter embed (--no-lower) — fair vs TFLM MicroInterpreter
 #   Optional: NETKIT_LOWERED=1 for quant lowered deployment profile
 #
@@ -18,29 +20,14 @@ NETKIT_ROOT := $(abspath ../..)
 BOARD_ROOT := $(abspath .)
 BOARD_COMMON := $(abspath ../nucleo-f446re)
 
+# netkit public headers use C++20 (std::span, constinit); TFLM board glue stays C++17.
+MCU_CXX_STD := -std=c++20
+MCU_BOARD_COMMON := $(BOARD_COMMON)
+
+include $(BOARD_COMMON)/mcu_tflm_toolchain.mk
+
 # 0 = interpreter embed (default, TFLM-fair). 1 = quant lowered call chain.
 NETKIT_LOWERED ?= 0
-
-CROSS_COMPILE ?= arm-none-eabi-
-TOOLCHAIN_BIN := $(shell ./scripts/setup-toolchain.sh 2>/dev/null || true)
-ifneq ($(TOOLCHAIN_BIN),)
-  CC := $(TOOLCHAIN_BIN)/arm-none-eabi-gcc
-  CXX := $(TOOLCHAIN_BIN)/arm-none-eabi-g++
-  AR := $(TOOLCHAIN_BIN)/arm-none-eabi-ar
-  OBJCOPY := $(TOOLCHAIN_BIN)/arm-none-eabi-objcopy
-  SIZE := $(TOOLCHAIN_BIN)/arm-none-eabi-size
-else
-  CC := $(CROSS_COMPILE)gcc
-  CXX := $(CROSS_COMPILE)g++
-  AR := $(CROSS_COMPILE)ar
-  OBJCOPY := $(CROSS_COMPILE)objcopy
-  SIZE := $(CROSS_COMPILE)size
-endif
-
-MCU := cortex-m4
-MCU_FLAGS := -mcpu=$(MCU) -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=hard
-OPT_FLAGS := -Os -ffunction-sections -fdata-sections -flto
-WARN_FLAGS := -Wall -Wextra
 
 BUILD_DIR := build
 GEN_DIR := generated
@@ -130,6 +117,16 @@ NETKIT_RUNTIME_SOURCES := \
 	$(NETKIT_ROOT)/src/cmsis_dsp_backend.cpp \
 	$(NETKIT_ROOT)/src/cmsis_nn_backend.cpp
 
+# Compiled at KERNEL_OPTIMIZATION_LEVEL (-O2), same tier as TFLM cmsis_nn kernels.
+NETKIT_KERNEL_RUNTIME_SOURCES := \
+	$(NETKIT_ROOT)/src/cmsis_nn_quant_backend.cpp \
+	$(NETKIT_ROOT)/src/cmsis_quant_plan.cpp \
+	$(NETKIT_ROOT)/src/cnn_quant.cpp \
+	$(NETKIT_ROOT)/src/quant_softmax_s8.cpp \
+	$(NETKIT_ROOT)/src/quant_ops.cpp
+
+NETKIT_CORE_RUNTIME_SOURCES := $(filter-out $(NETKIT_KERNEL_RUNTIME_SOURCES),$(NETKIT_RUNTIME_SOURCES))
+
 CMSIS_DSP_SOURCES := \
 	$(CMSIS_DSP_DIR)/Source/BasicMathFunctions/arm_add_f32.c \
 	$(CMSIS_DSP_DIR)/Source/BasicMathFunctions/arm_mult_f32.c \
@@ -159,10 +156,10 @@ BOARD_ASM_SOURCES := $(BOARD_COMMON)/startup/startup_stm32f446xx.S
 GEN_SOURCES := \
 	$(GEN_DIR)/mnist_cnn_int8_aot.cpp
 
-CFLAGS := $(MCU_FLAGS) $(OPT_FLAGS) $(WARN_FLAGS) -std=c23 -g $(INCLUDES) $(NETKIT_CPPFLAGS)
-CXXFLAGS := $(MCU_FLAGS) $(OPT_FLAGS) $(WARN_FLAGS) -std=c++20 -g $(INCLUDES) $(NETKIT_CPPFLAGS) -fno-exceptions -fno-rtti
-ASFLAGS := $(MCU_FLAGS) -g
-LDFLAGS := $(MCU_FLAGS) -flto -Wl,--gc-sections -T$(LINKER_SCRIPT) -Wl,-Map=$(BUILD_DIR)/$(TARGET).map
+CFLAGS := $(MCU_CORE_CFLAGS) $(MCU_DEBUG_FLAGS) $(INCLUDES) $(NETKIT_CPPFLAGS)
+CXXFLAGS := $(MCU_CORE_CXXFLAGS) $(MCU_DEBUG_FLAGS) $(INCLUDES) $(NETKIT_CPPFLAGS)
+ASFLAGS := $(MCU_ASFLAGS) $(MCU_DEBUG_FLAGS)
+LDFLAGS := $(MCU_LDFLAGS) -T$(LINKER_SCRIPT) -Wl,-Map=$(BUILD_DIR)/$(TARGET).map
 
 LIBNETKIT := $(LIB_DIR)/libnetkit_cnn_int8.a
 
@@ -171,11 +168,7 @@ LIBNETKIT := $(LIB_DIR)/libnetkit_cnn_int8.a
 all: check-deps export-embed $(ELF) size
 
 check-deps:
-	@TOOLCHAIN_BIN="$$(./scripts/setup-toolchain.sh)"; \
-	if [[ ! -x "$$TOOLCHAIN_BIN/arm-none-eabi-gcc" ]]; then \
-	  echo "No working arm-none-eabi toolchain — run ./scripts/setup-toolchain.sh" >&2; \
-	  exit 1; \
-	fi
+	$(MCU_ASSERT_GCC_TOOLCHAIN)
 	@test -f $(CMSIS_DSP_DIR)/Include/arm_math.h || \
 		(echo "Run: make -C $(NETKIT_ROOT) cmsis-init" >&2; exit 1)
 	@test -f $(CMSIS_NN_DIR)/Include/arm_nnfunctions.h || \
@@ -203,15 +196,19 @@ $(LIBNETKIT): $(NETKIT_RUNTIME_SOURCES) $(CMSIS_DSP_SOURCES) $(CMSIS_NN_SOURCES)
 	@rm -f $(LIB_DIR)/*.o
 	@set -e; for src in $(CMSIS_DSP_SOURCES); do \
 		obj=$(LIB_DIR)/cmsis_dsp_$$(basename $$src .c).o; \
-		$(CC) $(CFLAGS) -c $$src -o $$obj; \
+		$(CC) $(MCU_THIRD_PARTY_KERNEL_CFLAGS) $(MCU_DEBUG_FLAGS) $(INCLUDES) $(NETKIT_CPPFLAGS) -c $$src -o $$obj; \
 	done
 	@set -e; for src in $(CMSIS_NN_SOURCES); do \
 		obj=$(LIB_DIR)/cmsis_nn_$$(basename $$src .c).o; \
-		$(CC) $(CFLAGS) -c $$src -o $$obj; \
+		$(CC) $(MCU_THIRD_PARTY_KERNEL_CFLAGS) $(MCU_DEBUG_FLAGS) -I$(CMSIS_NN_DIR)/Include $(NETKIT_CPPFLAGS) -c $$src -o $$obj; \
 	done
-	@set -e; for src in $(NETKIT_RUNTIME_SOURCES); do \
+	@set -e; for src in $(NETKIT_CORE_RUNTIME_SOURCES); do \
 		obj=$(LIB_DIR)/netkit_$$(basename $$src .cpp).o; \
-		$(CXX) $(CXXFLAGS) -c $$src -o $$obj; \
+		$(CXX) $(MCU_CORE_CXXFLAGS) $(MCU_DEBUG_FLAGS) $(INCLUDES) $(NETKIT_CPPFLAGS) -c $$src -o $$obj; \
+	done
+	@set -e; for src in $(NETKIT_KERNEL_RUNTIME_SOURCES); do \
+		obj=$(LIB_DIR)/netkit_$$(basename $$src .cpp).o; \
+		$(CXX) $(MCU_KERNEL_CXXFLAGS) $(MCU_DEBUG_FLAGS) $(INCLUDES) $(NETKIT_CPPFLAGS) -c $$src -o $$obj; \
 	done
 	$(AR) rcs $@ $(LIB_DIR)/*.o
 

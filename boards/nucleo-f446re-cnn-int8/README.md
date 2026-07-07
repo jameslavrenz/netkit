@@ -120,6 +120,8 @@ make flash-mnist-cnn-int8
 | **Interpreter embed** (default) | `make` | Embedded `.nk` blob + runtime loader (fair vs TFLM `MicroInterpreter`) |
 | **Quant lowered** (deployment) | `make NETKIT_LOWERED=1` | Static `CmsisQuantPlan` call chain; activations in static BSS, tiny arena |
 
+Compiler/linker flags match TFLM microlite tiers via `boards/nucleo-f446re/mcu_tflm_toolchain.mk` (CORE `-Os`, CMSIS-NN / quant dispatch `-O2`, `-flto` link with `--gc-sections`).
+
 Regenerate embed sources after changing mode:
 
 ```bash

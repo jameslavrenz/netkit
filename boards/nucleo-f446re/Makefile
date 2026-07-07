@@ -12,29 +12,14 @@
 NETKIT_ROOT := $(abspath ../..)
 BOARD_ROOT := $(abspath .)
 
-CROSS_COMPILE ?= arm-none-eabi-
-# Homebrew arm-none-eabi-gcc lacks newlib.
-TOOLCHAIN_BIN := $(shell ./scripts/setup-toolchain.sh 2>/dev/null || true)
-ifneq ($(TOOLCHAIN_BIN),)
-  CC := $(TOOLCHAIN_BIN)/arm-none-eabi-gcc
-  CXX := $(TOOLCHAIN_BIN)/arm-none-eabi-g++
-  AR := $(TOOLCHAIN_BIN)/arm-none-eabi-ar
-  OBJCOPY := $(TOOLCHAIN_BIN)/arm-none-eabi-objcopy
-  SIZE := $(TOOLCHAIN_BIN)/arm-none-eabi-size
-else
-  CC := $(CROSS_COMPILE)gcc
-  CXX := $(CROSS_COMPILE)g++
-  AR := $(CROSS_COMPILE)ar
-  OBJCOPY := $(CROSS_COMPILE)objcopy
-  SIZE := $(CROSS_COMPILE)size
-endif
+MCU_BOARD_COMMON := $(BOARD_ROOT)
+include $(BOARD_ROOT)/mcu_gcc_toolchain.mk
 
 MCU := cortex-m4
+BUILD_DIR := build
 MCU_FLAGS := -mcpu=$(MCU) -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=hard
 OPT_FLAGS := -Os -ffunction-sections -fdata-sections -flto
 WARN_FLAGS := -Wall -Wextra
-
-BUILD_DIR := build
 GEN_DIR := generated
 LIB_DIR := $(BUILD_DIR)/lib
 
@@ -114,11 +99,7 @@ LIBNETKIT := $(LIB_DIR)/libnetkit_mnist_mlp.a
 all: check-deps export-embed $(ELF) size
 
 check-deps:
-	@TOOLCHAIN_BIN="$$(./scripts/setup-toolchain.sh)"; \
-	if [[ ! -x "$$TOOLCHAIN_BIN/arm-none-eabi-gcc" ]]; then \
-	  echo "No working arm-none-eabi toolchain — run ./scripts/setup-toolchain.sh" >&2; \
-	  exit 1; \
-	fi
+	$(MCU_ASSERT_GCC_TOOLCHAIN)
 	@test -f $(NETKIT_ROOT)/third_party/CMSIS-DSP/Include/arm_math.h || \
 		(echo "Run: make -C $(NETKIT_ROOT) cmsis-init" >&2; exit 1)
 	@test -f $(NETKIT_ROOT)/models/mnist_mlp.nk || \

@@ -12,24 +12,15 @@
 NETKIT_ROOT := $(abspath ../..)
 BOARD_NETKIT := $(abspath ../nucleo-f446re)
 BOARD_ROOT := $(abspath .)
+
+MCU_BOARD_COMMON := $(BOARD_NETKIT)
+include $(BOARD_NETKIT)/mcu_gcc_toolchain.mk
+
 TFLM_ROOT := $(NETKIT_ROOT)/benchmark/tflm/third_party/tflite-micro
 TFLM_MAKE := $(TFLM_ROOT)/tensorflow/lite/micro/tools/make/Makefile
 TFLM_DL := $(TFLM_ROOT)/tensorflow/lite/micro/tools/make/downloads
 BENCH_DIR := $(NETKIT_ROOT)/benchmark/tflm
 GMAKE ?= $(shell command -v gmake 2>/dev/null || command -v make 2>/dev/null)
-
-TOOLCHAIN_BIN := $(shell $(BOARD_NETKIT)/scripts/setup-toolchain.sh 2>/dev/null || true)
-ifneq ($(TOOLCHAIN_BIN),)
-  CC := $(TOOLCHAIN_BIN)/arm-none-eabi-gcc
-  CXX := $(TOOLCHAIN_BIN)/arm-none-eabi-g++
-  OBJCOPY := $(TOOLCHAIN_BIN)/arm-none-eabi-objcopy
-  SIZE := $(TOOLCHAIN_BIN)/arm-none-eabi-size
-else
-  CC := arm-none-eabi-gcc
-  CXX := arm-none-eabi-g++
-  OBJCOPY := arm-none-eabi-objcopy
-  SIZE := arm-none-eabi-size
-endif
 
 TFLM_TARGET := cortex_m_generic
 TFLM_ARCH := cortex-m4+fp
@@ -86,11 +77,7 @@ OBJS := \
 all: check-deps microlite $(ELF) size
 
 check-deps:
-	@TOOLCHAIN_BIN="$$(../nucleo-f446re/scripts/setup-toolchain.sh)"; \
-	if [[ ! -x "$$TOOLCHAIN_BIN/arm-none-eabi-gcc" ]]; then \
-	  echo "No arm-none-eabi toolchain — run ../nucleo-f446re/scripts/setup-toolchain.sh" >&2; \
-	  exit 1; \
-	fi
+	$(MCU_ASSERT_GCC_TOOLCHAIN)
 	@test -f $(TFLM_MAKE) || (echo "Run: make fetch-tflm" >&2; exit 1)
 	@test -f $(BENCH_DIR)/generated/mnist_mlp.tflite || (echo "Run: make -C $(BENCH_DIR) export-assets" >&2; exit 1)
 

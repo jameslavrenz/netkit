@@ -13,34 +13,21 @@
 NETKIT_ROOT := $(abspath ../..)
 BOARD_NETKIT := $(abspath ../nucleo-f446re)
 BOARD_ROOT := $(abspath .)
+
+MCU_BOARD_COMMON := $(BOARD_NETKIT)
+include $(BOARD_NETKIT)/mcu_tflm_toolchain.mk
+
 TFLM_ROOT := $(NETKIT_ROOT)/benchmark/tflm/third_party/tflite-micro
 TFLM_MAKE := $(TFLM_ROOT)/tensorflow/lite/micro/tools/make/Makefile
 TFLM_DL := $(TFLM_ROOT)/tensorflow/lite/micro/tools/make/downloads
 BENCH_DIR := $(NETKIT_ROOT)/benchmark/tflm
 GMAKE ?= $(shell command -v gmake 2>/dev/null || command -v make 2>/dev/null)
 
-TOOLCHAIN_BIN := $(shell $(BOARD_NETKIT)/scripts/setup-toolchain.sh 2>/dev/null || true)
-ifneq ($(TOOLCHAIN_BIN),)
-  CC := $(TOOLCHAIN_BIN)/arm-none-eabi-gcc
-  CXX := $(TOOLCHAIN_BIN)/arm-none-eabi-g++
-  OBJCOPY := $(TOOLCHAIN_BIN)/arm-none-eabi-objcopy
-  SIZE := $(TOOLCHAIN_BIN)/arm-none-eabi-size
-else
-  CC := arm-none-eabi-gcc
-  CXX := arm-none-eabi-g++
-  OBJCOPY := arm-none-eabi-objcopy
-  SIZE := arm-none-eabi-size
-endif
-
 TFLM_TARGET := cortex_m_generic
 TFLM_ARCH := cortex-m4+fp
 TFLM_OPT_KERNEL := cmsis_nn
 TFLM_GENDIR := $(TFLM_ROOT)/gen/$(TFLM_TARGET)_$(TFLM_ARCH)_default_$(TFLM_OPT_KERNEL)_gcc
 TFLM_LIB := $(TFLM_GENDIR)/lib/libtensorflow-microlite.a
-
-MCU_FLAGS := -mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=hard
-OPT_FLAGS := -Os -ffunction-sections -fdata-sections -flto
-WARN_FLAGS := -Wall -Wextra
 
 BUILD_DIR := build
 TARGET := mnist_cnn_int8_tflm_nucleo_f446re
@@ -66,11 +53,10 @@ TFLM_CPPFLAGS := \
 	-DARMCM4 \
 	-DCMSIS_DEVICE_ARM_CORTEX_M_XX_HEADER_FILE=\"ARMCM4.h\"
 
-CFLAGS := $(MCU_FLAGS) $(OPT_FLAGS) $(WARN_FLAGS) -std=c23 -g $(INCLUDES) $(TFLM_CPPFLAGS)
-CXXFLAGS := $(MCU_FLAGS) $(OPT_FLAGS) $(WARN_FLAGS) -std=c++17 -g $(INCLUDES) $(TFLM_CPPFLAGS) \
-	-fno-rtti -fno-exceptions -fno-threadsafe-statics
-ASFLAGS := $(MCU_FLAGS) -g
-LDFLAGS := $(MCU_FLAGS) -flto -Wl,--gc-sections -T$(LINKER_SCRIPT) -Wl,-Map=$(BUILD_DIR)/$(TARGET).map
+CFLAGS := $(MCU_CORE_CFLAGS) $(MCU_DEBUG_FLAGS) $(INCLUDES) $(TFLM_CPPFLAGS)
+CXXFLAGS := $(MCU_CORE_CXXFLAGS) $(MCU_DEBUG_FLAGS) $(INCLUDES) $(TFLM_CPPFLAGS)
+ASFLAGS := $(MCU_ASFLAGS) $(MCU_DEBUG_FLAGS)
+LDFLAGS := $(MCU_LDFLAGS) -T$(LINKER_SCRIPT) -Wl,-Map=$(BUILD_DIR)/$(TARGET).map
 
 OBJS := \
 	$(BUILD_DIR)/startup.o \
@@ -88,11 +74,7 @@ OBJS := \
 all: check-deps microlite $(ELF) size
 
 check-deps:
-	@TOOLCHAIN_BIN="$$(../nucleo-f446re/scripts/setup-toolchain.sh)"; \
-	if [[ ! -x "$$TOOLCHAIN_BIN/arm-none-eabi-gcc" ]]; then \
-	  echo "No arm-none-eabi toolchain — run ../nucleo-f446re/scripts/setup-toolchain.sh" >&2; \
-	  exit 1; \
-	fi
+	$(MCU_ASSERT_GCC_TOOLCHAIN)
 	@test -f $(TFLM_MAKE) || (echo "Run: make fetch-tflm" >&2; exit 1)
 	@test -f $(BENCH_DIR)/generated/mnist_cnn_int8.tflite || (echo "Run: make export-cnn-int8" >&2; exit 1)
 	@test -f $(BENCH_DIR)/generated/mnist_cnn_int8_model_data.cc || (echo "Run: make export-cnn-int8" >&2; exit 1)
@@ -134,7 +116,7 @@ $(BUILD_DIR)/dwt_time.o: $(BOARD_NETKIT)/src/dwt_time.c
 
 $(BUILD_DIR)/syscalls.o: $(BOARD_NETKIT)/src/syscalls.c
 	@mkdir -p $(BUILD_DIR)
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) -fno-lto -c $< -o $@
 
 $(BUILD_DIR)/main.o: src/main.cc
 	@mkdir -p $(BUILD_DIR)

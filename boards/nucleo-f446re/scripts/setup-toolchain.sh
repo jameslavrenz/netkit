@@ -30,7 +30,21 @@ toolchain_bin() {
 
 verify_toolchain() {
   local bin="$1"
-  "$bin/arm-none-eabi-gcc" -xc -c - -o /dev/null <<'EOF' >/dev/null 2>&1
+  local cc="$bin/arm-none-eabi-gcc"
+  local cxx="$bin/arm-none-eabi-g++"
+  if [[ ! -x "$cc" || ! -x "$cxx" ]]; then
+    return 1
+  fi
+  if "$cc" --version 2>&1 | grep -Eiq 'clang|llvm'; then
+    return 1
+  fi
+  if "$cxx" --version 2>&1 | grep -Eiq 'clang|llvm'; then
+    return 1
+  fi
+  if ! "$cc" --version 2>&1 | grep -qi 'gcc'; then
+    return 1
+  fi
+  "$cc" -xc -c - -o /dev/null <<'EOF' >/dev/null 2>&1
 #include <stdint.h>
 int x;
 EOF

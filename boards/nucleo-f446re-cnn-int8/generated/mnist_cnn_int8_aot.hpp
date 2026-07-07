@@ -16,7 +16,7 @@ inline constexpr std::uint32_t kInputShape[] = {28, 28, 1};
 inline constexpr std::uint32_t kInputRank = 3u;
 inline constexpr std::size_t kArenaBytesAfterLoad = 89536u;
 inline constexpr std::size_t kArenaBytesAfterForward = 89536u;
-inline constexpr std::size_t kArenaBytesRecommended = 107456u;
+inline constexpr std::size_t kArenaBytesRecommended = 89536u;
 inline constexpr bool kQuantLowered = false;
 inline constexpr std::size_t kWorkspaceBytes = 0u;
 
