@@ -3,18 +3,23 @@
 # Build profile:
 #   NETKIT_TARGET=mcu, NETKIT_ARCH=CM4
 #   NETKIT_CMSIS_DSP=1, NETKIT_CMSIS_NN=1
-#   NETKIT_WEIGHTS_IN_RAM=0 (static weights in .rodata via quant lowered AOT)
+#   NETKIT_WEIGHTS_IN_RAM=0 (coefs in flash .rodata)
+#   Default: interpreter embed (--no-lower) — fair vs TFLM MicroInterpreter
+#   Optional: NETKIT_LOWERED=1 for quant lowered deployment profile
 #
 # Usage:
 #   make cmsis-init          # once, from repo root
 #   make export-mnist-cnn-int8  # once, from repo root (if model missing)
-#   make                     # build firmware.elf
+#   make                     # build firmware.elf (interpreter embed)
 #   ./scripts/flash.sh       # program via ST-Link (USB)
 #   ./scripts/monitor.sh     # read UART results (ST-Link VCP)
 
 NETKIT_ROOT := $(abspath ../..)
 BOARD_ROOT := $(abspath .)
 BOARD_COMMON := $(abspath ../nucleo-f446re)
+
+# 0 = interpreter embed (default, TFLM-fair). 1 = quant lowered call chain.
+NETKIT_LOWERED ?= 0
 
 CROSS_COMPILE ?= arm-none-eabi-
 TOOLCHAIN_BIN := $(shell ./scripts/setup-toolchain.sh 2>/dev/null || true)
@@ -161,9 +166,9 @@ LDFLAGS := $(MCU_FLAGS) -flto -Wl,--gc-sections -T$(LINKER_SCRIPT) -Wl,-Map=$(BU
 
 LIBNETKIT := $(LIB_DIR)/libnetkit_cnn_int8.a
 
-.PHONY: all clean flash monitor run export-aot check-deps size
+.PHONY: all clean flash monitor run export-embed check-deps size
 
-all: check-deps export-aot $(ELF) size
+all: check-deps export-embed $(ELF) size
 
 check-deps:
 	@TOOLCHAIN_BIN="$$(./scripts/setup-toolchain.sh)"; \
@@ -180,15 +185,18 @@ check-deps:
 	@test -f $(NETKIT_ROOT)/benchmark/tflm/generated/mnist_cnn_int8_test_images.cc || \
 		(echo "Missing int8 test images — run: python3 benchmark/tflm/tools/export_int8_test_images.py" >&2; exit 1)
 
-export-aot: $(GEN_DIR)/.aot_stamp
+export-embed: $(GEN_DIR)/.embed_stamp
 
-$(GEN_DIR)/.aot_stamp: $(NETKIT_ROOT)/models/mnist_cnn_int8.nk
+$(GEN_DIR)/.embed_stamp: $(NETKIT_ROOT)/models/mnist_cnn_int8.nk
 	@mkdir -p $(GEN_DIR)
 	cd $(NETKIT_ROOT) && PYTHONPATH=$(NETKIT_ROOT)/python python3 -m netkit aot models/mnist_cnn_int8.nk \
 		-o $(abspath $(GEN_DIR)) --language cpp --target mcu --arena-headroom 20 \
 		$(if $(filter 1,$(NETKIT_WEIGHTS_IN_RAM)),--weights-in-ram,--no-weights-in-ram) \
-		$(if $(filter 1,$(NETKIT_INTERPRETER)),--no-lower,)
-	@touch $(GEN_DIR)/.aot_stamp
+		$(if $(filter 1,$(NETKIT_LOWERED)),,--no-lower)
+	@touch $(GEN_DIR)/.embed_stamp
+
+# Back-compat alias (prefer export-embed).
+export-aot: export-embed
 
 $(LIBNETKIT): $(NETKIT_RUNTIME_SOURCES) $(CMSIS_DSP_SOURCES) $(CMSIS_NN_SOURCES)
 	@mkdir -p $(LIB_DIR)
@@ -259,6 +267,7 @@ size: $(ELF)
 
 clean:
 	rm -rf $(BUILD_DIR)
+	rm -f $(GEN_DIR)/.embed_stamp $(GEN_DIR)/.aot_stamp
 
 flash: $(ELF)
 	./scripts/flash.sh $(ELF)

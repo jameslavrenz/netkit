@@ -109,9 +109,9 @@ LDFLAGS := $(MCU_FLAGS) -flto -Wl,--gc-sections -T$(LINKER_SCRIPT) -Wl,-Map=$(BU
 
 LIBNETKIT := $(LIB_DIR)/libnetkit_mnist_mlp.a
 
-.PHONY: all clean flash monitor run export-aot check-deps size
+.PHONY: all clean flash monitor run export-embed check-deps size
 
-all: check-deps export-aot $(ELF) size
+all: check-deps export-embed $(ELF) size
 
 check-deps:
 	@TOOLCHAIN_BIN="$$(./scripts/setup-toolchain.sh)"; \
@@ -124,14 +124,16 @@ check-deps:
 	@test -f $(NETKIT_ROOT)/models/mnist_mlp.nk || \
 		(echo "Missing models/mnist_mlp.nk — run: make -C $(NETKIT_ROOT) export-mnist" >&2; exit 1)
 
-export-aot: $(GEN_DIR)/.aot_stamp
+export-embed: $(GEN_DIR)/.embed_stamp
 
-$(GEN_DIR)/.aot_stamp: $(NETKIT_ROOT)/models/mnist_mlp.nk $(NETKIT_ROOT)/python/netkit/aot_lower.py
+$(GEN_DIR)/.embed_stamp: $(NETKIT_ROOT)/models/mnist_mlp.nk $(NETKIT_ROOT)/python/netkit/aot_lower.py
 	@mkdir -p $(GEN_DIR)
 	cd $(NETKIT_ROOT) && PYTHONPATH=$(NETKIT_ROOT)/python python3 -m netkit aot models/mnist_mlp.nk \
 		-o $(abspath $(GEN_DIR)) --language cpp --target mcu --optimize --arena-headroom 20 \
 		$(if $(filter 1,$(NETKIT_WEIGHTS_IN_RAM)),--weights-in-ram,--no-weights-in-ram)
-	@touch $(GEN_DIR)/.aot_stamp
+	@touch $(GEN_DIR)/.embed_stamp
+
+export-aot: export-embed
 
 $(LIBNETKIT): $(NETKIT_MLP_SOURCES) $(CMSIS_DSP_SOURCES)
 	@mkdir -p $(LIB_DIR)

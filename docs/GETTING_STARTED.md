@@ -189,11 +189,16 @@ Format spec: [NK_FORMAT.md](NK_FORMAT.md). Python details: [python/README.md](..
 
 ---
 
-## 5. AOT compile (embed `.nk` in firmware)
+## 5. Embed `.nk` in firmware (`netkit aot`)
 
-This is the **compiled deployment path** — bake a validated `.nk` into firmware for minimum runtime overhead. The interpreter path (load `.nk` from file or buffer at runtime) is covered in sections 3–4 and in [PHILOSOPHY.md](PHILOSOPHY.md#deployment-modes-interpreter-or-compiled).
+The Python **`netkit aot`** command **packages** a `.nk` into C/C++ sources. That packaging step is required for both interpreter and lowered firmware — it is not the same as “compiled / no interpreter.” See [PHILOSOPHY.md — embed vs lowered](PHILOSOPHY.md#terminology-embed-vs-lowered).
 
-After you have a validated `.nk`, the Python packager can embed it as a static byte array and generate load/run wrappers for the runtime:
+| Goal | Command |
+|------|---------|
+| **Interpreter embed** (TFLM-fair, swap graph without re-lowering) | `python -m netkit aot model.nk -o out --no-lower` |
+| **Lowered / compiled** (C++ default — static kernel chain) | `python -m netkit aot model.nk -o out` |
+
+After you have a validated `.nk`, embed it as a static byte array and generate load/run wrappers:
 
 ```bash
 # Default: C++26 lowered static Kernels:: chain (.hpp + .cpp)

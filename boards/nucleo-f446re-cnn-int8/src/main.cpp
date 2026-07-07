@@ -1,5 +1,5 @@
 // NUCLEO-F446RE MNIST CNN int8 invoke benchmark — same 10 images as benchmark/netkit.
-// Supports quant lowered AOT or interpreter embed (.nk loader via --no-lower AOT).
+// Supports interpreter embed (default) or quant lowered embed (NETKIT_LOWERED=1).
 // Test inputs are prequantized int8 (export_int8_test_images.py) — no float conversion.
 // Dequantized confidence is computed offline — see benchmark/tools/parse_mcu_cnn_int8_log.py.
 

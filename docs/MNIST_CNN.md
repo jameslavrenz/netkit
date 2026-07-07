@@ -56,7 +56,9 @@ make -C boards/nucleo-f446re-cnn-int8
 cd boards/nucleo-f446re-cnn-int8 && ./scripts/flash.sh && ./scripts/monitor.sh
 ```
 
-Verified: **10/10** accuracy, **~137 ms** mean invoke (quant lowered AOT, 64-byte arena). See [boards/nucleo-f446re-cnn-int8/README.md](../boards/nucleo-f446re-cnn-int8/README.md).
+Verified: **10/10** accuracy, **~144 ms** mean invoke (interpreter embed, default `make`). See [boards/nucleo-f446re-cnn-int8/README.md](../boards/nucleo-f446re-cnn-int8/README.md).
+
+Optional quant lowered deployment build: `make NETKIT_LOWERED=1` (~137 ms in prior lowered runs).
 
 UART captures `DIGIT_SUMMARY` lines with raw int8 softmax (`pred_i8`, `out_i8=...`). Dequantized per-digit confidence is computed offline — not on device:
 

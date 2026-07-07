@@ -43,11 +43,22 @@ For production firmware with a **fixed model**, compile as much work as possible
 
 Both modes call the **same kernels** (`Kernels::MatMul`, `Conv2D`, …). The compiled path moves graph rewriting and model embedding to **build time** so inference does less dispatch and allocation work. Phase 2 expands packager-side compilation (layout, quantization, target profiles) — see below.
 
+### Terminology: embed vs lowered
+
+The CLI command is `python -m netkit aot`, but that name covers **two different outputs**. Do not read “AOT” as always meaning “no interpreter.”
+
+| Term | CLI | On-device runtime | Comparable to |
+|------|-----|-------------------|---------------|
+| **Interpreter embed** | `aot … --no-lower` | `.nk` blob in flash → `NkLoader` → `NkOpsResolver` per layer | TFLM: `.tflite` blob → `MicroInterpreter` |
+| **Lowered / compiled** | `aot` (C++ default) | Static `Kernels::` or `CmsisQuantPlan` call chain; explicit weights; **no loader** | Custom fused firmware (not TFLM) |
+
+Generated files are still named `*_aot.{hpp,cpp}` for historical reasons. Makefile targets use **`export-embed`** for the packaging step (both modes). MCU **benchmark** firmware defaults to **interpreter embed** for apples-to-apples host and on-device comparisons with TFLM.
+
 Pipeline comparison:
 
 ```text
-Interpreter:  model.nk  ──load──►  NkOpsResolver::Find  ──►  Kernels
-Compiled:     model.onnx  ──convert/optimize──►  model.nk  ──aot──►  flash blob + wrappers  ──►  Kernels
+Interpreter embed:  model.nk  ──aot --no-lower──►  flash blob  ──load──►  NkOpsResolver  ──►  Kernels
+Lowered / compiled: model.onnx  ──convert/optimize──►  model.nk  ──aot──►  static call chain  ──►  Kernels
 ```
 
 Details: [GETTING_STARTED.md](GETTING_STARTED.md#5-aot-compile-embed-nk-in-firmware), [BUILD_TARGETS.md](BUILD_TARGETS.md#layer-dispatch-opsresolver), [python/README.md](../python/README.md).

@@ -24,8 +24,8 @@ step_export() {
   ls -la "$REPO/benchmark/tflm/generated/mnist_cnn_int8_test_images.cc"
 }
 
-step_build() {
-  echo "=== [2/4] build firmware ==="
+  step_build() {
+  echo "=== [2/4] build firmware (interpreter embed by default) ==="
   make -C "$ROOT"
   "$ROOT/scripts/setup-toolchain.sh" >/dev/null
   TOOLCHAIN_BIN="$("$ROOT/scripts/setup-toolchain.sh")"

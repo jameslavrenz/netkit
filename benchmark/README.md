@@ -142,7 +142,7 @@ Host `compare.sh` numbers are not a direct preview of Cortex-M ratios. For firmw
 | Firmware | Model | Backend | Notes |
 |----------|-------|---------|-------|
 | [boards/nucleo-f446re](../boards/nucleo-f446re/README.md) | MNIST MLP f32 | CMSIS-DSP lowered AOT | ~10.7 ms, 10/10 |
-| [boards/nucleo-f446re-cnn-int8](../boards/nucleo-f446re-cnn-int8/README.md) | MNIST CNN int8 | CMSIS-NN quant lowered AOT | ~145 ms, 10/10 |
+| [boards/nucleo-f446re-cnn-int8](../boards/nucleo-f446re-cnn-int8/README.md) | MNIST CNN int8 | CMSIS-NN interpreter embed | ~144 ms, 10/10 (TFLM-fair default) |
 | [boards/nucleo-f446re-tflm-cnn-int8](../boards/nucleo-f446re-tflm-cnn-int8/README.md) | MNIST CNN int8 | TFLite Micro | comparison baseline |
 
 Shared **float** test vectors: `benchmark/tflm/generated/mnist_*_test_images.{h,cc}`
@@ -153,6 +153,11 @@ Shared **float** test vectors: `benchmark/tflm/generated/mnist_*_test_images.{h,
 make export-mnist-cnn-int8
 python3 benchmark/tflm/tools/export_int8_test_images.py
 make -C boards/nucleo-f446re-cnn-int8 && cd boards/nucleo-f446re-cnn-int8 && ./scripts/flash.sh
+```
+
+Default `make` builds **interpreter embed** (`--no-lower`). For quant lowered deployment profiling: `make NETKIT_LOWERED=1`.
+
+```bash
 ./scripts/monitor.sh   # press RESET
 ```
 
