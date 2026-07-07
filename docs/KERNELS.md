@@ -75,6 +75,8 @@ On **MCU with both CMSIS flags**, CMSIS-NN owns layer kernels; CMSIS-DSP acceler
 
 **Fused blocks** (ResNet BasicBlock, MobileNetV4 UIB, ConvNeXt V2) route internal BN, ReLU, FC, LayerNorm, GELU, GRN, and residual adds through `fused_kernel_ops.hpp` → `Kernels::`, so CMSIS applies when enabled. Composite blocks do not introduce separate CMSIS entry points — they delegate to the same `Try*` paths as primitives. When CMSIS-NN rejects a case (e.g. depthwise conv with asymmetric padding), the reference kernel handles it automatically.
 
+**Float im2col conv** (reference path when CMSIS-NN is off or rejects a case): partial and full im2col use `Kernels::MatMulImpl` and `arm_dot_prod_f32` when `NETKIT_USE_CMSIS_DSP=1`, not hard-coded reference matmul/dot loops. Asymmetric-padding conv fallbacks go through `Conv2dDispatchForward` so specialized kernels remain in the dispatch chain.
+
 ### CMSIS kernel workspace
 
 On **CMSIS-NN** builds, CNN `InitActivationBuffers` walks the layer graph and sizes one **shared arena buffer** to the maximum CMSIS scratch requirement (conv, depthwise conv, GELU). `CNNNetwork::forward` activates this buffer for the duration of the pass; `CmsisNnKernel` binds it via `BindCmsisWorkspace` instead of stack `alloca`. If the workspace is missing or too small, `Try*` returns false and the reference kernel runs.

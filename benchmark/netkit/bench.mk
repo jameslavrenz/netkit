@@ -76,6 +76,7 @@ ifeq ($(CMSIS_DSP),1)
   CMSIS_DSP_SOURCES := \
     $(CMSIS_DSP_DIR)/Source/BasicMathFunctions/arm_add_f32.c \
     $(CMSIS_DSP_DIR)/Source/BasicMathFunctions/arm_mult_f32.c \
+    $(CMSIS_DSP_DIR)/Source/BasicMathFunctions/arm_dot_prod_f32.c \
     $(CMSIS_DSP_DIR)/Source/BasicMathFunctions/arm_scale_f32.c \
     $(CMSIS_DSP_DIR)/Source/BasicMathFunctions/arm_offset_f32.c \
     $(CMSIS_DSP_DIR)/Source/BasicMathFunctions/arm_clip_f32.c \

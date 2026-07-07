@@ -140,12 +140,14 @@ Convert ONNX → `.nk` with `python -m netkit convert` or `make export-nk`. Supp
 
 ## Optional CMSIS backends
 
+CMSIS backends are **not** inferred from `NETKIT_ARCH` — set `NETKIT_CMSIS_*=1` explicitly or use **profile defaults** (`cpu`: DSP only; `mcu`: DSP + NN; `mpu`: DSP only).
+
 | Backend | When enabled | Targets |
 |---------|----------------|---------|
 | **CMSIS-NN** | `NETKIT_CMSIS_NN=1` + `NETKIT_TARGET=mcu` + Cortex-M `NETKIT_ARCH` | MCU firmware (CM4, M33, …) |
 | **CMSIS-DSP** | `NETKIT_CMSIS_DSP=1` | Desktop, MCU, MPU |
 
-On **cpu** or **mpu**, `NETKIT_CMSIS_NN=1` prints a Make warning and is ignored — reference kernels (and optional CMSIS-DSP) apply. Backend selection is compile-time CRTP — see [KERNELS.md](KERNELS.md) and [BUILD_TARGETS.md](BUILD_TARGETS.md#cmsis-backends).
+On **cpu** or **mpu**, `NETKIT_CMSIS_NN=1` prints a Make warning and is ignored — reference kernels (and optional CMSIS-DSP) apply. When CMSIS-DSP is enabled, float im2col paths use `Kernels::MatMulImpl` and `arm_dot_prod_f32` instead of reference loops. Backend selection is compile-time CRTP — see [KERNELS.md](KERNELS.md) and [BUILD_TARGETS.md](BUILD_TARGETS.md#cmsis-backends).
 
 ## Testing
 

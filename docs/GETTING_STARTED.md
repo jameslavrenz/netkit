@@ -129,12 +129,21 @@ See the full core table in [BUILD_TARGETS.md](BUILD_TARGETS.md#target-architectu
 
 ### Optional CMSIS backends
 
-`make cmsis-init` fetches **CMSIS-Core** (device headers for MCU cross-builds), **CMSIS-NN**, and **CMSIS-DSP** as git submodules. Fetch once, then enable backends at compile time (no runtime switching):
+`make cmsis-init` fetches **CMSIS-Core** (device headers for MCU cross-builds), **CMSIS-NN**, and **CMSIS-DSP** as git submodules. Backends are **opt-in** at compile time (`NETKIT_CMSIS_*=1`) — not inferred from `NETKIT_ARCH` alone.
+
+**Profile defaults** after `cmsis-init`:
+
+| `NETKIT_TARGET` | CMSIS-DSP | CMSIS-NN |
+|-----------------|-----------|----------|
+| `cpu` | on | off |
+| `mcu` | on | on (needs Cortex-M `NETKIT_ARCH`) |
+| `mpu` | on | off |
 
 ```bash
 make cmsis-init
-make NETKIT_CMSIS_DSP=1 test-cpp   # desktop / MPU vector ops
-make NETKIT_TARGET=mcu NETKIT_ARCH=CM4 NETKIT_CMSIS_NN=1 lib   # MCU CMSIS-NN (firmware)
+make test-cpp                                    # cpu: CMSIS-DSP on by default
+make NETKIT_TARGET=mcu NETKIT_ARCH=CM4 lib       # mcu firmware: DSP + NN
+make NETKIT_CMSIS_DSP=0 NETKIT_CMSIS_NN=0 test   # reference kernels only (CI)
 ```
 
 ### Embedded smoke (MCU/MPU bring-up)
@@ -163,7 +172,7 @@ cmake --build cmake-build
 ./cmake-build/netkit test
 ```
 
-Use `-DNETKIT_ARCH=CM4`, `-DNETKIT_TARGET=mcu`, `-DNETKIT_CMSIS_NN=ON` for MCU firmware. Desktop CMake builds enable CMSIS-DSP by default; CMSIS-NN requires MCU + Cortex-M arch.
+Use `-DNETKIT_ARCH=CM4`, `-DNETKIT_TARGET=mcu` for MCU firmware (CMake defaults: CMSIS-DSP and CMSIS-NN on for `mcu`, DSP-only for `cpu`/`mpu`). Override with `-DNETKIT_CMSIS_DSP=OFF` / `-DNETKIT_CMSIS_NN=OFF`.
 
 ### Size a buffer for your model
 

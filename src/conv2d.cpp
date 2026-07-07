@@ -1,6 +1,6 @@
 #include "conv2d.hpp"
 #include "active_kernel.hpp"
-#include "reference_kernel.hpp"
+#include "conv_dispatch.hpp"
 
 bool Conv2D::forward(const Tensor& input, Tensor& output, NetkitKernelActivation fuse_activation)
 {
@@ -24,18 +24,18 @@ bool Conv2D::forward(const Tensor& input, Tensor& output, NetkitKernelActivation
         }
     }
 
-    return ReferenceKernel::Conv2dForwardImpl(input,
-                                              weights,
-                                              bias,
-                                              kernel_size,
-                                              stride,
-                                              pad_h,
-                                              pad_w,
-                                              pad_h_end,
-                                              pad_w_end,
-                                              in_channels,
-                                              out_channels,
-                                              fuse_activation,
-                                              output,
-                                              weights_hwio);
+    return Conv2dDispatchForward(input,
+                                 weights,
+                                 bias,
+                                 kernel_size,
+                                 stride,
+                                 pad_h,
+                                 pad_w,
+                                 pad_h_end,
+                                 pad_w_end,
+                                 in_channels,
+                                 out_channels,
+                                 fuse_activation,
+                                 output,
+                                 weights_hwio);
 }

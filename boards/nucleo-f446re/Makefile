@@ -1,7 +1,8 @@
 # NUCLEO-F446RE (STM32F446RET6) — MNIST MLP f32 benchmark firmware.
 #
-# Build profile:
-#   NETKIT_TARGET=mcu, NETKIT_ARCH=CM4, NETKIT_CMSIS_DSP=1, NETKIT_WEIGHTS_IN_RAM=0
+# Build profile (explicit CMSIS opt-in):
+#   NETKIT_CMSIS_DSP=1, NETKIT_CMSIS_NN=1
+#   NETKIT_TARGET=mcu, NETKIT_ARCH=CM4, NETKIT_WEIGHTS_IN_RAM=0
 #
 # Usage:
 #   make cmsis-init          # once, from repo root
@@ -41,10 +42,14 @@ INCLUDES := \
 # Override: make NETKIT_WEIGHTS_IN_RAM=1  (MNIST needs ~489 KiB arena — exceeds 128 KiB SRAM on F446)
 NETKIT_WEIGHTS_IN_RAM ?= 0
 
+NETKIT_CMSIS_DSP ?= 1
+NETKIT_CMSIS_NN ?= 1
+
 NETKIT_CPPFLAGS := \
 	-DNETKIT_TARGET_MCU=1 \
 	-DNETKIT_WEIGHTS_IN_RAM=$(NETKIT_WEIGHTS_IN_RAM) \
-	-DNETKIT_USE_CMSIS_DSP=1 \
+	$(if $(filter 1,$(NETKIT_CMSIS_DSP)),-DNETKIT_USE_CMSIS_DSP=1,) \
+	$(if $(filter 1,$(NETKIT_CMSIS_NN)),-DNETKIT_USE_CMSIS_NN=1,) \
 	-DNETKIT_LOOP_UNROLL=0 \
 	-DNETKIT_IM2COL_FULL=0 \
 	-DARM_MATH_CM4 \
@@ -63,6 +68,7 @@ NETKIT_MLP_SOURCES := \
 CMSIS_DSP_SOURCES := \
 	$(NETKIT_ROOT)/third_party/CMSIS-DSP/Source/BasicMathFunctions/arm_add_f32.c \
 	$(NETKIT_ROOT)/third_party/CMSIS-DSP/Source/BasicMathFunctions/arm_mult_f32.c \
+	$(NETKIT_ROOT)/third_party/CMSIS-DSP/Source/BasicMathFunctions/arm_dot_prod_f32.c \
 	$(NETKIT_ROOT)/third_party/CMSIS-DSP/Source/BasicMathFunctions/arm_scale_f32.c \
 	$(NETKIT_ROOT)/third_party/CMSIS-DSP/Source/BasicMathFunctions/arm_offset_f32.c \
 	$(NETKIT_ROOT)/third_party/CMSIS-DSP/Source/BasicMathFunctions/arm_clip_f32.c \

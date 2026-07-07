@@ -21,11 +21,11 @@
  *     (flash/XIP or a single arena/file-backed blob); arena holds activations and structs.
  *     Override with NETKIT_WEIGHTS_IN_RAM=0|1.
  *
- * Optional kernel backends (Makefile / CMake):
- *   NETKIT_USE_CMSIS_NN  — ARM CMSIS-NN when NETKIT_TARGET_MCU + Cortex-M NETKIT_ARCH (flag ignored elsewhere)
- *   NETKIT_USE_CMSIS_DSP — ARM CMSIS-DSP float32 vector/matrix ops + clip
- *   On MCU with both enabled, NN owns overlapping layer ops; DSP is not a fallback.
- *   On desktop and MPU, NETKIT_CMSIS_NN=1 is ignored (warning) — reference kernels and optional CMSIS-DSP apply.
+ * Optional kernel backends (Makefile / CMake — explicit NETKIT_CMSIS_*=1, profile defaults per target):
+ *   NETKIT_USE_CMSIS_NN  — when NETKIT_CMSIS_NN=1 on MCU + Cortex-M NETKIT_ARCH
+ *   NETKIT_USE_CMSIS_DSP — when NETKIT_CMSIS_DSP=1 (cpu/mpu/mcu)
+ *   Profile defaults (Makefile): cpu=DSP only, mcu=DSP+NN, mpu=DSP only. Override with NETKIT_CMSIS_*=0.
+ *   CMSIS-NN is ignored on cpu/mpu even if NETKIT_CMSIS_NN=1 (warning).
  *
  * Optional reference-kernel tuning (Makefile / CMake):
  *   NETKIT_IM2COL_FULL — When 1, float Conv2D may use full im2col + GEMM on large layers

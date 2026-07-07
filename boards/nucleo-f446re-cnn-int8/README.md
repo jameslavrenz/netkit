@@ -12,7 +12,7 @@ Runs the **same MNIST CNN benchmark** as `benchmark/netkit/` and `benchmark/tflm
 |---------|--------|
 | Target | `NETKIT_TARGET_MCU` |
 | Arch | `NETKIT_ARCH=CM4` (Cortex-M4F) |
-| CMSIS | **CMSIS-DSP** + **CMSIS-NN** enabled |
+| CMSIS | **CMSIS-NN** enabled; float **CMSIS-DSP** off in quant-only profile (`NETKIT_MCU_QUANT_ONLY=1`) |
 | Weights | **Flash** — embedded `.nk` blob in `.rodata` (`NETKIT_WEIGHTS_IN_RAM=0`) |
 | Deployment | **Interpreter embed** — `NkLoader` + `NkOpsResolver` (same class as TFLM blob + interpreter) |
 | Dtype | int8 weights / activations; int8 softmax output; prequantized int8 test inputs |

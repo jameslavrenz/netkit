@@ -177,13 +177,22 @@ make rebuild
 
 ### Optional CMSIS backends and architecture
 
+CMSIS backends are **opt-in** via `NETKIT_CMSIS_*=1` (or CMake `-DNETKIT_CMSIS_*=ON`). They are **not** inferred from `NETKIT_ARCH` alone — `NETKIT_ARCH` only sets `ARM_MATH_*` tuning flags.
+
+**Profile defaults** (override on the command line, e.g. `make NETKIT_CMSIS_DSP=0`):
+
+| `NETKIT_TARGET` | Default CMSIS-DSP | Default CMSIS-NN |
+|-----------------|-------------------|------------------|
+| `cpu` | on | off |
+| `mcu` | on | on (Cortex-M `NETKIT_ARCH` required) |
+| `mpu` | on | off |
+
 ```bash
 make cmsis-init
-make NETKIT_CMSIS_DSP=1 test-cpp                   # CMSIS-DSP (desktop / MPU / MCU)
-make NETKIT_ARCH=CM4 NETKIT_TARGET=mcu NETKIT_CMSIS_NN=1 NETKIT_CMSIS_DSP=1 lib   # MCU + NN
+make test-cpp                         # cpu: CMSIS-DSP on by default
+make NETKIT_TARGET=mcu NETKIT_ARCH=CM4 lib   # mcu: CMSIS-DSP + CMSIS-NN
 
 # Host smoke before on-device bring-up (7 profiles; sets NETKIT_HOST_SMOKE=1)
-make cmsis-init
 make test-embedded-smoke-matrix
 ```
 

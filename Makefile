@@ -14,11 +14,14 @@
 # Weight load policy (buffer / AOT path only; file load always copies to arena):
 #   NETKIT_WEIGHTS_IN_RAM=1|0 — default 0 (coefs in flash/blob); set 1 to copy payload to SRAM
 #
-# Optional CMSIS-NN kernels (Apache-2.0, fetch with ./tools/fetch_cmsis_nn.sh):
+# Optional CMSIS backends (opt-in via NETKIT_CMSIS_*=1; profile defaults below):
 #   NETKIT_CMSIS_NN=1      — Cortex-M MCU only (NETKIT_TARGET=mcu + NETKIT_ARCH=CM4|M33|...)
+#   NETKIT_CMSIS_DSP=1     — CMSIS-DSP float32 vector/matrix ops
 #
-# Optional CMSIS-DSP kernels (Apache-2.0, fetch with ./tools/fetch_cmsis_dsp.sh):
-#   NETKIT_CMSIS_DSP=1     — use ARM CMSIS-DSP float32 vector/matrix ops in Ops::
+# Profile defaults (override on command line, e.g. make NETKIT_CMSIS_DSP=0):
+#   cpu — CMSIS-DSP on, CMSIS-NN off
+#   mcu — both on (requires NETKIT_ARCH=CM4|M33|... for NN)
+#   mpu — CMSIS-DSP on, CMSIS-NN off
 #
 # Optional reference-kernel loop unroll (netkit code only; not CMSIS):
 #   NETKIT_IM2COL_FULL=1    — opt-in full im2col+GEMM for large float Conv2D (default 0 = partial).
@@ -58,8 +61,19 @@ NETKIT_TARGET ?= cpu
 NETKIT_GLOBAL_ARENA ?= 0
 NETKIT_HEAP_ARENA ?= 0
 NETKIT_WEIGHTS_IN_RAM ?= 0
-NETKIT_CMSIS_NN ?= 0
-NETKIT_CMSIS_DSP ?= 0
+ifeq ($(NETKIT_TARGET),cpu)
+  NETKIT_CMSIS_DSP ?= 1
+  NETKIT_CMSIS_NN ?= 0
+else ifeq ($(NETKIT_TARGET),mcu)
+  NETKIT_CMSIS_DSP ?= 1
+  NETKIT_CMSIS_NN ?= 1
+else ifeq ($(NETKIT_TARGET),mpu)
+  NETKIT_CMSIS_DSP ?= 1
+  NETKIT_CMSIS_NN ?= 0
+else
+  NETKIT_CMSIS_DSP ?= 0
+  NETKIT_CMSIS_NN ?= 0
+endif
 NETKIT_IM2COL_FULL ?= 0
 NETKIT_LOOP_UNROLL ?= 0
 NETKIT_ARCH ?=

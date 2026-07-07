@@ -34,7 +34,10 @@ function(netkit_apply_cmsis_target_flags cmsis_target)
 endfunction()
 
 function(netkit_add_cmsis_nn target)
-    if(NOT NETKIT_TARGET STREQUAL "mcu" OR NOT NETKIT_ENV_CMSIS_NN)
+    if(NOT NETKIT_CMSIS_NN)
+        return()
+    endif()
+    if(NOT NETKIT_TARGET STREQUAL "mcu")
         message(WARNING
             "NETKIT_CMSIS_NN=ON ignored — requires NETKIT_TARGET=mcu and Cortex-M NETKIT_ARCH; using reference kernels")
         return()
@@ -101,6 +104,7 @@ function(netkit_add_cmsis_dsp target)
     set(CMSIS_DSP_SOURCES
         Source/BasicMathFunctions/arm_add_f32.c
         Source/BasicMathFunctions/arm_mult_f32.c
+        Source/BasicMathFunctions/arm_dot_prod_f32.c
         Source/BasicMathFunctions/arm_scale_f32.c
         Source/BasicMathFunctions/arm_offset_f32.c
         Source/BasicMathFunctions/arm_clip_f32.c

@@ -1,7 +1,7 @@
 #include "im2col_full.hpp"
 
+#include "active_kernel.hpp"
 #include "kernel_activation.hpp"
-#include "reference_kernel.hpp"
 #include "tensor.hpp"
 
 namespace
@@ -143,7 +143,7 @@ bool ConvFullIm2ColForward(const float* in,
     output.num_elements = out_spatial * out_ch;
     output.bytes = output.num_elements * sizeof(float);
 
-    ReferenceKernel::MatMulImpl(col, wt, output);
+    Kernels::MatMulImpl(col, wt, output);
 
     for (uint32_t s = 0; s < out_spatial; ++s)
     {

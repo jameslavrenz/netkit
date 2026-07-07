@@ -1,8 +1,8 @@
 # NUCLEO-F446RE (STM32F446RET6) — MNIST CNN int8 benchmark firmware.
 #
-# Build profile:
-#   NETKIT_TARGET=mcu, NETKIT_ARCH=CM4
+# Build profile (explicit CMSIS opt-in — not inferred from NETKIT_TARGET alone):
 #   NETKIT_CMSIS_DSP=1, NETKIT_CMSIS_NN=1
+#   NETKIT_TARGET=mcu, NETKIT_ARCH=CM4
 #   NETKIT_WEIGHTS_IN_RAM=0 (coefs in flash .rodata)
 #   Toolchain: boards/nucleo-f446re/mcu_tflm_toolchain.mk (TFLM microlite tiers:
 #     CORE -Os, KERNEL/THIRD_PARTY_KERNEL -O2, -flto link)
@@ -53,16 +53,23 @@ INCLUDES := \
 
 NETKIT_WEIGHTS_IN_RAM ?= 0
 
+NETKIT_CMSIS_DSP ?= 1
+NETKIT_CMSIS_NN ?= 1
+
 NETKIT_QUANT_TRACE ?= 0
 NETKIT_MCU_QUANT_ONLY ?= 1
+
+ifeq ($(NETKIT_MCU_QUANT_ONLY),1)
+NETKIT_CMSIS_DSP := 0
+endif
 
 NETKIT_CPPFLAGS := \
 	-DNETKIT_TARGET_MCU=1 \
 	-DNETKIT_MCU_QUANT_ONLY=$(NETKIT_MCU_QUANT_ONLY) \
 	-DNETKIT_KERNELS_OPTIMIZED_FOR_SPEED=1 \
 	-DNETKIT_WEIGHTS_IN_RAM=$(NETKIT_WEIGHTS_IN_RAM) \
-	-DNETKIT_USE_CMSIS_DSP=1 \
-	-DNETKIT_USE_CMSIS_NN=1 \
+	$(if $(filter 1,$(NETKIT_CMSIS_DSP)),-DNETKIT_USE_CMSIS_DSP=1,) \
+	$(if $(filter 1,$(NETKIT_CMSIS_NN)),-DNETKIT_USE_CMSIS_NN=1,) \
 	-DNETKIT_QUANT_TRACE=$(NETKIT_QUANT_TRACE) \
 	$(if $(filter 0,$(NETKIT_QUANT_TRACE)),,-DNETKIT_QUANT_TRACE_UART=1) \
 	-DNETKIT_LOOP_UNROLL=0 \
@@ -157,6 +164,7 @@ NETKIT_CORE_RUNTIME_SOURCES := $(filter-out $(NETKIT_KERNEL_RUNTIME_SOURCES),$(N
 CMSIS_DSP_SOURCES := \
 	$(CMSIS_DSP_DIR)/Source/BasicMathFunctions/arm_add_f32.c \
 	$(CMSIS_DSP_DIR)/Source/BasicMathFunctions/arm_mult_f32.c \
+	$(CMSIS_DSP_DIR)/Source/BasicMathFunctions/arm_dot_prod_f32.c \
 	$(CMSIS_DSP_DIR)/Source/BasicMathFunctions/arm_scale_f32.c \
 	$(CMSIS_DSP_DIR)/Source/BasicMathFunctions/arm_offset_f32.c \
 	$(CMSIS_DSP_DIR)/Source/BasicMathFunctions/arm_clip_f32.c \

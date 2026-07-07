@@ -126,8 +126,8 @@ make test-embedded-smoke-matrix   # 7-profile host smoke (see TESTING.md)
 ## Quick commands (CMake)
 
 ```bash
-# Desktop — CMSIS-DSP on by default, reference NN
-cmake -B cmake-build
+# Desktop — CMSIS-DSP on by default (cpu profile), CMSIS-NN off
+cmake -B cmake-build -DNETKIT_TARGET=cpu
 cmake --build cmake-build
 ./cmake-build/netkit test
 
@@ -229,20 +229,27 @@ Both backends are **compile-time only** — one binary, one backend set; no runt
 
 ### Make flags
 
+CMSIS backends are **not** inferred from `NETKIT_ARCH` alone — use `NETKIT_CMSIS_*=1` or the **profile defaults** below. Override with `make NETKIT_CMSIS_DSP=0` (CI uses reference kernels this way).
+
+| `NETKIT_TARGET` | Default `NETKIT_CMSIS_DSP` | Default `NETKIT_CMSIS_NN` |
+|-----------------|----------------------------|---------------------------|
+| `cpu` | 1 | 0 |
+| `mcu` | 1 | 1 (effective only with Cortex-M `NETKIT_ARCH`) |
+| `mpu` | 1 | 0 |
+
 ```bash
 make cmsis-init
 
-# CMSIS-NN — MCU + Cortex-M arch only
-make NETKIT_ARCH=CM4 NETKIT_TARGET=mcu NETKIT_CMSIS_NN=1 lib
+# Profile defaults (no extra flags needed after cmsis-init)
+make test-cpp                    # cpu: CMSIS-DSP
+make NETKIT_TARGET=mcu lib       # mcu: CMSIS-DSP + CMSIS-NN (set NETKIT_ARCH=CM4 for NN)
+make NETKIT_TARGET=mpu lib       # mpu: CMSIS-DSP only
 
-# CMSIS-DSP — desktop, MCU, or MPU
-make NETKIT_CMSIS_DSP=1 test-cpp
+# Explicit off (reference kernels)
+make NETKIT_CMSIS_DSP=0 NETKIT_CMSIS_NN=0 rebuild test
 
 # Reference-kernel 4× loop unroll — experimental (MPU only if at all; increases .text)
 make NETKIT_LOOP_UNROLL=1 test-cpp
-
-# MCU firmware with both
-make NETKIT_ARCH=CM4 NETKIT_TARGET=mcu NETKIT_CMSIS_NN=1 NETKIT_CMSIS_DSP=1 lib
 ```
 
 | Makefile flag | Macro | Effect |
