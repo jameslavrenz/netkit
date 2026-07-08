@@ -74,6 +74,16 @@ else
   NETKIT_CMSIS_DSP ?= 0
   NETKIT_CMSIS_NN ?= 0
 endif
+# In CI, exercise CMSIS-DSP only for the host cpu build (CMSIS-DSP's portable
+# __GNUC_PYTHON__ path). Cross-target (mcu/mpu) host compile-checks — e.g. the
+# AOT MCU codegen test's `make NETKIT_TARGET=mcu lib` — have no ARM toolchain or
+# CMSIS-Core headers on the runner, so keep them on reference kernels.
+ifeq ($(GITHUB_ACTIONS),true)
+  ifneq ($(NETKIT_TARGET),cpu)
+    override NETKIT_CMSIS_DSP := 0
+    override NETKIT_CMSIS_NN := 0
+  endif
+endif
 NETKIT_IM2COL_FULL ?= 0
 NETKIT_LOOP_UNROLL ?= 0
 NETKIT_ARCH ?=
