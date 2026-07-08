@@ -57,22 +57,26 @@ inline void scale_contiguous(float* c, float scalar, uint32_t count)
 
 inline float dot_contiguous(const float* a, const float* b, uint32_t count)
 {
-    float sum = 0.0f;
-#if NETKIT_LOOP_UNROLL
+    // Four independent accumulators break the serial FMA dependency chain: the FPU
+    // can keep several multiply-adds in flight instead of stalling on each one's
+    // latency, turning this reduction from latency-bound into throughput-bound.
+    // Kept always-on (not behind NETKIT_LOOP_UNROLL) because it is the hot path for
+    // the fully-connected/matmul kernels and the extra code size is a few instructions.
+    float s0 = 0.0f;
+    float s1 = 0.0f;
+    float s2 = 0.0f;
+    float s3 = 0.0f;
     uint32_t t = 0;
     for (; t + 4u <= count; t += 4u)
     {
-        sum += a[t] * b[t];
-        sum += a[t + 1u] * b[t + 1u];
-        sum += a[t + 2u] * b[t + 2u];
-        sum += a[t + 3u] * b[t + 3u];
+        s0 += a[t] * b[t];
+        s1 += a[t + 1u] * b[t + 1u];
+        s2 += a[t + 2u] * b[t + 2u];
+        s3 += a[t + 3u] * b[t + 3u];
     }
+    float sum = (s0 + s1) + (s2 + s3);
     for (; t < count; ++t)
         sum += a[t] * b[t];
-#else
-    for (uint32_t t = 0; t < count; ++t)
-        sum += a[t] * b[t];
-#endif
     return sum;
 }
 
@@ -82,22 +86,22 @@ inline float dot_strided(const float* a,
                          uint32_t b_stride,
                          uint32_t count)
 {
-    float sum = 0.0f;
-#if NETKIT_LOOP_UNROLL
+    // Four independent accumulators break the serial FMA dependency chain (see dot_contiguous).
+    float s0 = 0.0f;
+    float s1 = 0.0f;
+    float s2 = 0.0f;
+    float s3 = 0.0f;
     uint32_t t = 0;
     for (; t + 4u <= count; t += 4u)
     {
-        sum += a[t * a_stride] * b[t * b_stride];
-        sum += a[(t + 1u) * a_stride] * b[(t + 1u) * b_stride];
-        sum += a[(t + 2u) * a_stride] * b[(t + 2u) * b_stride];
-        sum += a[(t + 3u) * a_stride] * b[(t + 3u) * b_stride];
+        s0 += a[t * a_stride] * b[t * b_stride];
+        s1 += a[(t + 1u) * a_stride] * b[(t + 1u) * b_stride];
+        s2 += a[(t + 2u) * a_stride] * b[(t + 2u) * b_stride];
+        s3 += a[(t + 3u) * a_stride] * b[(t + 3u) * b_stride];
     }
+    float sum = (s0 + s1) + (s2 + s3);
     for (; t < count; ++t)
         sum += a[t * a_stride] * b[t * b_stride];
-#else
-    for (uint32_t t = 0; t < count; ++t)
-        sum += a[t * a_stride] * b[t * b_stride];
-#endif
     return sum;
 }
 
@@ -108,22 +112,22 @@ inline float dot_strided_b_offset(const float* a,
                                   uint32_t b_col_offset,
                                   uint32_t count)
 {
-    float sum = 0.0f;
-#if NETKIT_LOOP_UNROLL
+    // Four independent accumulators break the serial FMA dependency chain (see dot_contiguous).
+    float s0 = 0.0f;
+    float s1 = 0.0f;
+    float s2 = 0.0f;
+    float s3 = 0.0f;
     uint32_t t = 0;
     for (; t + 4u <= count; t += 4u)
     {
-        sum += a[t * a_stride] * b[t * b_stride + b_col_offset];
-        sum += a[(t + 1u) * a_stride] * b[(t + 1u) * b_stride + b_col_offset];
-        sum += a[(t + 2u) * a_stride] * b[(t + 2u) * b_stride + b_col_offset];
-        sum += a[(t + 3u) * a_stride] * b[(t + 3u) * b_stride + b_col_offset];
+        s0 += a[t * a_stride] * b[t * b_stride + b_col_offset];
+        s1 += a[(t + 1u) * a_stride] * b[(t + 1u) * b_stride + b_col_offset];
+        s2 += a[(t + 2u) * a_stride] * b[(t + 2u) * b_stride + b_col_offset];
+        s3 += a[(t + 3u) * a_stride] * b[(t + 3u) * b_stride + b_col_offset];
     }
+    float sum = (s0 + s1) + (s2 + s3);
     for (; t < count; ++t)
         sum += a[t * a_stride] * b[t * b_stride + b_col_offset];
-#else
-    for (uint32_t t = 0; t < count; ++t)
-        sum += a[t * a_stride] * b[t * b_stride + b_col_offset];
-#endif
     return sum;
 }
 }

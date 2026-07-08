@@ -4,7 +4,7 @@ Side-by-side invoke latency on the same 10 MNIST test vectors per model (from TC
 
 **Fair comparison policy:** benchmarks use the **interpreter** path only — netkit loads `.nk` models via `NkLoader` and calls `forward()` / `forward_quantized()`; TFLM uses `MicroInterpreter::Invoke()`. **AOT lowered firmware is not included** in `compare.sh` or `make -C benchmark/netkit run-all` (use `run-aot*` targets separately for deployment profiling).
 
-**Kernel defaults:** float Conv2D uses **partial im2col** by default on all targets (`NETKIT_IM2COL_FULL=0`). Set `NETKIT_IM2COL_FULL=1` to opt into full im2col + GEMM. `NETKIT_LOOP_UNROLL` stays **off** (`0`) in all benchmark builds. Int8 quantized inference uses CMSIS-NN kernels, not float im2col.
+**Kernel defaults:** float Conv2D strategy is the single `NETKIT_IM2COL` knob (`0` = direct, `1` = partial im2col, `2` = full im2col + GEMM). The host/CPU benchmark uses the default **`0` (direct loops)**; override with `NETKIT_IM2COL=1` (partial) or `NETKIT_IM2COL=2` (full). `NETKIT_LOOP_UNROLL` stays **off** (`0`) in all benchmark builds. Int8 quantized inference uses CMSIS-NN kernels, not float im2col.
 
 ## Methodology
 

@@ -66,6 +66,8 @@ namespace
 
             for (size_t oc = 0; oc < out_features; ++oc)
             {
+                // DotProductF32 is header-inline: the reference build inlines the 4-accumulator
+                // dot_contiguous here (no cross-TU call, no LTO needed); CMSIS uses arm_dot_prod_f32.
                 const float sum =
                     CmsisDspUtil::DotProductF32(in_row, wt + oc * in_features, in_features);
                 const float value = ApplyKernelActivation(sum + bias[oc], fuse_activation);

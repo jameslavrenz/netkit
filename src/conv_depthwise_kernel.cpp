@@ -1,6 +1,7 @@
 #include "conv_depthwise_kernel.hpp"
 
 #include "kernel_activation.hpp"
+#include "netkit_loop_unroll.hpp"
 #include "tensor_access.hpp"
 
 #include <cstddef>
@@ -37,42 +38,75 @@ bool ConvDepthwiseForward(const Tensor& input,
     const uint32_t in_w_u = input.shape[1];
     const uint32_t ch_u = static_cast<uint32_t>(channels);
 
+    const uint32_t kernel_h_u = static_cast<uint32_t>(kernel_h);
+    const uint32_t kernel_w_u = static_cast<uint32_t>(kernel_w);
+
     for (size_t oh = 0; oh < out_h; ++oh)
     {
+        // Kernel rows that land inside the input (padding clipped to a contiguous range),
+        // so the inner reduction runs with no per-tap bounds branch.
+        const int base_h = static_cast<int>(oh) * stride - pad_h;
+        const int kh_lo = base_h < 0 ? -base_h : 0;
+        int kh_hi = in_h - base_h;
+        if (kh_hi > kernel_h)
+            kh_hi = kernel_h;
+
         for (size_t ow = 0; ow < out_w; ++ow)
         {
+            const int base_w = static_cast<int>(ow) * stride - pad_w;
+            const int kw_lo = base_w < 0 ? -base_w : 0;
+            int kw_hi = in_w - base_w;
+            if (kw_hi > kernel_w)
+                kw_hi = kernel_w;
+            const uint32_t kw_count = (kw_hi > kw_lo) ? static_cast<uint32_t>(kw_hi - kw_lo) : 0u;
+
             const uint32_t out_spatial_base = (oh * out_w + ow) * ch_u;
 
             for (int c = 0; c < channels; ++c)
             {
-                float sum = bias ? bias[c] : 0.0f;
+                const uint32_t c_u = static_cast<uint32_t>(c);
 
-                for (int kh = 0; kh < kernel_h; ++kh)
+                // Independent accumulators (rows round-robined across 4) break the
+                // cross-row serial dependency; each row's tap reduction uses the
+                // header-inline 4-accumulator dot_strided (input stride = channels,
+                // weight stride = 1).
+                float s0 = 0.0f;
+                float s1 = 0.0f;
+                float s2 = 0.0f;
+                float s3 = 0.0f;
+
+                if (kw_count > 0u)
                 {
-                    const int ih = static_cast<int>(oh) * stride + kh - pad_h;
-                    if (ih < 0 || ih >= in_h)
-                        continue;
-
-                    const uint32_t in_row = static_cast<uint32_t>(ih) * in_w_u;
-
-                    for (int kw = 0; kw < kernel_w; ++kw)
+                    for (int kh = kh_lo; kh < kh_hi; ++kh)
                     {
-                        const int iw = static_cast<int>(ow) * stride + kw - pad_w;
-                        if (iw < 0 || iw >= in_w)
-                            continue;
-
-                        const uint32_t in_idx =
-                            (in_row + static_cast<uint32_t>(iw)) * ch_u + static_cast<uint32_t>(c);
-                        const uint32_t w_idx =
-                            (static_cast<uint32_t>(c) * static_cast<uint32_t>(kernel_h) +
-                             static_cast<uint32_t>(kh)) *
-                                static_cast<uint32_t>(kernel_w) +
-                            static_cast<uint32_t>(kw);
-                        sum += in[in_idx] * weights[w_idx];
+                        const uint32_t in_row = static_cast<uint32_t>(base_h + kh) * in_w_u;
+                        const uint32_t in_base =
+                            (in_row + static_cast<uint32_t>(base_w + kw_lo)) * ch_u + c_u;
+                        const uint32_t w_base =
+                            (c_u * kernel_h_u + static_cast<uint32_t>(kh)) * kernel_w_u +
+                            static_cast<uint32_t>(kw_lo);
+                        const float rowsum = NetkitLoopUnroll::dot_strided(
+                            in + in_base, ch_u, weights + w_base, 1u, kw_count);
+                        switch (kh & 3)
+                        {
+                            case 0:
+                                s0 += rowsum;
+                                break;
+                            case 1:
+                                s1 += rowsum;
+                                break;
+                            case 2:
+                                s2 += rowsum;
+                                break;
+                            default:
+                                s3 += rowsum;
+                                break;
+                        }
                     }
                 }
 
-                out[out_spatial_base + static_cast<uint32_t>(c)] = ConvOutputValue(sum, fuse_activation);
+                const float sum = (bias ? bias[c] : 0.0f) + ((s0 + s1) + (s2 + s3));
+                out[out_spatial_base + c_u] = ConvOutputValue(sum, fuse_activation);
             }
         }
     }

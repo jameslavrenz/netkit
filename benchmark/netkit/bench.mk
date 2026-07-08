@@ -23,6 +23,7 @@ BENCH_RUNTIME_SOURCES := \
   src/tensor_access.cpp \
   src/reference_kernel.cpp \
   src/kernel_workspace.cpp \
+  src/cmsis_dsp_util.cpp \
   src/cmsis_buffer_size.cpp \
   src/ops.cpp \
   src/conv2d.cpp \

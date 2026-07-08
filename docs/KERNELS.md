@@ -180,8 +180,8 @@ When CMSIS-NN is off or `TryConv2dForward` returns false, `Conv2dDispatchForward
 |------|--------|
 | **1×1, stride 1** | Always **direct** — never im2col |
 | **Depthwise** | Always **direct** — never im2col |
-| **3×3, stride 1** | Direct preferred; **partial im2col** when patch volume ≥ 2048. Full im2col only when `NETKIT_IM2COL_FULL=1` and patch×spatial ≥ 32768 |
-| **≥ 5×5 or large generic** | Direct or **partial im2col** when volume ≥ 2048. Full im2col only when `NETKIT_IM2COL_FULL=1` |
+| **3×3, stride 1** | Direct preferred; **partial im2col** (`NETKIT_IM2COL≥1`) when patch volume ≥ 2048. Full im2col only when `NETKIT_IM2COL=2` and patch×spatial ≥ 32768 |
+| **≥ 5×5 or large generic** | Direct or **partial im2col** (`NETKIT_IM2COL≥1`) when volume ≥ 2048. Full im2col only when `NETKIT_IM2COL=2` |
 
 **Weight repack at load:** `CNNNetwork::InitActivationBuffers` calls `RepackConv2dWeights` for each conv layer, allocating `[kh, kw, in, out]` (**HWIO**) beside the stored `[out, kh, kw, in]` (**OIHW**) blob. Repack is one-time arena cost; inference reads `weights_hwio` on the input-stationary direct path.
 

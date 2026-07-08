@@ -24,7 +24,8 @@
 #   mpu — CMSIS-DSP on, CMSIS-NN off
 #
 # Optional reference-kernel loop unroll (netkit code only; not CMSIS):
-#   NETKIT_IM2COL_FULL=1    — opt-in full im2col+GEMM for large float Conv2D (default 0 = partial).
+#   NETKIT_IM2COL=0|1|2     — float Conv2D strategy: 0 direct, 1 partial im2col, 2 full im2col+GEMM.
+#                             Default 0 (direct) on all targets (unset here).
 #   NETKIT_LOOP_UNROLL=1    — EXPERIMENTAL: 4× unroll in reference kernels (default 0).
 #                             Increases .text; verify flash headroom on MCU before use.
 #
@@ -84,7 +85,8 @@ ifeq ($(GITHUB_ACTIONS),true)
     override NETKIT_CMSIS_NN := 0
   endif
 endif
-NETKIT_IM2COL_FULL ?= 0
+# NETKIT_IM2COL unset by default: the header picks the default (0 = direct) on all targets.
+NETKIT_IM2COL ?=
 NETKIT_LOOP_UNROLL ?= 0
 NETKIT_ARCH ?=
 
@@ -193,7 +195,7 @@ else
 endif
 
 TARGET_CPPFLAGS += -DNETKIT_WEIGHTS_IN_RAM=$(NETKIT_WEIGHTS_IN_RAM)
-TARGET_CPPFLAGS += -DNETKIT_IM2COL_FULL=$(NETKIT_IM2COL_FULL)
+TARGET_CPPFLAGS += $(if $(strip $(NETKIT_IM2COL)),-DNETKIT_IM2COL=$(strip $(NETKIT_IM2COL)),)
 TARGET_CPPFLAGS += -DNETKIT_LOOP_UNROLL=$(NETKIT_LOOP_UNROLL)
 
 CFLAGS += $(TARGET_CPPFLAGS)
@@ -241,7 +243,7 @@ TRIM_CORE_OBJECTS = $(TRIM_RUNTIME_SOURCES:.cpp=.o)
 
 # Rebuild objects when target/backends change — avoids mixing CPU and MCU .o files in libnetkit.a.
 NETKIT_BUILD_STAMP = .netkit_build_stamp
-NETKIT_BUILD_ID = target=$(NETKIT_TARGET),global_arena=$(NETKIT_GLOBAL_ARENA),heap_arena=$(NETKIT_HEAP_ARENA),weights_in_ram=$(NETKIT_WEIGHTS_IN_RAM),cmsis_nn=$(NETKIT_CMSIS_NN_EFFECTIVE),cmsis_dsp=$(NETKIT_CMSIS_DSP),im2col_full=$(NETKIT_IM2COL_FULL),loop_unroll=$(NETKIT_LOOP_UNROLL),arch=$(NETKIT_ARCH),host_smoke=$(NETKIT_HOST_SMOKE)
+NETKIT_BUILD_ID = target=$(NETKIT_TARGET),global_arena=$(NETKIT_GLOBAL_ARENA),heap_arena=$(NETKIT_HEAP_ARENA),weights_in_ram=$(NETKIT_WEIGHTS_IN_RAM),cmsis_nn=$(NETKIT_CMSIS_NN_EFFECTIVE),cmsis_dsp=$(NETKIT_CMSIS_DSP),im2col=$(NETKIT_IM2COL),loop_unroll=$(NETKIT_LOOP_UNROLL),arch=$(NETKIT_ARCH),host_smoke=$(NETKIT_HOST_SMOKE)
 
 NETKIT_STALE_BINARIES = $(TARGET) $(LIB) $(TRIM_LIB) $(EXAMPLE_C) $(EXAMPLE_CPP) $(TEST_C) $(EMBEDDED_SMOKE) $(NK_INFER)
 

@@ -13,7 +13,9 @@
 namespace
 {
     constexpr uint32_t kIm2ColMinPatchVolume = 2048u;
+#if NETKIT_IM2COL >= 2
     constexpr uint32_t kIm2ColFullMinPatchVolume = 32768u;
+#endif
 
     bool conv_padding_zero(int pad_h, int pad_w, int pad_h_end, int pad_w_end)
     {
@@ -277,52 +279,56 @@ Conv2dExecMode SelectConv2dExecMode(int kernel_h,
     if (kernel_h == 1 && kernel_w == 1 && stride == 1)
         return Conv2dExecMode::Direct;
 
+#if NETKIT_IM2COL >= 1
     const uint32_t kh = static_cast<uint32_t>(kernel_h);
     const uint32_t kw = static_cast<uint32_t>(kernel_w);
     const bool large_volume =
         conv_volume_warrants_im2col(kh, kw, in_channels, out_h, out_w);
+#if NETKIT_IM2COL >= 2
     const uint32_t patch = kh * kw * in_channels;
     const uint32_t spatial = out_h * out_w;
-#if NETKIT_IM2COL_FULL
     const bool full_gemm_volume =
         patch > 0 && spatial > 0 && patch * spatial >= kIm2ColFullMinPatchVolume;
 #endif
 
     if (kernel_h == 3 && kernel_w == 3 && stride == 1)
     {
-#if NETKIT_IM2COL_FULL
+#if NETKIT_IM2COL >= 2
         if (full_gemm_volume)
             return Conv2dExecMode::FullIm2Col;
 #endif
-#if NETKIT_IM2COL_PARTIAL
         if (large_volume)
             return Conv2dExecMode::PartialIm2Col;
-#endif
         return Conv2dExecMode::Direct;
     }
 
     if (kernel_h >= 5 || kernel_w >= 5)
     {
-#if NETKIT_IM2COL_FULL
+#if NETKIT_IM2COL >= 2
         if (large_volume)
             return Conv2dExecMode::FullIm2Col;
 #endif
-#if NETKIT_IM2COL_PARTIAL
         if (large_volume)
             return Conv2dExecMode::PartialIm2Col;
-#endif
         return Conv2dExecMode::Direct;
     }
 
-#if NETKIT_IM2COL_FULL
+#if NETKIT_IM2COL >= 2
     if (large_volume)
         return Conv2dExecMode::FullIm2Col;
 #endif
-#if NETKIT_IM2COL_PARTIAL
     if (large_volume)
         return Conv2dExecMode::PartialIm2Col;
-#endif
     return Conv2dExecMode::Direct;
+#else  /* NETKIT_IM2COL == 0: direct loops only */
+    (void) kernel_h;
+    (void) kernel_w;
+    (void) stride;
+    (void) in_channels;
+    (void) out_h;
+    (void) out_w;
+    return Conv2dExecMode::Direct;
+#endif
 }
 
 std::size_t Conv2dWorkspaceBytes(uint32_t out_h,

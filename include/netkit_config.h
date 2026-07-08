@@ -28,10 +28,13 @@
  *   CMSIS-NN is ignored on cpu/mpu even if NETKIT_CMSIS_NN=1 (warning).
  *
  * Optional reference-kernel tuning (Makefile / CMake):
- *   NETKIT_IM2COL_FULL — When 1, float Conv2D may use full im2col + GEMM on large layers
- *     (default 0). Default is partial im2col everywhere (MCU, MPU, CPU).
- *   NETKIT_IM2COL_PARTIAL — When 0, float Conv2D never uses partial im2col (direct loops only).
- *     Full im2col still allowed when NETKIT_IM2COL_FULL=1.
+ *   NETKIT_IM2COL — float Conv2D execution strategy (single tri-state knob):
+ *     0 = direct loops only (no im2col)
+ *     1 = partial im2col on large layers, direct otherwise
+ *     2 = full im2col + GEMM on large layers (partial/direct fallback for the rest)
+ *     Default 0 (direct) on all targets (CPU/MCU/MPU). Direct convolution with the
+ *     multi-accumulator dot is fastest for the small models we target; opt into
+ *     im2col (1 or 2) explicitly per workload.
  *   NETKIT_REFERENCE_QUANT_LOOPS — When 1, int8 quantized forward uses netkit QuantOps
  *     reference loops (scalar conv/pool/FC + reference softmax) instead of CMSIS-NN kernels.
  *     Default 0 (CMSIS-NN). Used for MCU firmware profiling / kernel validation.
@@ -93,20 +96,19 @@
 #error "NETKIT_WEIGHTS_IN_RAM must be 0 or 1"
 #endif
 
-#ifndef NETKIT_IM2COL_FULL
-#define NETKIT_IM2COL_FULL 0
+/*
+ * float Conv2D execution strategy (single tri-state knob):
+ *   0 = direct loops only, 1 = partial im2col, 2 = full im2col + GEMM.
+ * Default 0 (direct) on all targets (CPU/MCU/MPU). Direct convolution with the
+ * multi-accumulator dot is fastest for the small models we target; opt into
+ * im2col explicitly per workload.
+ */
+#ifndef NETKIT_IM2COL
+#define NETKIT_IM2COL 0
 #endif
 
-#if NETKIT_IM2COL_FULL != 0 && NETKIT_IM2COL_FULL != 1
-#error "NETKIT_IM2COL_FULL must be 0 or 1"
-#endif
-
-#ifndef NETKIT_IM2COL_PARTIAL
-#define NETKIT_IM2COL_PARTIAL 1
-#endif
-
-#if NETKIT_IM2COL_PARTIAL != 0 && NETKIT_IM2COL_PARTIAL != 1
-#error "NETKIT_IM2COL_PARTIAL must be 0 or 1"
+#if NETKIT_IM2COL != 0 && NETKIT_IM2COL != 1 && NETKIT_IM2COL != 2
+#error "NETKIT_IM2COL must be 0 (direct), 1 (partial), or 2 (full)"
 #endif
 
 #ifndef NETKIT_REFERENCE_QUANT_LOOPS

@@ -12,6 +12,20 @@
 #include <array>
 #include <cstring>
 
+// Backend label reflects the CMSIS kernels actually compiled in. For this FC MLP
+// the composed dispatch runs fully-connected/activation/softmax on CMSIS-NN
+// (LayerFast) and element-wise vector ops on CMSIS-DSP (VectorFast).
+#if defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN &&                     \
+    defined(NETKIT_USE_CMSIS_DSP) && NETKIT_USE_CMSIS_DSP
+#define NK_BACKEND_LABEL "cmsis-dsp+cmsis-nn"
+#elif defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN
+#define NK_BACKEND_LABEL "cmsis-nn"
+#elif defined(NETKIT_USE_CMSIS_DSP) && NETKIT_USE_CMSIS_DSP
+#define NK_BACKEND_LABEL "cmsis-dsp"
+#else
+#define NK_BACKEND_LABEL "reference"
+#endif
+
 namespace aot = netkit::aot::mnist_mlp;
 
 namespace {
@@ -42,7 +56,7 @@ extern "C" int main(void)
     dwt_time_init();
 
     uart_write("\r\nnetkit NUCLEO-F446RE MNIST MLP benchmark\r\n");
-    uart_printf("  backend:     cmsis-dsp (MCU CM4, lowered AOT)\r\n");
+    uart_printf("  backend:     " NK_BACKEND_LABEL " (MCU CM4, lowered AOT)\r\n");
     uart_printf("  weights:     %s\r\n",
                 NETKIT_WEIGHTS_IN_RAM ? "ram (arena copy at load)"
                                       : "flash (embedded coef arrays)");
@@ -122,12 +136,12 @@ extern "C" int main(void)
     mean_us /= static_cast<double>(kRuns);
 
     uart_printf("  accuracy:    %d/%d on final run\r\n", correct, kImageCount);
-    uart_write("\r\nnetkit MNIST mlp benchmark summary (cmsis-dsp)\r\n");
+    uart_write("\r\nnetkit MNIST mlp benchmark summary (" NK_BACKEND_LABEL ")\r\n");
     uart_write("  method:      100 runs x 10 images, discard first invoke each run\r\n");
     uart_write("  per-run avg: avg of images 1-9 (us)\r\n\r\n");
     uart_printf("  mean:   %8.3f us (%6.3f ms)\r\n", mean_us, mean_us / 1000.0);
     uart_printf(
-        "BENCHMARK_SUMMARY runtime=netkit model=mlp backend=cmsis-dsp mean_us=%.3f runs=%d\r\n",
+        "BENCHMARK_SUMMARY runtime=netkit model=mlp backend=" NK_BACKEND_LABEL " mean_us=%.3f runs=%d\r\n",
         mean_us,
         kRuns);
     uart_write("\r\nDONE\r\n");

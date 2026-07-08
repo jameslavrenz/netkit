@@ -70,7 +70,7 @@ Compile-time macros (from `include/netkit_config.h`):
 | `NETKIT_WEIGHTS_IN_RAM` | `1` — copy weight/bias payload into arena at buffer/AOT load (default **CPU/MPU**); `0` — coefs stay in `.nk` flash blob (default **MCU**) |
 | `NETKIT_USE_CMSIS_NN` | CMSIS-NN backends enabled (see CMSIS section) |
 | `NETKIT_USE_CMSIS_DSP` | CMSIS-DSP backends enabled (see CMSIS section) |
-| `NETKIT_IM2COL_FULL` | `1` — opt-in **full** im2col + GEMM for large float Conv2D layers (default **0** = partial im2col on MCU, MPU, and CPU). Int8 quantized inference uses CMSIS-NN, not float im2col. |
+| `NETKIT_IM2COL` | float Conv2D strategy (single tri-state knob): `0` = direct loops only, `1` = partial im2col, `2` = full im2col + GEMM. Default **`0` (direct) on all targets** (cpu/mcu/mpu) — direct convolution with the multi-accumulator dot is fastest for the small models we target. Leave unset for the default, or opt into `1`/`2` per workload. Int8 quantized inference uses CMSIS-NN, not float im2col. |
 | `NETKIT_LOOP_UNROLL` | `1` — **experimental** 4× manual loop unroll in **netkit reference kernels** only (default **0**). Increases `.text` size; can exceed flash on small MCUs. Most likely worth considering on **MPU** targets with flash headroom — avoid on tight MCUs. Does not affect CMSIS (`ARM_MATH_LOOPUNROLL` is separate). |
 | `NETKIT_HOST_SMOKE` | Host MCU/MPU smoke only — adds `__GNUC_PYTHON__` for CMSIS without CMSIS-Core |
 

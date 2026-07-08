@@ -13,8 +13,10 @@ NETKIT_ROOT := $(abspath ../..)
 BOARD_NETKIT := $(abspath ../nucleo-f446re)
 BOARD_ROOT := $(abspath .)
 
+# TFLM board glue is C++17; kernels come from the TFLM microlite lib below.
+MCU_CXX_STD := -std=c++17
 MCU_BOARD_COMMON := $(BOARD_NETKIT)
-include $(BOARD_NETKIT)/mcu_gcc_toolchain.mk
+include $(BOARD_NETKIT)/mcu_tflm_toolchain.mk
 
 TFLM_ROOT := $(NETKIT_ROOT)/benchmark/tflm/third_party/tflite-micro
 TFLM_MAKE := $(TFLM_ROOT)/tensorflow/lite/micro/tools/make/Makefile
@@ -24,12 +26,11 @@ GMAKE ?= $(shell command -v gmake 2>/dev/null || command -v make 2>/dev/null)
 
 TFLM_TARGET := cortex_m_generic
 TFLM_ARCH := cortex-m4+fp
-TFLM_GENDIR := $(TFLM_ROOT)/gen/$(TFLM_TARGET)_$(TFLM_ARCH)_default_gcc
+# Optional: TFLM_OPT_KERNEL=cmsis_nn selects TFLM's CMSIS-NN optimized kernels.
+# (Note: TFLM CMSIS-NN accelerates int8/int16; float32 FC still uses reference.)
+TFLM_OPT_KERNEL ?=
+TFLM_GENDIR := $(TFLM_ROOT)/gen/$(TFLM_TARGET)_$(TFLM_ARCH)_default$(if $(TFLM_OPT_KERNEL),_$(TFLM_OPT_KERNEL),)_gcc
 TFLM_LIB := $(TFLM_GENDIR)/lib/libtensorflow-microlite.a
-
-MCU_FLAGS := -mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=hard
-OPT_FLAGS := -Os -ffunction-sections -fdata-sections -flto
-WARN_FLAGS := -Wall -Wextra
 
 BUILD_DIR := build
 TARGET := mnist_mlp_tflm_nucleo_f446re
@@ -55,11 +56,10 @@ TFLM_CPPFLAGS := \
 	-DARMCM4 \
 	-DCMSIS_DEVICE_ARM_CORTEX_M_XX_HEADER_FILE=\"ARMCM4.h\"
 
-CFLAGS := $(MCU_FLAGS) $(OPT_FLAGS) $(WARN_FLAGS) -std=c23 -g $(INCLUDES) $(TFLM_CPPFLAGS)
-CXXFLAGS := $(MCU_FLAGS) $(OPT_FLAGS) $(WARN_FLAGS) -std=c++17 -g $(INCLUDES) $(TFLM_CPPFLAGS) \
-	-fno-rtti -fno-exceptions -fno-threadsafe-statics
-ASFLAGS := $(MCU_FLAGS) -g
-LDFLAGS := $(MCU_FLAGS) -flto -Wl,--gc-sections -T$(LINKER_SCRIPT) -Wl,-Map=$(BUILD_DIR)/$(TARGET).map
+CFLAGS := $(MCU_CORE_CFLAGS) $(MCU_DEBUG_FLAGS) $(INCLUDES) $(TFLM_CPPFLAGS)
+CXXFLAGS := $(MCU_CORE_CXXFLAGS) $(MCU_DEBUG_FLAGS) $(INCLUDES) $(TFLM_CPPFLAGS)
+ASFLAGS := $(MCU_ASFLAGS) $(MCU_DEBUG_FLAGS)
+LDFLAGS := $(MCU_LDFLAGS) -T$(LINKER_SCRIPT) -Wl,-Map=$(BUILD_DIR)/$(TARGET).map
 
 OBJS := \
 	$(BUILD_DIR)/startup.o \
@@ -91,6 +91,7 @@ setup-deps:
 microlite: setup-deps
 	@$(GMAKE) -C $(TFLM_ROOT) -f $(TFLM_MAKE) \
 		TARGET=$(TFLM_TARGET) TARGET_ARCH=$(TFLM_ARCH) \
+		$(if $(TFLM_OPT_KERNEL),OPTIMIZED_KERNEL_DIR=$(TFLM_OPT_KERNEL),) \
 		TARGET_TOOLCHAIN_ROOT=$(TOOLCHAIN_BIN)/ \
 		EXTERNAL_DIR=../.. \
 		microlite

@@ -81,16 +81,15 @@ uint32_t ArgMaxF32(const float* values, uint32_t count)
 #endif
 }
 
-float DotProductF32(const float* a, const float* b, uint32_t count)
-{
 #if defined(NETKIT_USE_CMSIS_DSP) && NETKIT_USE_CMSIS_DSP
+// Shim for the header-inline CmsisDspUtil::DotProductF32 (keeps <arm_math.h> in this TU only).
+float DotProductF32Cmsis(const float* a, const float* b, uint32_t count)
+{
     float sum = 0.0f;
     arm_dot_prod_f32(const_cast<float*>(a), const_cast<float*>(b), count, &sum);
     return sum;
-#else
-    return NetkitLoopUnroll::dot_contiguous(a, b, count);
-#endif
 }
+#endif
 
 void MulF32(const float* a, const float* b, float* c, uint32_t count)
 {
