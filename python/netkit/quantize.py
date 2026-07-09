@@ -279,6 +279,7 @@ def quantize_mlp(
     calibration_inputs: np.ndarray,
     *,
     num_calibration: int = 256,
+    aligned_quants: list[QuantLayerParams] | None = None,
 ) -> QuantizedMlpPack:
     if arch.get("network") != "mlp":
         raise ValueError("quantize_mlp only supports MLP architectures")
@@ -294,7 +295,16 @@ def quantize_mlp(
     bias_tensors: list[np.ndarray] = []
     quant_layers: list[QuantLayerParams] = []
 
-    input_scale, input_zp = _symmetric_scale(cal.reshape(-1))
+    if aligned_quants is not None:
+        expected = sum(1 for layer in arch["layers"] if layer["type"] == "dense")
+        if len(aligned_quants) != expected:
+            raise ValueError(f"aligned_quants length {len(aligned_quants)} != {expected}")
+
+    if aligned_quants is not None:
+        input_scale = aligned_quants[0].input_scale
+        input_zp = aligned_quants[0].input_zero_point
+    else:
+        input_scale, input_zp = _symmetric_scale(cal.reshape(-1))
 
     hidden_real = cal.copy()
     for layer_idx, (w_float, b_float) in enumerate(float_layers):

@@ -24,7 +24,7 @@
 #   mpu — CMSIS-DSP on, CMSIS-NN off
 #
 # Optional reference-kernel loop unroll (netkit code only; not CMSIS):
-#   NETKIT_IM2COL=0|1|2     — float Conv2D strategy: 0 direct, 1 partial im2col, 2 full im2col+GEMM.
+# NETKIT_IM2COL=0|1|2 — float Conv2D strategy: 0 direct (default), 1 partial, 2 full im2col+GEMM.
 #                             Default 0 (direct) on all targets (unset here).
 #   NETKIT_LOOP_UNROLL=1    — EXPERIMENTAL: 4× unroll in reference kernels (default 0).
 #                             Increases .text; verify flash headroom on MCU before use.
@@ -85,8 +85,8 @@ ifeq ($(GITHUB_ACTIONS),true)
     override NETKIT_CMSIS_NN := 0
   endif
 endif
-# NETKIT_IM2COL unset by default: the header picks the default (0 = direct) on all targets.
-NETKIT_IM2COL ?=
+# Default direct Conv2D loops (0) on cpu/mcu/mpu; override at build time if needed.
+NETKIT_IM2COL ?= 0
 NETKIT_LOOP_UNROLL ?= 0
 NETKIT_ARCH ?=
 
@@ -195,7 +195,7 @@ else
 endif
 
 TARGET_CPPFLAGS += -DNETKIT_WEIGHTS_IN_RAM=$(NETKIT_WEIGHTS_IN_RAM)
-TARGET_CPPFLAGS += $(if $(strip $(NETKIT_IM2COL)),-DNETKIT_IM2COL=$(strip $(NETKIT_IM2COL)),)
+TARGET_CPPFLAGS += -DNETKIT_IM2COL=$(NETKIT_IM2COL)
 TARGET_CPPFLAGS += -DNETKIT_LOOP_UNROLL=$(NETKIT_LOOP_UNROLL)
 
 CFLAGS += $(TARGET_CPPFLAGS)
@@ -429,7 +429,12 @@ export-mnist-int8:
 
 export-mnist-cnn-int8:
 	PYTHONPATH=python python3 tools/export_mnist_cnn_int8.py --from-nk models/mnist_cnn.nk --fast
-	python3 benchmark/tflm/tools/export_int8_test_images.py
+	python3 benchmark/tflm/tools/export_int8_test_images.py --variant cnn
+
+export-mnist-mlp-int8:
+	/tmp/netkit-tf-venv/bin/python benchmark/tflm/tools/export_mnist_mlp_int8_tflite.py
+	PYTHONPATH=python python3 tools/export_mnist_mlp_int8.py --from-nk models/mnist_mlp.nk --align-tflite benchmark/tflm/generated/mnist_mlp_int8.tflite
+	/tmp/netkit-tf-venv/bin/python benchmark/tflm/tools/export_int8_test_images.py --variant mlp
 
 export-mnist-cnn-int8-retrain:
 	PYTHONPATH=python python3 tools/export_mnist_cnn_int8.py --retrain

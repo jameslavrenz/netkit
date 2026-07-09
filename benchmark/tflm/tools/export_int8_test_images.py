@@ -28,6 +28,37 @@ NUM_IMAGES = 10
 MNIST_DIGITS = tuple(range(10))
 INPUT_SIZE = 784
 
+VARIANTS = {
+    "cnn": {
+        "float_nk": ROOT / "models" / "mnist_cnn.nk",
+        "tflite": GENERATED / "mnist_cnn_int8.tflite",
+        "quant_json": GENERATED / "mnist_cnn_int8_tflite_quant.json",
+        "out_h": GENERATED / "mnist_cnn_int8_test_images.h",
+        "out_cc": GENERATED / "mnist_cnn_int8_test_images.cc",
+        "count_name": "kMnistCnnInt8BenchmarkImageCount",
+        "size_name": "kMnistCnnInt8BenchmarkInputSize",
+        "scale_name": "kMnistCnnInt8BenchmarkInputScale",
+        "zp_name": "kMnistCnnInt8BenchmarkInputZeroPoint",
+        "sample_name": "MnistCnnInt8BenchmarkSample",
+        "images_name": "kMnistCnnInt8BenchmarkImages",
+        "image_symbol": "kMnistCnnInt8Image",
+    },
+    "mlp": {
+        "float_nk": ROOT / "models" / "mnist_mlp.nk",
+        "tflite": GENERATED / "mnist_mlp_int8.tflite",
+        "quant_json": GENERATED / "mnist_mlp_int8_tflite_quant.json",
+        "out_h": GENERATED / "mnist_mlp_int8_test_images.h",
+        "out_cc": GENERATED / "mnist_mlp_int8_test_images.cc",
+        "count_name": "kMnistMlpInt8BenchmarkImageCount",
+        "size_name": "kMnistMlpInt8BenchmarkInputSize",
+        "scale_name": "kMnistMlpInt8BenchmarkInputScale",
+        "zp_name": "kMnistMlpInt8BenchmarkInputZeroPoint",
+        "sample_name": "MnistMlpInt8BenchmarkSample",
+        "images_name": "kMnistMlpInt8BenchmarkImages",
+        "image_symbol": "kMnistMlpInt8Image",
+    },
+}
+
 
 def _one_per_digit_cases(cases: list, *, num: int = NUM_IMAGES) -> list:
     if len(cases) < num:
@@ -46,8 +77,7 @@ def _one_per_digit_cases(cases: list, *, num: int = NUM_IMAGES) -> list:
     return [by_digit[d] for d in MNIST_DIGITS]
 
 
-def _tflite_input_quant(tflite_path: Path) -> tuple[float, int]:
-    quant_json = tflite_path.with_name("mnist_cnn_int8_tflite_quant.json")
+def _tflite_input_quant(tflite_path: Path, quant_json: Path) -> tuple[float, int]:
     if quant_json.is_file():
         import json
 
@@ -66,25 +96,33 @@ def _tflite_input_quant(tflite_path: Path) -> tuple[float, int]:
     return float(first.input_scale), int(first.input_zero_point)
 
 
-def export_int8_test_images(
-    *,
-    float_nk: Path,
-    tflite_path: Path,
-    out_h: Path,
-    out_cc: Path,
-) -> None:
+def _netkit_input_quant(nk_int8: Path) -> tuple[float, int]:
+    sys.path.insert(0, str(ROOT / "python"))
+    from netkit.quant_nk_reader import read_quant_nk
+
+    bundle = read_quant_nk(nk_int8)
+    if not bundle.quant_layers:
+        raise RuntimeError(f"no quant layers in {nk_int8}")
+    first = bundle.quant_layers[0]
+    return float(first.input_scale), int(first.input_zero_point)
+
+
+def export_int8_test_images(*, variant: str) -> None:
+    spec = VARIANTS[variant]
+    float_nk = spec["float_nk"]
+    tflite_path = spec["tflite"]
+    out_h = spec["out_h"]
+    out_cc = spec["out_cc"]
     sys.path.insert(0, str(ROOT / "python"))
     from netkit.quantize import quantize_float_input
     from netkit.reader import read_test_suite
 
     if not float_nk.is_file():
-        raise SystemExit(f"missing {float_nk} — run: make export-mnist-cnn")
+        raise SystemExit(f"missing {float_nk}")
     if not tflite_path.is_file():
-        raise SystemExit(
-            f"missing {tflite_path} — run: make -C benchmark/tflm export-cnn-int8"
-        )
+        raise SystemExit(f"missing {tflite_path}")
 
-    input_scale, input_zp = _tflite_input_quant(tflite_path)
+    input_scale, input_zp = _tflite_input_quant(tflite_path, spec["quant_json"])
     suite = read_test_suite(float_nk)
     if suite is None:
         raise RuntimeError(f"missing TCAS section in {float_nk}")
@@ -95,18 +133,18 @@ def export_int8_test_images(
         "",
         "#include <cstdint>",
         "",
-        "constexpr int kMnistCnnInt8BenchmarkImageCount = 10;",
-        "constexpr int kMnistCnnInt8BenchmarkInputSize = 784;",
-        f"constexpr float kMnistCnnInt8BenchmarkInputScale = {input_scale:.8f}f;",
-        f"constexpr int kMnistCnnInt8BenchmarkInputZeroPoint = {input_zp};",
+        f"constexpr int {spec['count_name']} = {len(cases)};",
+        f"constexpr int {spec['size_name']} = {INPUT_SIZE};",
+        f"constexpr float {spec['scale_name']} = {input_scale:.8f}f;",
+        f"constexpr int {spec['zp_name']} = {input_zp};",
         "",
-        "struct MnistCnnInt8BenchmarkSample {",
+        f"struct {spec['sample_name']} {{",
         "  const char* name;",
         "  int label;",
         "  const int8_t* pixels;",
         "};",
         "",
-        "extern const MnistCnnInt8BenchmarkSample kMnistCnnInt8BenchmarkImages[10];",
+        f"extern const {spec['sample_name']} {spec['images_name']}[{len(cases)}];",
         "",
     ]
 
@@ -118,14 +156,14 @@ def export_int8_test_images(
         pixels_i8 = quantize_float_input(pixels, input_scale, input_zp)
         i8_text = ", ".join(str(int(v)) for v in pixels_i8)
         cc_lines.append(
-            f"alignas(16) static const int8_t kMnistCnnInt8Image{idx}[{INPUT_SIZE}] = {{{i8_text}}};"
+            f"alignas(16) static const int8_t {spec['image_symbol']}{idx}[{INPUT_SIZE}] = {{{i8_text}}};"
         )
         cc_lines.append("")
 
-    cc_lines.append("const MnistCnnInt8BenchmarkSample kMnistCnnInt8BenchmarkImages[10] = {")
+    cc_lines.append(f"const {spec['sample_name']} {spec['images_name']}[{len(cases)}] = {{")
     for idx, case in enumerate(cases):
         cc_lines.append(
-            f'  {{"{case.name}", {int(case.label)}, kMnistCnnInt8Image{idx}}},'
+            f'  {{"{case.name}", {int(case.label)}, {spec["image_symbol"]}{idx}}},'
         )
     cc_lines.append("};")
     cc_lines.append("")
@@ -139,34 +177,13 @@ def export_int8_test_images(
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--float-nk",
-        type=Path,
-        default=ROOT / "models" / "mnist_cnn.nk",
-        help="Float .nk with TCAS cases (default: models/mnist_cnn.nk)",
-    )
-    parser.add_argument(
-        "--tflite",
-        type=Path,
-        default=GENERATED / "mnist_cnn_int8.tflite",
-        help="Int8 TFLite model for input quant params",
-    )
-    parser.add_argument(
-        "--out-h",
-        type=Path,
-        default=GENERATED / "mnist_cnn_int8_test_images.h",
-    )
-    parser.add_argument(
-        "--out-cc",
-        type=Path,
-        default=GENERATED / "mnist_cnn_int8_test_images.cc",
+        "--variant",
+        choices=tuple(VARIANTS.keys()),
+        default="cnn",
+        help="Which int8 model variant to export test images for.",
     )
     args = parser.parse_args()
-    export_int8_test_images(
-        float_nk=args.float_nk,
-        tflite_path=args.tflite,
-        out_h=args.out_h,
-        out_cc=args.out_cc,
-    )
+    export_int8_test_images(variant=args.variant)
 
 
 if __name__ == "__main__":

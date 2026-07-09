@@ -1,0 +1,3 @@
+# NUCLEO-F446RE MNIST MLP int8 firmware build artifacts
+build/
+.toolchain/

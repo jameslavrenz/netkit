@@ -1,0 +1,22 @@
+[
+  {
+    "input_scale": 0.003921568859368563,
+    "input_zero_point": -128,
+    "weight_scale": 0.00912152137607336,
+    "weight_zero_point": 0,
+    "bias_scale": 3.577067417847397e-05,
+    "bias_zero_point": 0,
+    "output_scale": 0.06407901644706726,
+    "output_zero_point": -128
+  },
+  {
+    "input_scale": 0.06407901644706726,
+    "input_zero_point": -128,
+    "weight_scale": 0.01400922704488039,
+    "weight_zero_point": 0,
+    "bias_scale": 0.00089769749021959,
+    "bias_zero_point": 0,
+    "output_scale": 0.44339239597320557,
+    "output_zero_point": 40
+  }
+]

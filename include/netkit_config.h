@@ -99,9 +99,9 @@
 /*
  * float Conv2D execution strategy (single tri-state knob):
  *   0 = direct loops only, 1 = partial im2col, 2 = full im2col + GEMM.
- * Default 0 (direct) on all targets (CPU/MCU/MPU). Direct convolution with the
- * multi-accumulator dot is fastest for the small models we target; opt into
- * im2col explicitly per workload.
+ * Default 0 (direct) on all targets (CPU/MCU/MPU). Builds pass -DNETKIT_IM2COL=0
+ * unless overridden; direct convolution with the multi-accumulator dot is fastest
+ * for the small models we target.
  */
 #ifndef NETKIT_IM2COL
 #define NETKIT_IM2COL 0

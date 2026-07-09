@@ -98,6 +98,23 @@ MODELS = {
         "export_make": "export-mnist-cnn",
         "legacy_names": False,
     },
+    "mlp-int8": {
+        "nk": ROOT / "models" / "mnist_mlp.nk",
+        "onnx": ROOT / "models" / "mnist_mlp.onnx",
+        "tflite": GENERATED / "mnist_mlp_int8.tflite",
+        "saved_model": GENERATED / "mlp_saved_model",
+        "images_h": GENERATED / "mnist_mlp_test_images.h",
+        "images_cc": GENERATED / "mnist_mlp_test_images.cc",
+        "model_data_h": GENERATED / "mnist_mlp_int8_model_data.h",
+        "model_data_cc": GENERATED / "mnist_mlp_int8_model_data.cc",
+        "model_array": "g_mnist_mlp_int8_model_data",
+        "input_size": 784,
+        "prefix": "MnistMlp",
+        "array_prefix": "kMnistMlp",
+        "export_make": "export-mnist",
+        "legacy_names": False,
+        "flat_input": True,
+    },
 }
 
 
@@ -147,22 +164,38 @@ def _export_int8_tflite_from_saved_model(
     saved_model_dir: Path,
     out: Path,
     calibration: np.ndarray,
+    *,
+    flat_input: bool = False,
 ) -> None:
     tf = _import_tensorflow()
-
-    def representative_dataset():
-        for sample in calibration:
-            yield [sample.reshape(1, IMG_H, IMG_W, IMG_C).astype(np.float32)]
-
     saved = tf.saved_model.load(str(saved_model_dir))
 
-    @tf.function(
-        input_signature=[
-            tf.TensorSpec(shape=[1, IMG_H, IMG_W, IMG_C], dtype=tf.float32),
-        ]
-    )
-    def serving_fn(x):
-        return saved(x)
+    if flat_input:
+        cal = calibration.reshape(-1, IMG_H * IMG_W * IMG_C).astype(np.float32)
+
+        def representative_dataset():
+            for sample in cal:
+                yield [sample.reshape(1, IMG_H * IMG_W * IMG_C).astype(np.float32)]
+
+        @tf.function(
+            input_signature=[
+                tf.TensorSpec(shape=[1, IMG_H * IMG_W * IMG_C], dtype=tf.float32),
+            ]
+        )
+        def serving_fn(x):
+            return saved(x)
+    else:
+        def representative_dataset():
+            for sample in calibration:
+                yield [sample.reshape(1, IMG_H, IMG_W, IMG_C).astype(np.float32)]
+
+        @tf.function(
+            input_signature=[
+                tf.TensorSpec(shape=[1, IMG_H, IMG_W, IMG_C], dtype=tf.float32),
+            ]
+        )
+        def serving_fn(x):
+            return saved(x)
 
     converter = tf.lite.TFLiteConverter.from_concrete_functions(
         [serving_fn.get_concrete_function()]
@@ -282,7 +315,14 @@ def export_model(name: str, read_test_suite, *, images_only: bool) -> None:
             raise SystemExit(f"{spec['tflite']} missing — run export without --images-only")
         if name == "cnn-int8":
             subprocess.run(
-                [sys.executable, str(TOOLS / "export_int8_test_images.py")],
+                [sys.executable, str(TOOLS / "export_int8_test_images.py"), "--variant", "cnn"],
+                check=True,
+                cwd=ROOT,
+            )
+            return
+        if name == "mlp-int8":
+            subprocess.run(
+                [sys.executable, str(TOOLS / "export_int8_test_images.py"), "--variant", "mlp"],
                 check=True,
                 cwd=ROOT,
             )
@@ -296,8 +336,20 @@ def export_model(name: str, read_test_suite, *, images_only: bool) -> None:
                 spec["saved_model"],
             )
         calibration = _load_mnist_calibration(NUM_CALIBRATION)
-        _export_int8_tflite_from_saved_model(spec["saved_model"], spec["tflite"], calibration)
+        _export_int8_tflite_from_saved_model(
+            spec["saved_model"],
+            spec["tflite"],
+            calibration,
+            flat_input=bool(spec.get("flat_input")),
+        )
         _write_tflite_model_arrays(spec)
+    elif name == "mlp-int8":
+        calibration = _load_mnist_calibration(NUM_CALIBRATION)
+        subprocess.run(
+            [sys.executable, str(TOOLS / "export_mnist_mlp_int8_tflite.py")],
+            check=True,
+            cwd=ROOT,
+        )
     else:
         _export_tflite_via_onnx2tf(spec["onnx"], spec["tflite"], spec["saved_model"])
 
@@ -306,7 +358,13 @@ def export_model(name: str, read_test_suite, *, images_only: bool) -> None:
 
     if name == "cnn-int8":
         subprocess.run(
-            [sys.executable, str(TOOLS / "export_int8_test_images.py")],
+            [sys.executable, str(TOOLS / "export_int8_test_images.py"), "--variant", "cnn"],
+            check=True,
+            cwd=ROOT,
+        )
+    if name == "mlp-int8":
+        subprocess.run(
+            [sys.executable, str(TOOLS / "export_int8_test_images.py"), "--variant", "mlp"],
             check=True,
             cwd=ROOT,
         )
@@ -316,7 +374,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--model",
-        choices=("mlp", "cnn", "cnn-int8", "all"),
+        choices=("mlp", "cnn", "cnn-int8", "mlp-int8", "all"),
         default="all",
         help="Which model assets to export (default: all).",
     )
@@ -329,7 +387,7 @@ def main() -> None:
 
     read_test_suite = _import_reader()
     if args.model == "all":
-        names = ("mlp", "cnn", "cnn-int8")
+        names = ("mlp", "cnn", "cnn-int8", "mlp-int8")
     else:
         names = (args.model,)
     for name in names:

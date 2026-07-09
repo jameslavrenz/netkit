@@ -55,4 +55,6 @@ tmp_*.nk
 /generated/
 boards/benchmark/
 
+benchmark/tflm/generated/*_saved_model/
+
 /data/

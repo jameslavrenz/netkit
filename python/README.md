@@ -2,7 +2,7 @@
 
 Python tooling for **netkit** — a multi-modal (voice, image, vision) inference engine with an embedded-first design for MCU, MPU, and NPU targets. Converts ONNX models into binary **`.nk`** files for the C++26 / C23 runtime, and optionally AOT-embeds `.nk` bytes into C/C++ source for firmware.
 
-**Role in netkit:** Phase 1 serializer (ONNX → `.nk`) for the **`NkOpsResolver` interpreter** path, and AOT embedder (`.nk` → C++26 / C23) for the **compiled** path. Use `convert --optimize` / `aot --optimize` to fold and fuse the graph before embedding — fewer runtime layer dispatches. Phase 2 adds more packager-side compilation (layout, quantization); Kalman estimation/control is planned in the backend — see [docs/PHILOSOPHY.md](../docs/PHILOSOPHY.md#deployment-modes-interpreter-or-compiled).
+**Role in netkit:** Phase 1 serializer (ONNX → `.nk`) for the **`NkOpsResolver` interpreter** path, and AOT embedder (`.nk` → C++26 / C23) for the **compiled** path. Use `convert --optimize` / `aot --optimize` to fold and fuse the graph before embedding — fewer runtime layer dispatches. Phase 2 adds more packager-side compilation (layout, broader quantization); Kalman estimation and tracking are planned in the backend — see [docs/PHILOSOPHY.md](../docs/PHILOSOPHY.md#deployment-modes-interpreter-or-compiled).
 
 Supported ONNX ops: `Gemm`, `Conv` (symmetric padding), `MaxPool` / `AveragePool` (symmetric padding), `GlobalAveragePool`, `BatchNormalization`, `Flatten`, and fused activations (`Relu`, `Sigmoid`, `Tanh`, `LeakyRelu`, `Clip`→ReLU6, `Softmax`). Details: [docs/ONNX.md](../docs/ONNX.md).
 

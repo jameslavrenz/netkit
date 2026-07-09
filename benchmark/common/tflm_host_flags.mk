@@ -51,13 +51,13 @@ TFLM_KERNEL_OPT := -O2
 TFLM_LDFLAGS := -lm
 
 # netkit CPU runtime defines (benchmark uses file-loaded .nk models).
-# NETKIT_IM2COL unset by default: the header picks the default (0 = direct) on all targets.
-NETKIT_IM2COL ?=
+# Default direct Conv2D loops (0) on cpu/mcu/mpu benchmark builds.
+NETKIT_IM2COL ?= 0
 NETKIT_LOOP_UNROLL ?= 0
 NETKIT_BENCH_CPPFLAGS := \
   -DNETKIT_TARGET_CPU=1 \
   -DNETKIT_WEIGHTS_IN_RAM=0 \
-  $(if $(strip $(NETKIT_IM2COL)),-DNETKIT_IM2COL=$(strip $(NETKIT_IM2COL)),) \
+  -DNETKIT_IM2COL=$(NETKIT_IM2COL) \
   -DNETKIT_LOOP_UNROLL=$(NETKIT_LOOP_UNROLL)
 
 TFLM_BENCH_INCLUDES := -I$(ROOT)/include -I$(SHARED_GEN) -I../common

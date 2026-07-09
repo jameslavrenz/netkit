@@ -1,14 +1,4 @@
-# NUCLEO-F446RE (STM32F446RET6) — TFLM MNIST CNN int8 benchmark firmware.
-#
-# Full int8 TFLite graph (int8 input/output). Same 10 MNIST images and timing
-# methodology as boards/nucleo-f446re-cnn-int8 (netkit).
-#
-# Usage:
-#   make -C ../../benchmark/tflm export-cnn-int8   # once
-#   make fetch-tflm setup-deps                     # once
-#   make                                           # build firmware.elf
-#   ./scripts/flash.sh
-#   ./scripts/monitor.sh
+# NUCLEO-F446RE (STM32F446RET6) — TFLM MNIST MLP int8 benchmark firmware.
 
 NETKIT_ROOT := $(abspath ../..)
 BOARD_NETKIT := $(abspath ../nucleo-f446re)
@@ -25,12 +15,12 @@ GMAKE ?= $(shell command -v gmake 2>/dev/null || command -v make 2>/dev/null)
 
 TFLM_TARGET := cortex_m_generic
 TFLM_ARCH := cortex-m4+fp
-TFLM_OPT_KERNEL := cmsis_nn
-TFLM_GENDIR := $(TFLM_ROOT)/gen/$(TFLM_TARGET)_$(TFLM_ARCH)_default_$(TFLM_OPT_KERNEL)_gcc
+TFLM_OPT_KERNEL ?= cmsis_nn
+TFLM_GENDIR := $(TFLM_ROOT)/gen/$(TFLM_TARGET)_$(TFLM_ARCH)_default$(if $(TFLM_OPT_KERNEL),_$(TFLM_OPT_KERNEL),)_gcc
 TFLM_LIB := $(TFLM_GENDIR)/lib/libtensorflow-microlite.a
 
 BUILD_DIR := build
-TARGET := mnist_cnn_int8_tflm_nucleo_f446re
+TARGET := mnist_mlp_int8_tflm_nucleo_f446re
 ELF := $(BUILD_DIR)/$(TARGET).elf
 BIN := $(BUILD_DIR)/$(TARGET).bin
 
@@ -52,7 +42,6 @@ TFLM_CPPFLAGS := \
 	-DCPU_ARMCM4=1 \
 	-DARMCM4 \
 	-DCMSIS_DEVICE_ARM_CORTEX_M_XX_HEADER_FILE=\"ARMCM4.h\"
-
 ifneq ($(TFLM_OPT_KERNEL),)
 TFLM_CPPFLAGS += -DCMSIS_NN
 endif
@@ -70,22 +59,22 @@ OBJS := \
 	$(BUILD_DIR)/syscalls.o \
 	$(BUILD_DIR)/main.o \
 	$(BUILD_DIR)/tflm_debug_log.o \
-	$(BUILD_DIR)/mnist_cnn_int8_model_data.o \
-	$(BUILD_DIR)/mnist_cnn_int8_test_images.o
+	$(BUILD_DIR)/mnist_mlp_int8_model_data.o \
+	$(BUILD_DIR)/mnist_mlp_int8_test_images.o
 
-.PHONY: all clean flash monitor run setup-deps fetch-tflm check-deps size microlite export-cnn-int8
+.PHONY: all clean flash monitor run setup-deps fetch-tflm check-deps size microlite export-mlp-int8
 
 all: check-deps microlite $(ELF) size
 
 check-deps:
 	$(MCU_ASSERT_GCC_TOOLCHAIN)
 	@test -f $(TFLM_MAKE) || (echo "Run: make fetch-tflm" >&2; exit 1)
-	@test -f $(BENCH_DIR)/generated/mnist_cnn_int8.tflite || (echo "Run: make export-cnn-int8" >&2; exit 1)
-	@test -f $(BENCH_DIR)/generated/mnist_cnn_int8_model_data.cc || (echo "Run: make export-cnn-int8" >&2; exit 1)
-	@test -f $(BENCH_DIR)/generated/mnist_cnn_int8_test_images.cc || (echo "Run: python3 benchmark/tflm/tools/export_int8_test_images.py" >&2; exit 1)
+	@test -f $(BENCH_DIR)/generated/mnist_mlp_int8.tflite || (echo "Run: make export-mlp-int8" >&2; exit 1)
+	@test -f $(BENCH_DIR)/generated/mnist_mlp_int8_model_data.cc || (echo "Run: make export-mlp-int8" >&2; exit 1)
+	@test -f $(BENCH_DIR)/generated/mnist_mlp_int8_test_images.cc || (echo "Run: make export-mlp-int8" >&2; exit 1)
 
-export-cnn-int8:
-	@$(MAKE) -C $(BENCH_DIR) export-cnn-int8
+export-mlp-int8:
+	@$(MAKE) -C $(BENCH_DIR) export-mlp-int8
 
 fetch-tflm:
 	@$(MAKE) -C $(BENCH_DIR) fetch-tflm
@@ -97,7 +86,7 @@ setup-deps:
 microlite: setup-deps
 	@$(GMAKE) -C $(TFLM_ROOT) -f $(TFLM_MAKE) \
 		TARGET=$(TFLM_TARGET) TARGET_ARCH=$(TFLM_ARCH) \
-		OPTIMIZED_KERNEL_DIR=$(TFLM_OPT_KERNEL) \
+		$(if $(TFLM_OPT_KERNEL),OPTIMIZED_KERNEL_DIR=$(TFLM_OPT_KERNEL),) \
 		TARGET_TOOLCHAIN_ROOT=$(TOOLCHAIN_BIN)/ \
 		EXTERNAL_DIR=../.. \
 		microlite
@@ -130,13 +119,13 @@ $(BUILD_DIR)/tflm_debug_log.o: src/tflm_debug_log.cc
 	@mkdir -p $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-$(BUILD_DIR)/mnist_cnn_int8_model_data.o: $(BENCH_DIR)/generated/mnist_cnn_int8_model_data.cc
+$(BUILD_DIR)/mnist_mlp_int8_model_data.o: $(BENCH_DIR)/generated/mnist_mlp_int8_model_data.cc
 	@mkdir -p $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 $(TFLM_LIB): microlite
 
-$(BUILD_DIR)/mnist_cnn_int8_test_images.o: $(BENCH_DIR)/generated/mnist_cnn_int8_test_images.cc
+$(BUILD_DIR)/mnist_mlp_int8_test_images.o: $(BENCH_DIR)/generated/mnist_mlp_int8_test_images.cc
 	@mkdir -p $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
@@ -146,7 +135,6 @@ $(ELF): $(OBJS) $(TFLM_LIB)
 
 size: $(ELF)
 	$(SIZE) --format=berkeley $(ELF)
-	@echo "Flash budget: 512 KiB — int8 model + TFLM CMSIS-NN runtime"
 
 clean:
 	rm -rf $(BUILD_DIR)

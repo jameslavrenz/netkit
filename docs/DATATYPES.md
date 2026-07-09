@@ -1,6 +1,6 @@
 # Data Types and Numeric Precision
 
-Part of the netkit roadmap — see [PHILOSOPHY.md](PHILOSOPHY.md). **Float32** is the default inference path. **Int8** post-training quantization is implemented for the MNIST CNN MCU path; broader dtype support is Phase 2.
+Part of the netkit roadmap — see [PHILOSOPHY.md](PHILOSOPHY.md). **Float32** is the default inference path. **Int8** post-training quantization is implemented for MNIST **CNN** and **MLP** on MCU (CMSIS-NN); broader dtype support is Phase 2.
 
 ## Float32 (default)
 
@@ -16,18 +16,20 @@ Part of the netkit roadmap — see [PHILOSOPHY.md](PHILOSOPHY.md). **Float32** i
 
 There is **no float64 (double) inference path**. CLI values are parsed with `strtof` / `ParseFloat` and stored as float32.
 
-## Int8 (MNIST CNN — implemented)
+## Int8 (MNIST CNN + MLP — implemented)
 
-Int8 inference is available for the MNIST CNN on **MCU + CMSIS-NN**:
+Int8 inference is available for MNIST **CNN** and **MLP** on **MCU + CMSIS-NN**:
 
 | Component | Type |
 |-----------|------|
 | `.nk` quant payload | int8 weights, int32 biases, per-layer `QuantLayerParams` |
 | Activations | int8 (CMSIS-NN conv/pool/FC + int8 softmax) |
-| Export | `make export-mnist-cnn-int8` (`tools/export_mnist_cnn_int8.py`) |
-| MCU firmware | [boards/nucleo-f446re-cnn-int8](../boards/nucleo-f446re-cnn-int8/README.md) — interpreter embed, **10/10** @ ~95 ms (94.9–97.0 ms typical) |
+| CNN export | `make export-mnist-cnn-int8` |
+| MLP export | `make export-mnist-mlp-int8` |
+| MCU firmware (CNN) | [boards/nucleo-f446re-cnn-int8](../boards/nucleo-f446re-cnn-int8/README.md) — **10/10** @ ~95 ms |
+| MCU firmware (MLP) | [boards/nucleo-f446re-mlp-int8](../boards/nucleo-f446re-mlp-int8/README.md) — **10/10** @ ~3.4 ms (CMSIS) / ~15 ms (reference) |
 
-TFLite input-quant alignment (layer 0 only) is optional when `benchmark/tflm/generated/mnist_cnn_int8.tflite` exists. Weight and output scales are calibrated from netkit float weights.
+TFLite input-quant alignment (layer 0) is optional when matching `benchmark/tflm/generated/mnist_*_int8.tflite` exists. Weight and hidden-layer output scales are calibrated from netkit float weights.
 
 Host desktop builds do not run the CMSIS-NN quant forward path (`NETKIT_CMSIS_NN_ALLOWED=0`); use Python `forward_quantized_cnn` or flash MCU firmware for int8 validation.
 
@@ -41,7 +43,7 @@ Quantized and reduced-precision paths are planned for **Phase 2** (Python packag
 |------|--------|--------------|
 | **float16** | Planned | Half-precision weights/activations where hardware supports FP16 |
 | **int16** | Planned | Wider quantized weights; intermediate precision |
-| **int8** | **MNIST CNN MCU** | Post-training quant export + CMSIS-NN kernels; broader models planned |
+| **int8** | **MNIST CNN + MLP MCU** | Post-training quant export + CMSIS-NN kernels; broader models planned |
 | **int4** | Planned | Aggressive edge quantization (kernel and layout TBD) |
 
 When added, expect:

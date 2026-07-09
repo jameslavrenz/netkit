@@ -25,6 +25,9 @@ export-assets:
 export-cnn-int8:
 	@python3 tools/export_assets.py --model cnn-int8
 
+export-mlp-int8:
+	@python3 tools/export_assets.py --model mlp-int8
+
 export-int8-test-images:
 	@python3 tools/export_int8_test_images.py
 

@@ -2,7 +2,7 @@
 
 netkit is a **multi-modal inference engine** (voice, image, vision) with an **embedded-first** design optimized for **MCUs, MPUs, and NPUs**. It is written in **C++26** using modern C++ patterns and type safety (primary API), with a **C23** API for firmware and FFI. Develop and validate on the desktop, then deploy the lean runtime to embedded targets. Companion to [memkit](https://github.com/jameslavrenz/memkit) for memory management.
 
-**Status:** Currently under active development. **Float32** is the default inference path; **int8** CNN export and CMSIS-NN MCU deployment are available for MNIST — see [docs/DATATYPES.md](docs/DATATYPES.md). **Kalman estimation and control** are planned for the backend.
+**Status:** Active development. **Float32** and **int8** inference work today (MNIST MLP/CNN on host and NUCLEO-F446RE MCU with CMSIS-NN) — see [docs/DATATYPES.md](docs/DATATYPES.md). **Kalman estimation and tracking** are planned for the backend.
 
 Models are loaded from binary **`.nk`** files (single-file architecture + weights). Convert from ONNX with `python -m netkit convert`, or embed a `.nk` in firmware with `python -m netkit aot`.
 
@@ -18,7 +18,7 @@ Use netkit as an **`NkOpsResolver` interpreter** (load `.nk`, dispatch layers at
 | **[Build Targets](docs/BUILD_TARGETS.md)** | CPU / MCU / MPU flags and arena defaults |
 | **[CLI Reference](docs/CLI.md)** | `test`, `run`, and `inspect` (CPU build) |
 | **[Arena Memory](docs/ARENA.md)** | Bump allocator — sizing, alignment, reset |
-| **[Data Types](docs/DATATYPES.md)** | Float32 today; float16 / int16 / int8 / int4 roadmap |
+| **[Data Types](docs/DATATYPES.md)** | Float32 and int8 (MNIST MCU); float16 / int16 / int4 roadmap |
 | **[ONNX Import](docs/ONNX.md)** | Python packager (ONNX → `.nk`); parity tests in Python |
 | **[Binary .nk Format](docs/NK_FORMAT.md)** | Single-file models — overview |
 | **[`.nk` File Specification](docs/NK_FILE_SPECIFICATION.md)** | Byte-level `.nk` layout, offsets, hex inspection |
@@ -27,7 +27,9 @@ Use netkit as an **`NkOpsResolver` interpreter** (load `.nk`, dispatch layers at
 | **[MNIST benchmarks](benchmark/README.md)** | Host invoke latency + per-op profiles: netkit vs TFLM |
 | **[NUCLEO-F446RE firmware](boards/nucleo-f446re/README.md)** | On-device MNIST MLP f32 benchmark (CMSIS-DSP, lowered AOT) |
 | **[NUCLEO-F446RE CNN int8](boards/nucleo-f446re-cnn-int8/README.md)** | On-device MNIST CNN int8 benchmark (CMSIS-NN, interpreter embed) |
-| **[NUCLEO-F446RE TFLM int8](boards/nucleo-f446re-tflm-cnn-int8/README.md)** | Same CNN int8 vectors via TFLite Micro (comparison baseline) |
+| **[NUCLEO-F446RE MLP int8](boards/nucleo-f446re-mlp-int8/README.md)** | On-device MNIST MLP int8 benchmark (CMSIS-NN, interpreter embed) |
+| **[NUCLEO-F446RE TFLM CNN int8](boards/nucleo-f446re-tflm-cnn-int8/README.md)** | Same CNN int8 vectors via TFLite Micro (comparison baseline) |
+| **[NUCLEO-F446RE TFLM MLP int8](boards/nucleo-f446re-tflm-mlp-int8/README.md)** | Same MLP int8 vectors via TFLite Micro (comparison baseline) |
 | **[C API Reference](docs/c-api.md)** | `netkit.h` (C23) |
 | **[C++ API Reference](docs/cpp-api.md)** | Headers in `include/` (C++26) |
 | **[API Parity Policy](docs/API_PARITY.md)** | C ↔ C++ symbol map and contribution rules |
@@ -243,9 +245,9 @@ MNIST MLP: [MNIST.md](docs/MNIST.md). MNIST CNN: [MNIST_CNN.md](docs/MNIST_CNN.m
 See [PHILOSOPHY.md](docs/PHILOSOPHY.md) for the full narrative — including [interpreter vs compiled deployment](docs/PHILOSOPHY.md#deployment-modes-interpreter-or-compiled). In brief:
 
 - **Interpreter or compiled** — `NkOpsResolver` + `.nk` load for flexibility; AOT embed + packager optimizations + trimmed ops for production speed
-- **Phase 1 (today)** — Float32 forward executor, ONNX → `.nk` packager, desktop CLI, optional CMSIS-NN/DSP backends
-- **Phase 2 (planned)** — Packager-side fusion, layout, quantization-aware export (int8, float16, …)
-- **Phase 3 (planned)** — Kalman estimation and control alongside neural inference
+- **Phase 1 (today)** — Float32 and int8 forward paths, ONNX → `.nk` packager, desktop CLI, CMSIS-NN/DSP MCU firmware
+- **Phase 2 (planned)** — Broader quantization (float16, int16, int4), fusion, layout, NPU offload
+- **Phase 3 (planned)** — Kalman estimation and tracking alongside neural inference
 - **Lightweight** — Standard C/C++ only, no external dependencies in the engine
 - **Memory-conscious** — Arena bump allocator; target-specific defaults (CPU 4 MiB / MCU 64 KiB / MPU 128 KiB)
 - **Single-threaded** — Sequential forward pass
@@ -253,15 +255,15 @@ See [PHILOSOPHY.md](docs/PHILOSOPHY.md) for the full narrative — including [in
 
 ## Roadmap
 
-**Phase 1 (today):** Multi-modal **float32** inference (image/vision fixtures today; voice on the roadmap) — `.nk` load or AOT embed, MLP/CNN + fused blocks (ResNet, MobileNet, ConvNeXt), depthwise conv, asymmetric padding, optional CMSIS-NN/DSP ([KERNELS.md](docs/KERNELS.md)).
+**Phase 1 (today):** Multi-modal **float32** and **int8** inference (image/vision fixtures today; voice on the roadmap) — `.nk` load or AOT embed, MLP/CNN + fused blocks (ResNet, MobileNet, ConvNeXt), depthwise conv, asymmetric padding, CMSIS-NN/DSP MCU benchmarks ([KERNELS.md](docs/KERNELS.md)).
 
 **Phase 2 (planned):**
 
-- **Numeric types:** float16, int16, **int8**, int4 ([DATATYPES.md](docs/DATATYPES.md))
-- **Packager:** quantized `.nk` export, broader fusion, target-specific profiles ([PHILOSOPHY.md](docs/PHILOSOPHY.md))
-- **Import / runtime:** broader ONNX op coverage, int8 inference kernels, NPU offload paths
+- **Numeric types:** float16, int16, int4; broader **int8** model coverage ([DATATYPES.md](docs/DATATYPES.md))
+- **Packager:** fusion, layout, target-specific profiles ([PHILOSOPHY.md](docs/PHILOSOPHY.md))
+- **Import / runtime:** broader ONNX op coverage, NPU offload paths
 
-**Phase 3 (planned):** Kalman estimation and control in the backend (sensor fusion, state estimation, closed-loop control).
+**Phase 3 (planned):** Kalman estimation and tracking in the backend (sensor fusion, state estimation).
 
 ## Repository topics
 

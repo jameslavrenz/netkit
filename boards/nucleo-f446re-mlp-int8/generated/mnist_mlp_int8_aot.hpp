@@ -6,17 +6,17 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace netkit::aot::mnist_cnn_int8 {
+namespace netkit::aot::mnist_mlp_int8 {
 
-inline constexpr const char* kName = "mnist_cnn_int8";
-inline constexpr const char* kNetwork = "cnn";
+inline constexpr const char* kName = "mnist_mlp_int8";
+inline constexpr const char* kNetwork = "mlp";
 inline constexpr std::uint32_t kInputElements = 784u;
 inline constexpr std::uint32_t kOutputElements = 10u;
-inline constexpr std::uint32_t kInputShape[] = {28, 28, 1};
-inline constexpr std::uint32_t kInputRank = 3u;
-inline constexpr std::size_t kArenaBytesAfterLoad = 42778u;
-inline constexpr std::size_t kArenaBytesAfterForward = 43562u;
-inline constexpr std::size_t kArenaBytesRecommended = 43584u;
+inline constexpr std::uint32_t kInputShape[] = {1, 784};
+inline constexpr std::uint32_t kInputRank = 2u;
+inline constexpr std::size_t kArenaBytesAfterLoad = 912u;
+inline constexpr std::size_t kArenaBytesAfterForward = 4088u;
+inline constexpr std::size_t kArenaBytesRecommended = 4096u;
 inline constexpr bool kQuantLowered = false;
 inline constexpr std::size_t kWorkspaceBytes = 0u;
 
@@ -46,4 +46,4 @@ private:
     void* network_ = nullptr;
 };
 
-}  // namespace netkit::aot::mnist_cnn_int8
+}  // namespace netkit::aot::mnist_mlp_int8

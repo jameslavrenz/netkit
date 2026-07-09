@@ -29,7 +29,7 @@ option(NETKIT_CMSIS_NN "Use ARM CMSIS-NN float32 backends" ${_netkit_cmsis_nn_de
 option(NETKIT_GLOBAL_ARENA "Use static/global arena on CPU builds" OFF)
 option(NETKIT_HEAP_ARENA "Compile heap arena helpers on MCU/MPU builds" OFF)
 option(NETKIT_WEIGHTS_IN_RAM "Copy .nk weight/bias payload into arena at load (opt-in)" OFF)
-set(NETKIT_IM2COL "" CACHE STRING "float Conv2D strategy: 0 direct, 1 partial, 2 full im2col+GEMM (empty = default 0 (direct) on all targets)")
+set(NETKIT_IM2COL "0" CACHE STRING "float Conv2D strategy: 0 direct (default), 1 partial, 2 full im2col+GEMM")
 option(NETKIT_LOOP_UNROLL "EXPERIMENTAL: 4x loop unroll in netkit reference kernels (increases .text)" OFF)
 
 set(CMAKE_CXX_STANDARD 26)
@@ -153,9 +153,7 @@ else()
     target_compile_definitions(netkit PUBLIC NETKIT_WEIGHTS_IN_RAM=0)
 endif()
 
-if(NOT NETKIT_IM2COL STREQUAL "")
-    target_compile_definitions(netkit PUBLIC NETKIT_IM2COL=${NETKIT_IM2COL})
-endif()
+target_compile_definitions(netkit PUBLIC NETKIT_IM2COL=${NETKIT_IM2COL})
 
 if(NETKIT_LOOP_UNROLL)
     target_compile_definitions(netkit PUBLIC NETKIT_LOOP_UNROLL=1)

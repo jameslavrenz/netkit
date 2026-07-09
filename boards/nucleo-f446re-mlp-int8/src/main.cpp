@@ -1,12 +1,10 @@
-// NUCLEO-F446RE MNIST CNN int8 invoke benchmark — same 10 images as benchmark/netkit.
-// Supports interpreter embed (default) or quant lowered embed (NETKIT_LOWERED=1).
-// Test inputs are prequantized int8 (export_int8_test_images.py) — no float conversion.
-// Dequantized confidence is computed offline — see benchmark/tools/parse_mcu_cnn_int8_log.py.
+// NUCLEO-F446RE MNIST MLP int8 invoke benchmark — same 10 images as benchmark/netkit.
+// Interpreter embed (.nk loader). Prequantized int8 test vectors.
 
 #include "dwt_time.h"
 #include "cmsis_dsp_util.hpp"
-#include "mnist_cnn_int8_aot.hpp"
-#include "mnist_cnn_int8_test_images.h"
+#include "mnist_mlp_int8_aot.hpp"
+#include "mnist_mlp_int8_test_images.h"
 #include "netkit_config.h"
 #include "stm32f446xx.h"
 #include "uart.h"
@@ -14,24 +12,21 @@
 #include <array>
 #include <cstring>
 
-namespace aot = netkit::aot::mnist_cnn_int8;
+namespace aot = netkit::aot::mnist_mlp_int8;
 
 #if NETKIT_REFERENCE_QUANT_LOOPS
-#define NK_CNN_INT8_BACKEND_LABEL "reference-int8"
+#define NK_MLP_INT8_BACKEND_LABEL "reference-int8"
 #else
-#define NK_CNN_INT8_BACKEND_LABEL "cmsis-nn-int8"
+#define NK_MLP_INT8_BACKEND_LABEL "cmsis-nn-int8"
 #endif
 
 namespace {
 
 constexpr int kRuns = 10;
-constexpr int kImageCount = kMnistCnnInt8BenchmarkImageCount;
-constexpr int kInputSize = kMnistCnnInt8BenchmarkInputSize;
+constexpr int kImageCount = kMnistMlpInt8BenchmarkImageCount;
+constexpr int kInputSize = kMnistMlpInt8BenchmarkInputSize;
 constexpr int kOutputClasses = 10;
-// STM32F446RE has 128 KiB SRAM — keep interpreter arena at 64 KiB (verified on-device
-// 10/10). Embed may emit a larger kArenaBytesRecommended (probe + headroom); firmware
-// sizes the buffer here, not from that constant.
-constexpr std::size_t kArenaCapacity = 64u * 1024u;
+constexpr std::size_t kArenaCapacity = 32u * 1024u;
 
 alignas(std::max_align_t) static unsigned char g_arena_memory[kArenaCapacity];
 alignas(std::max_align_t) static int8_t g_output_i8[aot::kOutputElements];
@@ -63,7 +58,7 @@ void PrintDigitSummary(int image,
                        int ok)
 {
     uart_printf(
-        "DIGIT_SUMMARY runtime=netkit model=cnn_int8 image=%d label=%d pred=%d pred_i8=%d ok=%d out_i8=",
+        "DIGIT_SUMMARY runtime=netkit model=mlp_int8 image=%d label=%d pred=%d pred_i8=%d ok=%d out_i8=",
         image,
         label,
         predicted,
@@ -73,15 +68,6 @@ void PrintDigitSummary(int image,
     uart_write("\r\n");
 }
 
-template <bool Lowered>
-void PrintStorageInfo()
-{
-    if constexpr (Lowered)
-        uart_printf("  workspace:   %u bytes\r\n", static_cast<unsigned>(aot::kWorkspaceBytes));
-    else
-        uart_printf("  nk bytes:    %u\r\n", static_cast<unsigned>(aot::kNkBytes));
-}
-
 }  // namespace
 
 extern "C" int main(void)
@@ -89,19 +75,16 @@ extern "C" int main(void)
     uart_init();
     dwt_time_init();
 
-    uart_write("\r\nnetkit NUCLEO-F446RE MNIST CNN int8 benchmark\r\n");
-    uart_printf("  backend:     %s int8 + cmsis-dsp utils (MCU CM4%s)\r\n",
-                NETKIT_REFERENCE_QUANT_LOOPS ? "netkit reference" : "cmsis-nn",
-                aot::kQuantLowered ? ", quant lowered AOT" : ", .nk loader");
+    uart_write("\r\nnetkit NUCLEO-F446RE MNIST MLP int8 benchmark\r\n");
+    uart_printf("  backend:     %s int8 + cmsis-dsp utils (MCU CM4, .nk loader)\r\n",
+                NETKIT_REFERENCE_QUANT_LOOPS ? "netkit reference" : "cmsis-nn");
     uart_printf("  weights:     %s\r\n",
-                aot::kQuantLowered ? "flash (static .rodata)"
-                                   : (NETKIT_WEIGHTS_IN_RAM ? "ram (arena copy at load)"
-                                                            : "flash (embedded .nk blob)"));
+                NETKIT_WEIGHTS_IN_RAM ? "ram (arena copy at load)" : "flash (embedded .nk blob)");
     uart_write("  dtype:       int8 end-to-end (weights, activations, inputs, softmax)\r\n");
     uart_printf("  images:      %d per run\r\n", kImageCount);
     uart_printf("  runs:        %d (discard first invoke each run)\r\n", kRuns);
     uart_printf("  arena bytes: %u\r\n", static_cast<unsigned>(kArenaCapacity));
-    PrintStorageInfo<aot::kQuantLowered>();
+    uart_printf("  nk bytes:    %u\r\n", static_cast<unsigned>(aot::kNkBytes));
     uart_printf("  sysclk:      %lu Hz\r\n", static_cast<unsigned long>(SystemCoreClock));
 
     Arena arena;
@@ -118,7 +101,7 @@ extern "C" int main(void)
     uart_write("  model:       loaded\r\n");
 
     {
-        const MnistCnnInt8BenchmarkSample& probe = kMnistCnnInt8BenchmarkImages[0];
+        const MnistMlpInt8BenchmarkSample& probe = kMnistMlpInt8BenchmarkImages[0];
         CopyInputInt8(g_input_staging, probe.pixels);
         if (!model.forwardInt8(arena, g_input_staging, g_output_i8))
         {
@@ -148,7 +131,7 @@ extern "C" int main(void)
 
         for (int i = 0; i < kImageCount; ++i)
         {
-            const MnistCnnInt8BenchmarkSample& sample = kMnistCnnInt8BenchmarkImages[i];
+            const MnistMlpInt8BenchmarkSample& sample = kMnistMlpInt8BenchmarkImages[i];
 
             CopyInputInt8(g_input_staging, sample.pixels);
 
@@ -191,7 +174,7 @@ extern "C" int main(void)
     uart_write("    image  label  pred  pred_i8  ok\r\n");
     for (int i = 0; i < kImageCount; ++i)
     {
-        const MnistCnnInt8BenchmarkSample& sample = kMnistCnnInt8BenchmarkImages[i];
+        const MnistMlpInt8BenchmarkSample& sample = kMnistMlpInt8BenchmarkImages[i];
         const int predicted = final_predictions[static_cast<size_t>(i)];
         const int8_t* out_i8 = &final_outputs[static_cast<size_t>(i) * kOutputClasses];
         const int pred_i8 = static_cast<int>(out_i8[predicted]);
@@ -213,14 +196,14 @@ extern "C" int main(void)
     mean_us /= static_cast<double>(kRuns);
 
     uart_printf("  accuracy:    %d/%d on final run\r\n", correct, kImageCount);
-    uart_write("\r\nnetkit MNIST cnn int8 benchmark summary (");
-    uart_write(NETKIT_REFERENCE_QUANT_LOOPS ? "reference-int8" : "cmsis-nn-int8");
+    uart_write("\r\nnetkit MNIST mlp int8 benchmark summary (");
+    uart_write(NK_MLP_INT8_BACKEND_LABEL);
     uart_write(")\r\n");
     uart_printf("  method:      %d runs x 10 images, discard first invoke each run\r\n", kRuns);
     uart_write("  per-run avg: avg of images 1-9 (us)\r\n\r\n");
     uart_printf("  mean:   %8.3f us (%6.3f ms)\r\n", mean_us, mean_us / 1000.0);
     uart_printf(
-        "BENCHMARK_SUMMARY runtime=netkit model=cnn_int8 backend=" NK_CNN_INT8_BACKEND_LABEL
+        "BENCHMARK_SUMMARY runtime=netkit model=mlp_int8 backend=" NK_MLP_INT8_BACKEND_LABEL
         " mean_us=%.3f runs=%d\r\n",
         mean_us,
         kRuns);

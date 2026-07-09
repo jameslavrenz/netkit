@@ -187,29 +187,30 @@ void MLPNetwork::forward(const Tensor& input, Tensor& output, Arena& /*arena*/)
 
     if (quantized_)
     {
+        const bool input_is_float = input.type != DataType::Int8;
         if (num_layers == 1)
         {
-            ForwardQuantizedLayer(layers[0], input, output, ping_i8_a, true);
+            ForwardQuantizedLayer(layers[0], input, output, ping_i8_a, input_is_float);
             return;
         }
 
         if (num_layers == 2)
         {
-            ForwardQuantizedLayer(layers[0], input, hidden_activation_, ping_i8_b, true);
+            ForwardQuantizedLayer(layers[0], input, hidden_activation_, ping_i8_b, input_is_float);
             ForwardQuantizedLayer(layers[1], hidden_activation_, output, ping_i8_b, false);
             return;
         }
 
         const Tensor* current_input = &input;
         Tensor* write_view = &ping_i8_view_a_;
-        bool input_is_float = true;
+        bool layer_input_is_float = input_is_float;
 
         for (size_t i = 0; i < num_layers; ++i)
         {
             if (i == num_layers - 1)
             {
                 ForwardQuantizedLayer(
-                    layers[i], *current_input, output, ping_i8_b, input_is_float);
+                    layers[i], *current_input, output, ping_i8_b, layer_input_is_float);
                 return;
             }
 
@@ -221,9 +222,9 @@ void MLPNetwork::forward(const Tensor& input, Tensor& output, Arena& /*arena*/)
             *write_view = TensorFactory::View2DInt8(write_view == &ping_i8_view_a_ ? ping_i8_a : ping_i8_b,
                                                     rows,
                                                     cols);
-            ForwardQuantizedLayer(layers[i], *current_input, *write_view, ping_i8_b, input_is_float);
+            ForwardQuantizedLayer(layers[i], *current_input, *write_view, ping_i8_b, layer_input_is_float);
             current_input = write_view;
-            input_is_float = false;
+            layer_input_is_float = false;
             write_view = (write_view == &ping_i8_view_a_) ? &ping_i8_view_b_ : &ping_i8_view_a_;
         }
         return;

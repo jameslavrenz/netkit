@@ -7,7 +7,7 @@
  *   docs/PHILOSOPHY.md       — product vision, Phase 1/2, roadmap
  *   docs/GETTING_STARTED.md  — build, test, first inference
  *   docs/BUILD_TARGETS.md    — NETKIT_TARGET, arena flags, defaults
- *   docs/DATATYPES.md        — float32 today, quantized types roadmap
+ *   docs/DATATYPES.md        — float32 and int8 today; more dtypes roadmap
  *   docs/ARENA.md            — bump allocator memory model
  *   docs/c-api.md            — full C API reference
  *   docs/API_PARITY.md       — C ↔ C++ symbol map
