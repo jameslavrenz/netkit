@@ -11,7 +11,7 @@ Part of the netkit roadmap — see [PHILOSOPHY.md](PHILOSOPHY.md). **Float32** i
 | Tensor payload (inference) | `float` / `DataType::Float32` |
 | `.nk` weight/bias payloads | little-endian float32 |
 | Activations, matmul, conv | float32 math (`expf`, `tanhf`, etc.) |
-| CLI / C API inputs and outputs | float32 |
+| CLI / C API inputs and outputs | float32 (`nk_model_run`); int8 models use `nk_model_run_int8` |
 | Regression expected values | float32 |
 
 There is **no float64 (double) inference path**. CLI values are parsed with `strtof` / `ParseFloat` and stored as float32.
@@ -23,15 +23,20 @@ Int8 inference is available for MNIST **CNN** and **MLP** on **MCU + CMSIS-NN**:
 | Component | Type |
 |-----------|------|
 | `.nk` quant payload | int8 weights, int32 biases, per-layer `QuantLayerParams` |
-| Activations | int8 (CMSIS-NN conv/pool/FC + int8 softmax) |
+| Activations | int8 (CMSIS-NN or integer reference kernels; int8 softmax) |
+| Device I/O | **int8 in → int8 out** (no float quant / dequant on MCU or in C++) |
 | CNN export | `make export-mnist-cnn-int8` |
 | MLP export | `make export-mnist-mlp-int8` |
 | MCU firmware (CNN) | [boards/nucleo-f446re-cnn-int8](../boards/nucleo-f446re-cnn-int8/README.md) — **10/10** @ ~95 ms |
 | MCU firmware (MLP) | [boards/nucleo-f446re-mlp-int8](../boards/nucleo-f446re-mlp-int8/README.md) — **10/10** @ ~3.4 ms (CMSIS) / ~15 ms (reference) |
 
-TFLite input-quant alignment (layer 0) is optional when matching `benchmark/tflm/generated/mnist_*_int8.tflite` exists. Weight and hidden-layer output scales are calibrated from netkit float weights.
+**On-device / host C++ rule:** int8 inference stays integer end-to-end on MCU, MPU, and CPU. There is **no C++ float→int8 quantization or dequantization** — float→int8 happens only in Python at `.nk` / test-vector export time; scale metadata lives in the model; kernels apply TFLite-style multiply-by-quantized-multiplier. Interpreting outputs (dequantized confidence, float probabilities) is done **offline in Python** (e.g. `benchmark/tools/parse_mcu_cnn_int8_log.py`), never in firmware or `libnetkit`.
 
-Host desktop builds do not run the CMSIS-NN quant forward path (`NETKIT_CMSIS_NN_ALLOWED=0`); use Python `forward_quantized_cnn` or flash MCU firmware for int8 validation.
+**Kernel fusion (int8):** CMSIS-NN fuses **ReLU / ReLU6** output clamps into conv, depthwise, and FC via `QuantInteger::QuantClamp` (ReLU6 uses quantized `6.0`). Softmax, Sigmoid, Tanh, and LeakyReLU remain separate follow-up kernels — CMSIS-NN has no fused Softmax API. For **classification benches** (MNIST MCU firmware), AOT/`MLPNetwork`/`CmsisQuantPlan` support `--omit-final-softmax` / `SetOmitFinalSoftmax(true)` / `runtime.omit_final_softmax`: the final Dense Softmax is skipped and logits are written; `argmax(logits) == argmax(softmax(logits))`. Float max-pool can fuse ReLU/ReLU6 through CMSIS `cmsis_nn_activation` when the layer carries an activation tag. UIB int8 depthwise now tries CMSIS-NN before the reference loop. Residual Add is fused as a conv/FC epilogue where the graph allows it (`Conv2dForward` optional residual; `Conv2dNhwcQuant` + `ResidualAddS8`; ResNet `MatAddThenRelu`) — CMSIS still has no native conv+add, so the epilogue uses `arm_add_f32` / `arm_elementwise_add_s8` after the conv. Quant AOT lowering covers CNN primitives, MLP dense, avg-pool, and MobileNetV4 UIB composites (`forward_quant`); float AOT also lowers ResNet BasicBlock and ConvNeXt V2 blocks.
+
+TFLite input-quant alignment (layer 0) is optional when matching `benchmark/tflm/generated/mnist_*_int8.tflite` exists. Weight and hidden-layer output scales are calibrated from netkit float weights (Python export).
+
+Host desktop builds do not run the CMSIS-NN quant forward path (`NETKIT_CMSIS_NN_ALLOWED=0`). On **cpu/mpu**, int8 LayerFast uses **XNNPACK qs8** when `NETKIT_XNNPACK=1`, else netkit integer reference loops. Python `forward_quantized_cnn` / `forward_quantized_mlp` and MCU firmware remain the CMSIS-NN validation paths. Host regression and ImageNet/MNIST int8 benches load **prequantized int8** inputs (Python export; TCAS stores values as float in [-128, 127]) via `nk_model_run_int8` / int8 tensor views — never float→int8 inside C++.
 
 The `DataType` / `nk_dtype_t` enums list `Int8`, `UInt8`, and `Int16` for future tensor metadata beyond the MNIST CNN path.
 
@@ -57,15 +62,15 @@ Until broader dtype support lands, **export scripts for non-CNN models must emit
 
 ## API surface
 
-Both APIs expose float-only data accessors:
+Float32 models use float I/O; int8 models use int8 I/O:
 
-| C++ | C |
-|-----|---|
-| `tensor_data_f32()` | `nk_tensor_data_f32()` |
-| `nk_tensor_fill` | fill tensor elements from `float*` (C); `TensorFactory::Fill(tensor, std::span<const float>)` (C++) |
-| `nk_model_run(..., const float* input, ..., float* output, ...)` | same |
+| C++ / C | Role |
+|---------|------|
+| `nk_model_run(..., const float* input, ..., float* output, ...)` | float32 models only |
+| `nk_model_run_int8(..., const int8_t* input, ..., int8_t* output, ...)` | int8 models only |
+| AOT `Model::forwardInt8` | MCU int8 firmware path |
 
-Do not assume `double` or integer tensor payloads work for forward passes.
+Do not assume float inputs work for quantized models — quantize in Python at export time.
 
 ## Related docs
 

@@ -14,9 +14,9 @@ inline constexpr std::uint32_t kInputElements = 784u;
 inline constexpr std::uint32_t kOutputElements = 10u;
 inline constexpr std::uint32_t kInputShape[] = {28, 28, 1};
 inline constexpr std::uint32_t kInputRank = 3u;
-inline constexpr std::size_t kArenaBytesAfterLoad = 42778u;
-inline constexpr std::size_t kArenaBytesAfterForward = 43562u;
-inline constexpr std::size_t kArenaBytesRecommended = 43584u;
+inline constexpr std::size_t kArenaBytesAfterLoad = 89536u;
+inline constexpr std::size_t kArenaBytesAfterForward = 89536u;
+inline constexpr std::size_t kArenaBytesRecommended = 89536u;
 inline constexpr bool kQuantLowered = false;
 inline constexpr std::size_t kWorkspaceBytes = 0u;
 
@@ -36,9 +36,7 @@ public:
     Model() = default;
 
     bool load(Arena& arena);
-    bool forward(Arena& arena, const float* input, int8_t* output) const;
     bool forwardInt8(Arena& arena, const int8_t* input, int8_t* output) const;
-    bool forwardFloat(Arena& arena, const float* input, float* output) const;
     [[nodiscard]] bool isLoaded() const { return loaded_; }
 
 private:

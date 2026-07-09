@@ -474,15 +474,16 @@ bool ReferenceKernel::DepthwiseConv2dForwardImpl(const Tensor& input,
                               output);
 }
 
-void ReferenceKernel::MaxPool2dForwardImpl(const Tensor& input,
-                                          int pool_h,
-                                          int pool_w,
-                                          int stride,
-                                          int pad_h,
-                                          int pad_w,
-                                          int pad_h_end,
-                                          int pad_w_end,
-                                          Tensor& output)
+bool ReferenceKernel::MaxPool2dForwardImpl(const Tensor& input,
+                                           int pool_h,
+                                           int pool_w,
+                                           int stride,
+                                           int pad_h,
+                                           int pad_w,
+                                           int pad_h_end,
+                                           int pad_w_end,
+                                           NetkitKernelActivation fuse_activation,
+                                           Tensor& output)
 {
     const float* in = tensor_data_f32(const_cast<Tensor&>(input));
     float* out = tensor_data_f32(output);
@@ -496,7 +497,13 @@ void ReferenceKernel::MaxPool2dForwardImpl(const Tensor& input,
         pad_w_end == 0)
     {
         MaxPool2dForward2x2S2P0(in, out, in_w, channels, out_h, out_w);
-        return;
+        if (kernel_activation_is_fused(fuse_activation))
+        {
+            const uint32_t n = out_h * out_w * channels;
+            for (uint32_t i = 0; i < n; ++i)
+                out[i] = ApplyKernelActivation(out[i], fuse_activation);
+        }
+        return kernel_activation_is_fused(fuse_activation);
     }
 
     const uint32_t in_h = input.shape[0];
@@ -531,10 +538,11 @@ void ReferenceKernel::MaxPool2dForwardImpl(const Tensor& input,
                     }
                 }
 
-                out[out_spatial_base + c] = max_val;
+                out[out_spatial_base + c] = ApplyKernelActivation(max_val, fuse_activation);
             }
         }
     }
+    return kernel_activation_is_fused(fuse_activation);
 }
 
 void ReferenceKernel::AvgPool2dForwardImpl(const Tensor& input,

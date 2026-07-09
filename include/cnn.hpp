@@ -69,6 +69,8 @@ struct MaxPool2DLayer
     int pad_w = 0;
     int pad_h_end = 0;
     int pad_w_end = 0;
+    // Optional fused clamp (ReLU/ReLU6) for float CMSIS max-pool path.
+    ConvActivationType activation = ConvActivationType::None;
 
     void forward(const Tensor& input, Tensor& output);
 };
@@ -172,8 +174,6 @@ private:
     QuantOutputFormat quant_output_format_ = QuantOutputFormat::Int8;
     int8_t* ping_i8_a{};
     int8_t* ping_i8_b{};
-    float* float_output_buffer_{};
-    uint32_t float_output_elements_{};
     CmsisQuantPlan::Runtime* quant_runtime_{};
 
     Tensor& forward_quantized(const Tensor& input);

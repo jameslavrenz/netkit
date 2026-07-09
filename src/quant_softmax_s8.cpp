@@ -248,17 +248,6 @@ namespace QuantOps
         QuantTrace::RecordSoftmaxReference();
     }
 
-    float DequantizeSoftmaxOutput(int8_t value)
-    {
-        return (static_cast<float>(value) - static_cast<float>(kSoftmaxOutputZeroPoint)) * kSoftmaxOutputScale;
-    }
-
-    void DequantizeSoftmaxOutput(const int8_t* src, float* dst, uint32_t count)
-    {
-        for (size_t i = 0; i < count; ++i)
-            dst[i] = DequantizeSoftmaxOutput(src[i]);
-    }
-
     uint32_t ArgMaxInt8(const int8_t* values, uint32_t count)
     {
         return CmsisQuantUtil::ArgMaxInt8(values, count);

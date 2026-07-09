@@ -12,19 +12,24 @@ set_property(CACHE NETKIT_TARGET PROPERTY STRINGS cpu mcu mpu)
 if(NETKIT_TARGET STREQUAL "cpu")
     set(_netkit_cmsis_dsp_default ON)
     set(_netkit_cmsis_nn_default OFF)
+    set(_netkit_xnnpack_default ON)
 elseif(NETKIT_TARGET STREQUAL "mcu")
     set(_netkit_cmsis_dsp_default ON)
     set(_netkit_cmsis_nn_default ON)
+    set(_netkit_xnnpack_default OFF)
 elseif(NETKIT_TARGET STREQUAL "mpu")
     set(_netkit_cmsis_dsp_default ON)
     set(_netkit_cmsis_nn_default OFF)
+    set(_netkit_xnnpack_default ON)
 else()
     set(_netkit_cmsis_dsp_default OFF)
     set(_netkit_cmsis_nn_default OFF)
+    set(_netkit_xnnpack_default OFF)
 endif()
 
 option(NETKIT_CMSIS_DSP "Use ARM CMSIS-DSP float32 backends" ${_netkit_cmsis_dsp_default})
 option(NETKIT_CMSIS_NN "Use ARM CMSIS-NN float32 backends" ${_netkit_cmsis_nn_default})
+option(NETKIT_XNNPACK "Use Google XNNPACK float32 LayerFast backends (cpu/mpu)" ${_netkit_xnnpack_default})
 
 option(NETKIT_GLOBAL_ARENA "Use static/global arena on CPU builds" OFF)
 option(NETKIT_HEAP_ARENA "Compile heap arena helpers on MCU/MPU builds" OFF)
@@ -83,6 +88,7 @@ set(NETKIT_RUNTIME_SOURCES
     src/cmsis_nn_quant_backend.cpp
     src/cmsis_quant_plan.cpp
     src/cnn_quant.cpp
+    src/xnnpack_quant_backend.cpp
     src/cnn.cpp
     ${NETKIT_LAYER_OP_SOURCES}
     src/ops_resolver.cpp
@@ -162,6 +168,7 @@ else()
 endif()
 
 include(cmake/netkit_cmsis.cmake)
+include(cmake/netkit_xnnpack.cmake)
 
 netkit_add_cmsis_softmax_s8(netkit)
 
@@ -171,6 +178,10 @@ endif()
 
 if(NETKIT_CMSIS_NN)
     netkit_add_cmsis_nn(netkit)
+endif()
+
+if(NETKIT_XNNPACK)
+    netkit_add_xnnpack(netkit)
 endif()
 
 if(NETKIT_CMSIS_DSP OR NETKIT_CMSIS_NN)

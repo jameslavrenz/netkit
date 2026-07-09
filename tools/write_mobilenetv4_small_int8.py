@@ -7,7 +7,7 @@ from pathlib import Path
 
 import numpy as np
 
-from netkit.quantize import forward_quantized_cnn, quantize_cnn, quantized_cnn_to_spec
+from netkit.quantize import forward_quantized_cnn, quantize_cnn, quantize_float_input, quantized_cnn_to_spec
 from netkit.reader import read_nk, read_test_suite
 from netkit.writer import RegressionCase, RegressionSuite, write_nk
 
@@ -28,15 +28,18 @@ def main() -> None:
     pack = quantize_cnn(arch, weights, cal_arr, num_calibration=len(cal))
     spec = quantized_cnn_to_spec(arch, pack)
 
+    input_scale = pack.quant_layers[0].input_scale
+    input_zp = pack.quant_layers[0].input_zero_point
     int8_cases = []
     for case in suite.cases:
         inp = np.asarray(case.input, dtype=np.float32)
-        out_i8 = forward_quantized_cnn(inp, arch, pack, output_float=False)
         out_f = forward_quantized_cnn(inp, arch, pack, output_float=True)
+        # TCAS stores floats; embed prequantized int8 as float values in [-128, 127].
+        input_i8 = quantize_float_input(inp.reshape(-1), input_scale, input_zp)
         int8_cases.append(
             RegressionCase(
                 name=case.name + " (int8)",
-                input=inp.tolist(),
+                input=input_i8.astype(np.float32).tolist(),
                 expected=out_f.astype(np.float32).tolist(),
             )
         )

@@ -6,8 +6,8 @@
 #
 # Requires MCU_BOARD_COMMON (see mcu_gcc_toolchain.mk).
 #
-# Tiered optimization (same as TFLM):
-#   CORE_OPTIMIZATION_LEVEL              -Os  board glue + runtime
+# Optimization (match TFLM kernel speed — never -Os):
+#   CORE_OPTIMIZATION_LEVEL              -O2  board glue + runtime
 #   KERNEL_OPTIMIZATION_LEVEL            -O2  hot inference C++
 #   THIRD_PARTY_KERNEL_OPTIMIZATION_LEVEL -O2 CMSIS-NN / CMSIS-DSP kernels
 
@@ -54,7 +54,7 @@ TFLM_CXX_WARNINGS := \
 # TFLM microlite board glue uses C++17; netkit boards set MCU_CXX_STD before include.
 MCU_CXX_STD ?= -std=c++17
 
-CORE_OPTIMIZATION_LEVEL := -Os
+CORE_OPTIMIZATION_LEVEL := -O2
 KERNEL_OPTIMIZATION_LEVEL := -O2
 THIRD_PARTY_KERNEL_OPTIMIZATION_LEVEL := -O2
 

@@ -7,6 +7,7 @@
 #include "kernel_workspace.hpp"
 #include "nk_op_detail.hpp"
 #include "netkit_config.h"
+#include "quant_integer.hpp"
 #include "quant_trace.hpp"
 
 #if defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN && NETKIT_CMSIS_NN_ALLOWED
@@ -57,11 +58,23 @@ namespace
         *shift = shift_val;
     }
 
+    cmsis_nn_activation activation_clamp(QuantInteger::QuantClamp clamp,
+                                         float output_scale,
+                                         int32_t output_zero_point)
+    {
+        int32_t act_min = -128;
+        int32_t act_max = 127;
+        QuantInteger::QuantClampRange(clamp, output_scale, output_zero_point, &act_min, &act_max);
+        return {.min = act_min, .max = act_max};
+    }
+
+    // Legacy helper: ReLU clamp only (identity otherwise).
     cmsis_nn_activation activation_relu(bool apply_relu)
     {
-        if (apply_relu)
-            return {.min = 0, .max = 127};
-        return {.min = -128, .max = 127};
+        return activation_clamp(apply_relu ? QuantInteger::QuantClamp::ReLU
+                                           : QuantInteger::QuantClamp::None,
+                                1.0f,
+                                0);
     }
 
     bool FillPerChannelQuant(const NkFormat::MlpLayerQuantDesc& quant,
@@ -121,7 +134,7 @@ void FinalizeConv2DPlan(CmsisQuantPlan::Conv2DPlan& plan)
         .stride = {.w = plan.stride, .h = plan.stride},
         .padding = {.w = plan.pad_w, .h = plan.pad_h},
         .dilation = {.w = 1, .h = 1},
-        .activation = activation_relu(plan.apply_relu),
+        .activation = activation_clamp(plan.clamp, plan.output_scale, -plan.output_offset),
     };
     plan.cmsis.quant = {
         .multiplier = plan.multipliers,
@@ -152,7 +165,7 @@ void FinalizeDepthwiseConv2DPlan(CmsisQuantPlan::DepthwiseConv2DPlan& plan)
         .stride = {.w = plan.stride, .h = plan.stride},
         .padding = {.w = plan.pad_w, .h = plan.pad_h},
         .dilation = {.w = 1, .h = 1},
-        .activation = activation_relu(plan.apply_relu),
+        .activation = activation_clamp(plan.clamp, plan.output_scale, -plan.output_offset),
     };
     plan.cmsis.quant = {
         .multiplier = plan.multipliers,
@@ -177,7 +190,7 @@ void FinalizePool2DPlan(CmsisQuantPlan::Pool2DPlan& plan)
     plan.cmsis.pool = {
         .stride = {.w = plan.stride, .h = plan.stride},
         .padding = {.w = plan.pad_w, .h = plan.pad_h},
-        .activation = {.min = -128, .max = 127},
+        .activation = activation_clamp(plan.clamp, plan.output_scale, plan.output_zero_point),
     };
     plan.cmsis.input = {.n = 1, .h = plan.in_h, .w = plan.in_w, .c = plan.in_c};
     plan.cmsis.filter = {.n = 1, .h = plan.pool_h, .w = plan.pool_w, .c = 1};
@@ -201,7 +214,7 @@ bool FinalizeFcPlan(CmsisQuantPlan::FcPlan& plan,
         .input_offset = plan.input_offset,
         .filter_offset = plan.filter_offset,
         .output_offset = plan.output_offset,
-        .activation = activation_relu(plan.apply_relu),
+        .activation = activation_clamp(plan.clamp, plan.output_scale, -plan.output_offset),
     };
     plan.cmsis.quant = {
         .multiplier = plan.multiplier,
@@ -298,7 +311,7 @@ bool TryConv2dNhwcQuantPlan(const CmsisQuantPlan::Conv2DPlan& plan,
         .stride = {.w = plan.stride, .h = plan.stride},
         .padding = {.w = plan.pad_w, .h = plan.pad_h},
         .dilation = {.w = 1, .h = 1},
-        .activation = activation_relu(plan.apply_relu),
+        .activation = activation_clamp(plan.clamp, plan.output_scale, -plan.output_offset),
     };
 
     const cmsis_nn_per_channel_quant_params quant_params = {
@@ -389,7 +402,7 @@ bool TryDepthwiseConv2dNhwcQuantPlan(const CmsisQuantPlan::DepthwiseConv2DPlan& 
         .stride = {.w = plan.stride, .h = plan.stride},
         .padding = {.w = plan.pad_w, .h = plan.pad_h},
         .dilation = {.w = 1, .h = 1},
-        .activation = activation_relu(plan.apply_relu),
+        .activation = activation_clamp(plan.clamp, plan.output_scale, -plan.output_offset),
     };
 
     const cmsis_nn_per_channel_quant_params quant_params = {
@@ -455,7 +468,7 @@ bool TryMaxPool2dNhwcQuantPlan(const CmsisQuantPlan::Pool2DPlan& plan,
     const cmsis_nn_pool_params pool_params = {
         .stride = {.w = plan.stride, .h = plan.stride},
         .padding = {.w = plan.pad_w, .h = plan.pad_h},
-        .activation = {.min = -128, .max = 127},
+        .activation = activation_clamp(plan.clamp, plan.output_scale, plan.output_zero_point),
     };
 
     const cmsis_nn_dims input_dims = {
@@ -559,7 +572,7 @@ bool TryFullyConnectedQuantPlan(const CmsisQuantPlan::FcPlan& plan,
         .input_offset = plan.input_offset,
         .filter_offset = plan.filter_offset,
         .output_offset = plan.output_offset,
-        .activation = activation_relu(plan.apply_relu),
+        .activation = activation_clamp(plan.clamp, plan.output_scale, -plan.output_offset),
     };
 
     const cmsis_nn_dims input_dims = {.n = 1, .h = 1, .w = 1, .c = plan.in_features};
@@ -721,6 +734,148 @@ bool TryConv2dNhwcQuant(const int8_t* input,
     return true;
 }
 
+bool TryDepthwiseConv2dNhwcQuant(const int8_t* input,
+                                 uint32_t in_h,
+                                 uint32_t in_w,
+                                 uint32_t channels,
+                                 const int8_t* weights_chw,
+                                 const int32_t* bias,
+                                 int kernel_h,
+                                 int kernel_w,
+                                 int stride,
+                                 int pad_h,
+                                 int pad_w,
+                                 int pad_h_end,
+                                 int pad_w_end,
+                                 const NkFormat::MlpLayerQuantDesc& quant,
+                                 bool apply_relu,
+                                 int8_t* output)
+{
+    const uint32_t workspace_bytes = ActiveWorkspaceBytes();
+
+    if (!input || !weights_chw || !bias || !output || channels == 0)
+    {
+        QuantTrace::RecordConv2dCmsisFail(QuantTrace::Conv2dFail::NullPtr, 0, workspace_bytes);
+        return false;
+    }
+    if (pad_h != pad_h_end || pad_w != pad_w_end)
+    {
+        QuantTrace::RecordConv2dCmsisFail(QuantTrace::Conv2dFail::AsymmetricPad, 0, workspace_bytes);
+        return false;
+    }
+    if (channels > 512 || quant.output_scale <= 0.0f)
+    {
+        QuantTrace::RecordConv2dCmsisFail(QuantTrace::Conv2dFail::BadQuant, 0, workspace_bytes);
+        return false;
+    }
+
+    const uint32_t out_h =
+        nk_op_detail::CalcOutputDimAsymmetric(in_h, kernel_h, stride, pad_h, pad_h_end);
+    const uint32_t out_w =
+        nk_op_detail::CalcOutputDimAsymmetric(in_w, kernel_w, stride, pad_w, pad_w_end);
+
+    int32_t multipliers[512];
+    int32_t shifts[512];
+    if (!FillPerChannelQuant(quant, static_cast<int>(channels), multipliers, shifts))
+    {
+        QuantTrace::RecordConv2dCmsisFail(QuantTrace::Conv2dFail::BadQuant, 0, workspace_bytes);
+        return false;
+    }
+
+    const std::size_t kernel_area =
+        static_cast<std::size_t>(kernel_h) * static_cast<std::size_t>(kernel_w) *
+        static_cast<std::size_t>(channels);
+    const int32_t dw_ws = static_cast<int32_t>(CmsisDepthwiseConv2dS8WorkspaceBytes(
+        in_h, in_w, kernel_h, kernel_w, stride, pad_h, pad_w, channels));
+    const int32_t total_need = dw_ws + static_cast<int32_t>(kernel_area);
+    cmsis_nn_context ctx = {0};
+    if (!BindContext(ctx, total_need))
+    {
+        QuantTrace::RecordConv2dCmsisFail(
+            QuantTrace::Conv2dFail::BindContext, total_need, workspace_bytes);
+        return false;
+    }
+
+    // Repack CHW → HWC into the tail of the CMSIS workspace buffer.
+    int8_t* weights_hwc = nullptr;
+    if (ctx.buf && ctx.size >= total_need)
+    {
+        weights_hwc = static_cast<int8_t*>(ctx.buf) + dw_ws;
+        ctx.size = dw_ws;
+    }
+    else
+    {
+        QuantTrace::RecordConv2dCmsisFail(
+            QuantTrace::Conv2dFail::BindContext, total_need, workspace_bytes);
+        return false;
+    }
+
+    for (uint32_t c = 0; c < channels; ++c)
+    {
+        for (int y = 0; y < kernel_h; ++y)
+        {
+            for (int x = 0; x < kernel_w; ++x)
+            {
+                weights_hwc[(y * kernel_w + x) * channels + c] =
+                    weights_chw[(c * kernel_h + y) * kernel_w + x];
+            }
+        }
+    }
+
+    const cmsis_nn_dw_conv_params dw_conv_params = {
+        .input_offset = -quant.input_zero_point,
+        .output_offset = -quant.output_zero_point,
+        .ch_mult = 1,
+        .stride = {.w = stride, .h = stride},
+        .padding = {.w = pad_w, .h = pad_h},
+        .dilation = {.w = 1, .h = 1},
+        .activation = activation_relu(apply_relu),
+    };
+    const cmsis_nn_per_channel_quant_params quant_params = {
+        .multiplier = multipliers,
+        .shift = shifts,
+    };
+    const cmsis_nn_dims input_dims = {
+        .n = 1,
+        .h = static_cast<int32_t>(in_h),
+        .w = static_cast<int32_t>(in_w),
+        .c = static_cast<int32_t>(channels),
+    };
+    const cmsis_nn_dims filter_dims = {
+        .n = 1,
+        .h = kernel_h,
+        .w = kernel_w,
+        .c = static_cast<int32_t>(channels),
+    };
+    const cmsis_nn_dims bias_dims = {.n = 1, .h = 1, .w = 1, .c = static_cast<int32_t>(channels)};
+    const cmsis_nn_dims output_dims = {
+        .n = 1,
+        .h = static_cast<int32_t>(out_h),
+        .w = static_cast<int32_t>(out_w),
+        .c = static_cast<int32_t>(channels),
+    };
+
+    if (!cmsis_status_ok(arm_depthwise_conv_wrapper_s8(&ctx,
+                                                       &dw_conv_params,
+                                                       &quant_params,
+                                                       &input_dims,
+                                                       input,
+                                                       &filter_dims,
+                                                       weights_hwc,
+                                                       &bias_dims,
+                                                       bias,
+                                                       &output_dims,
+                                                       output)))
+    {
+        QuantTrace::RecordConv2dCmsisFail(
+            QuantTrace::Conv2dFail::CmsisStatus, total_need, workspace_bytes);
+        return false;
+    }
+
+    QuantTrace::RecordConv2dCmsisOk();
+    return true;
+}
+
 bool TryMaxPool2dNhwcQuant(const int8_t* input,
                            uint32_t in_h,
                            uint32_t in_w,
@@ -789,20 +944,13 @@ bool TryFullyConnectedQuant(const int8_t* input,
                             uint32_t out_features,
                             const NkFormat::MlpLayerQuantDesc& quant,
                             bool apply_relu,
-                            int8_t* output_int8,
-                            float* output_float)
+                            int8_t* output_int8)
 {
     const uint32_t workspace_bytes = ActiveWorkspaceBytes();
 
     if (!input || !weights || !bias || batch != 1)
     {
         QuantTrace::RecordFcCmsisFail(QuantTrace::FcFail::NullPtr, 0, workspace_bytes);
-        return false;
-    }
-
-    if (output_float != nullptr)
-    {
-        QuantTrace::RecordFcCmsisFail(QuantTrace::FcFail::FloatOutput, 0, workspace_bytes);
         return false;
     }
 
@@ -881,44 +1029,6 @@ bool TryFullyConnectedQuant(const int8_t* input,
     }
 
     QuantTrace::RecordFcCmsisOk();
-    return true;
-}
-
-bool TryFullyConnectedQuantToFloat(const int8_t* input,
-                                   uint32_t batch,
-                                   uint32_t in_features,
-                                   const int8_t* weights,
-                                   const int32_t* bias,
-                                   uint32_t out_features,
-                                   const NkFormat::MlpLayerQuantDesc& quant,
-                                   bool apply_relu,
-                                   int8_t* logits_i8,
-                                   float* output_float)
-{
-    if (!input || !weights || !bias || !logits_i8 || !output_float || batch != 1)
-        return false;
-
-    if (!TryFullyConnectedQuant(input,
-                                  batch,
-                                  in_features,
-                                  weights,
-                                  bias,
-                                  out_features,
-                                  quant,
-                                  apply_relu,
-                                  logits_i8,
-                                  nullptr))
-    {
-        return false;
-    }
-
-    const float scale = quant.output_scale > 0.0f
-                            ? quant.output_scale
-                            : quant.input_scale * quant.weight_scale;
-    for (uint32_t i = 0; i < out_features; ++i)
-        output_float[i] = (static_cast<float>(logits_i8[i]) -
-                           static_cast<float>(quant.output_zero_point)) *
-                          scale;
     return true;
 }
 
@@ -1052,6 +1162,27 @@ bool TryConv2dNhwcQuant(const int8_t* /*input*/,
     return false;
 }
 
+bool TryDepthwiseConv2dNhwcQuant(const int8_t* /*input*/,
+                                 uint32_t /*in_h*/,
+                                 uint32_t /*in_w*/,
+                                 uint32_t /*channels*/,
+                                 const int8_t* /*weights*/,
+                                 const int32_t* /*bias*/,
+                                 int /*kernel_h*/,
+                                 int /*kernel_w*/,
+                                 int /*stride*/,
+                                 int /*pad_h*/,
+                                 int /*pad_w*/,
+                                 int /*pad_h_end*/,
+                                 int /*pad_w_end*/,
+                                 const NkFormat::MlpLayerQuantDesc& /*quant*/,
+                                 bool /*apply_relu*/,
+                                 int8_t* /*output*/)
+{
+    QuantTrace::RecordConv2dCmsisFail(QuantTrace::Conv2dFail::Disabled, 0, 0);
+    return false;
+}
+
 bool TryMaxPool2dNhwcQuant(const int8_t* /*input*/,
                            uint32_t /*in_h*/,
                            uint32_t /*in_w*/,
@@ -1076,22 +1207,7 @@ bool TryFullyConnectedQuant(const int8_t* /*input*/,
                             uint32_t /*out_features*/,
                             const NkFormat::MlpLayerQuantDesc& /*quant*/,
                             bool /*apply_relu*/,
-                            int8_t* /*output_int8*/,
-                            float* /*output_float*/)
-{
-    return false;
-}
-
-bool TryFullyConnectedQuantToFloat(const int8_t* /*input*/,
-                                   uint32_t /*batch*/,
-                                   uint32_t /*in_features*/,
-                                   const int8_t* /*weights*/,
-                                   const int32_t* /*bias*/,
-                                   uint32_t /*out_features*/,
-                                   const NkFormat::MlpLayerQuantDesc& /*quant*/,
-                                   bool /*apply_relu*/,
-                                   int8_t* /*logits_i8*/,
-                                   float* /*output_float*/)
+                            int8_t* /*output_int8*/)
 {
     return false;
 }

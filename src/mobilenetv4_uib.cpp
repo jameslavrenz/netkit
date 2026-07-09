@@ -278,6 +278,7 @@ void MobileNetV4Uib::forward(const Tensor& input, Tensor& output)
                                output);
     }
 
+    // Residual epilogue: MatAddND routes through CMSIS-DSP / CMSIS-NN / reference.
     if (has_residual())
     {
         Tensor residual = fused_ops::NhwcView(residual_buf, in_h, in_w, in_c);
@@ -398,6 +399,15 @@ void MobileNetV4Uib::forward_quant(const int8_t* input, int8_t* output, uint32_t
         cur_data = middle_out;
     }
 
+    QuantOps::ResidualAddS8 residual{};
+    const QuantOps::ResidualAddS8* residual_ptr = nullptr;
+    if (has_residual())
+    {
+        residual.data = residual_buf;
+        residual.scale = block_input_scale;
+        residual.zero_point = block_input_zero_point;
+        residual_ptr = &residual;
+    }
     QuantOps::Conv2dNhwcQuant(cur_data,
                               cur_h,
                               cur_w,
@@ -413,20 +423,6 @@ void MobileNetV4Uib::forward_quant(const int8_t* input, int8_t* output, uint32_t
                               out_channels,
                               proj_quant,
                               false,
-                              output);
-
-    if (has_residual())
-    {
-        const uint32_t count = in_h * in_w * static_cast<uint32_t>(out_channels);
-        QuantOps::ElementwiseAddS8(output,
-                                   residual_buf,
-                                   count,
-                                   proj_quant.output_scale,
-                                   proj_quant.output_zero_point,
-                                   block_input_scale,
-                                   block_input_zero_point,
-                                   proj_quant.output_scale,
-                                   proj_quant.output_zero_point,
-                                   output);
-    }
+                              output,
+                              residual_ptr);
 }

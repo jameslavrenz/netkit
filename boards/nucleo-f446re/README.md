@@ -122,7 +122,7 @@ Timing uses the **DWT cycle counter** at **180 MHz** SYSCLK (HSE 8 MHz → PLL; 
 
 ## Flash budget
 
-MNIST MLP weights dominate image size (~470 KiB `.text` + `.rodata`). This fits **512 KiB** parts with `-Os` and LTO but has little headroom. For smaller parts, use a smaller model (e.g. `test_mlp.nk`) or external flash.
+MNIST MLP weights dominate image size (~470 KiB `.text` + `.rodata`). This fits **512 KiB** parts with `-O2` and LTO but has little headroom. For smaller parts, use a smaller model (e.g. `test_mlp.nk`) or external flash.
 
 ## Layout
 

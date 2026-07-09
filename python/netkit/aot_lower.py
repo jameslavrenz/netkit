@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
 
+from .arch_writer import _make_divisible, _resnet_output_spatial, _uib_output_spatial
 from .nk_optimize import _GraphLayer, _ShapeState, _decompose
+from .quantize import _fold_bn_into_depthwise, _fold_bn_into_pointwise
 
 LOWERABLE_LAYER_TYPES = frozenset(
     {
@@ -18,6 +20,10 @@ LOWERABLE_LAYER_TYPES = frozenset(
         "avg_pool2d",
         "flatten",
         "batch_norm2d",
+        "layernorm2d",
+        "mobilenetv4_uib",
+        "resnet_basic_block",
+        "convnextv2_block",
     }
 )
 
@@ -41,6 +47,8 @@ class LoweredPlan:
     weight_arrays: list[tuple[str, np.ndarray]]
     load_body: str
     forward_body: str
+    composite_scratch: list[tuple[str, int]] = field(default_factory=list)
+    includes: tuple[str, ...] = ()
 
 
 def can_lower_arch(arch: dict[str, Any]) -> bool:
@@ -133,7 +141,13 @@ def _view3d(data: str, h: int, w: int, c: int, var: str) -> str:
     )
 
 
-def _plan_mlp(arch: dict[str, Any], layers: list[_GraphLayer], *, weights_in_ram: bool) -> LoweredPlan:
+def _plan_mlp(
+    arch: dict[str, Any],
+    layers: list[_GraphLayer],
+    *,
+    weights_in_ram: bool,
+    omit_final_softmax: bool = False,
+) -> LoweredPlan:
     batch, in_features = arch["input"]
     weight_arrays: list[tuple[str, np.ndarray]] = []
     forward_lines: list[str] = [
@@ -153,8 +167,10 @@ def _plan_mlp(arch: dict[str, Any], layers: list[_GraphLayer], *, weights_in_ram
 
         activation = layer.spec.get("activation", "none")
         alpha = float(layer.spec.get("alpha", 0.01))
-        act_cpp = _ACTIVATION_CPP[activation]
         is_last = index == len(layers) - 1
+        if is_last and omit_final_softmax and activation == "softmax":
+            activation = "none"
+        act_cpp = _ACTIVATION_CPP[activation]
 
         if is_last:
             write_ptr = "output"
@@ -211,10 +227,250 @@ def _append_ping_pong(
         forward_lines.append(_view3d("read_buffer", height, width, channels, "current"))
 
 
-def _plan_cnn(arch: dict[str, Any], layers: list[_GraphLayer], *, weights_in_ram: bool) -> LoweredPlan:
+def _emit_pair_arrays(
+    weight_arrays: list[tuple[str, np.ndarray]],
+    pairs: list[tuple[np.ndarray, np.ndarray]],
+    prefix: str,
+) -> list[tuple[str, str]]:
+    """Append weight/bias arrays for each pair; return list of (w_expr, b_expr) names."""
+    names: list[tuple[str, str]] = []
+    for index, (w, b) in enumerate(pairs):
+        w_name = f"{prefix}W{index}"
+        b_name = f"{prefix}B{index}"
+        weight_arrays.append((w_name, w))
+        weight_arrays.append((b_name, b))
+        names.append((w_name, b_name))
+    return names
+
+
+def _plan_uib_layer(
+    layer: _GraphLayer,
+    *,
+    height: int,
+    width: int,
+    dest: str,
+    layer_index: int,
+    weights_in_ram: bool,
+    weight_arrays: list[tuple[str, np.ndarray]],
+    forward_lines: list[str],
+    composite_scratch: list[tuple[str, int]],
+) -> tuple[int, int, int]:
+    spec = layer.spec
+    in_c = int(spec["in_channels"])
+    out_c = int(spec["out_channels"])
+    start_k = int(spec.get("start_dw_kernel", 0))
+    middle_k = int(spec.get("middle_dw_kernel", 0))
+    stride = int(spec.get("stride", 1))
+    middle_down = bool(spec.get("middle_dw_downsample", 1))
+    expand_ratio = float(spec["expand_ratio"])
+    expand_c = _make_divisible(in_c * expand_ratio, 8)
+    out_h, out_w = _uib_output_spatial(height, width, spec)
+    pairs = list(layer.tensor_pairs)
+    pair_i = 0
+
+    def take_pair() -> tuple[np.ndarray, np.ndarray]:
+        nonlocal pair_i
+        pair = pairs[pair_i]
+        pair_i += 1
+        return pair
+
+    # Pre-fold BN into conv weights so flash-const arrays stay immutable.
+    folded: list[tuple[np.ndarray, np.ndarray]] = []
+    if start_k:
+        w, b = take_pair()
+        s, beta = take_pair()
+        wf, bf = _fold_bn_into_depthwise(w.reshape(in_c, start_k, start_k), b, s, beta)
+        folded.append((wf.reshape(-1), bf.reshape(-1)))
+    w, b = take_pair()
+    s, beta = take_pair()
+    wf, bf = _fold_bn_into_pointwise(w.reshape(expand_c, in_c), b, s, beta)
+    folded.append((wf.reshape(expand_c, 1, 1, in_c), bf.reshape(-1)))
+    if middle_k:
+        w, b = take_pair()
+        s, beta = take_pair()
+        wf, bf = _fold_bn_into_depthwise(w.reshape(expand_c, middle_k, middle_k), b, s, beta)
+        folded.append((wf.reshape(-1), bf.reshape(-1)))
+    w, b = take_pair()
+    s, beta = take_pair()
+    wf, bf = _fold_bn_into_pointwise(w.reshape(out_c, expand_c), b, s, beta)
+    folded.append((wf.reshape(out_c, 1, 1, expand_c), bf.reshape(-1)))
+
+    names = _emit_pair_arrays(weight_arrays, folded, f"kUib{layer_index}")
+    ni = 0
+
+    def take_name() -> tuple[str, str]:
+        nonlocal ni
+        name = names[ni]
+        ni += 1
+        return name
+
+    start_dw_w = start_dw_b = "nullptr"
+    if start_k:
+        w, b = take_name()
+        start_dw_w = _weight_data_expr(w, weights_in_ram)
+        start_dw_b = _weight_data_expr(b, weights_in_ram)
+    ew, eb = take_name()
+    expand_w = _weight_data_expr(ew, weights_in_ram)
+    expand_b = _weight_data_expr(eb, weights_in_ram)
+    middle_dw_w = middle_dw_b = "nullptr"
+    if middle_k:
+        w, b = take_name()
+        middle_dw_w = _weight_data_expr(w, weights_in_ram)
+        middle_dw_b = _weight_data_expr(b, weights_in_ram)
+    pw, pb = take_name()
+    proj_w = _weight_data_expr(pw, weights_in_ram)
+    proj_b = _weight_data_expr(pb, weights_in_ram)
+
+    residual = in_c if (stride == 1 and in_c == out_c) else 0
+    scratch_elems = 2 * height * width * expand_c + height * width * residual
+    scratch_name = f"g_uib_scratch_{layer_index}"
+    composite_scratch.append((scratch_name, scratch_elems))
+
+    forward_lines.append(_view3d(dest, out_h, out_w, out_c, "layer_out"))
+    forward_lines.append(
+        f"    {{\n"
+        f"        MobileNetV4Uib uib{{}};\n"
+        f"        uib.in_channels = {in_c};\n"
+        f"        uib.out_channels = {out_c};\n"
+        f"        uib.start_dw_kernel = {start_k};\n"
+        f"        uib.middle_dw_kernel = {middle_k};\n"
+        f"        uib.stride = {stride};\n"
+        f"        uib.middle_dw_downsample = {'true' if middle_down else 'false'};\n"
+        f"        uib.expand_ratio = {expand_ratio:.8f}f;\n"
+        f"        uib.start_dw_weights = {start_dw_w};\n"
+        f"        uib.start_dw_bias = {start_dw_b};\n"
+        f"        uib.expand_weights = {expand_w};\n"
+        f"        uib.expand_bias = {expand_b};\n"
+        f"        uib.middle_dw_weights = {middle_dw_w};\n"
+        f"        uib.middle_dw_bias = {middle_dw_b};\n"
+        f"        uib.proj_weights = {proj_w};\n"
+        f"        uib.proj_bias = {proj_b};\n"
+        f"        uib.scratch = {scratch_name};\n"
+        f"        uib.scratch_elems = {scratch_elems}u;\n"
+        f"        uib.bn_folded = true;\n"
+        f"        uib.forward(current, layer_out);\n"
+        f"    }}\n"
+    )
+    return out_h, out_w, out_c
+
+
+def _plan_resnet_layer(
+    layer: _GraphLayer,
+    *,
+    height: int,
+    width: int,
+    dest: str,
+    layer_index: int,
+    weights_in_ram: bool,
+    weight_arrays: list[tuple[str, np.ndarray]],
+    forward_lines: list[str],
+    composite_scratch: list[tuple[str, int]],
+) -> tuple[int, int, int]:
+    spec = layer.spec
+    in_c = int(spec["in_channels"])
+    out_c = int(spec["out_channels"])
+    stride = int(spec.get("stride", 1))
+    identity = stride == 1 and in_c == out_c
+    out_h, out_w = _resnet_output_spatial(height, width, spec)
+    pairs = layer.tensor_pairs
+    names = _emit_pair_arrays(weight_arrays, pairs, f"kRes{layer_index}")
+    exprs = [(_weight_data_expr(w, weights_in_ram), _weight_data_expr(b, weights_in_ram)) for w, b in names]
+    out_elems = out_h * out_w * out_c
+    scratch_elems = 2 * out_elems + (0 if identity else out_elems)
+    scratch_name = f"g_resnet_scratch_{layer_index}"
+    composite_scratch.append((scratch_name, scratch_elems))
+
+    shortcut_w = shortcut_b = shortcut_bn_s = shortcut_bn_b = "nullptr"
+    if not identity:
+        shortcut_w, shortcut_b = exprs[4]
+        shortcut_bn_s, shortcut_bn_b = exprs[5]
+
+    forward_lines.append(_view3d(dest, out_h, out_w, out_c, "layer_out"))
+    forward_lines.append(
+        f"    {{\n"
+        f"        ResNetBasicBlock block{{}};\n"
+        f"        block.in_channels = {in_c};\n"
+        f"        block.out_channels = {out_c};\n"
+        f"        block.stride = {stride};\n"
+        f"        block.conv1_weights = {exprs[0][0]};\n"
+        f"        block.conv1_bias = {exprs[0][1]};\n"
+        f"        block.bn1_scale = {exprs[1][0]};\n"
+        f"        block.bn1_bias = {exprs[1][1]};\n"
+        f"        block.conv2_weights = {exprs[2][0]};\n"
+        f"        block.conv2_bias = {exprs[2][1]};\n"
+        f"        block.bn2_scale = {exprs[3][0]};\n"
+        f"        block.bn2_bias = {exprs[3][1]};\n"
+        f"        block.shortcut_weights = {shortcut_w};\n"
+        f"        block.shortcut_bias = {shortcut_b};\n"
+        f"        block.shortcut_bn_scale = {shortcut_bn_s};\n"
+        f"        block.shortcut_bn_bias = {shortcut_bn_b};\n"
+        f"        block.scratch = {scratch_name};\n"
+        f"        block.scratch_elems = {scratch_elems}u;\n"
+        f"        block.forward(current, layer_out);\n"
+        f"    }}\n"
+    )
+    return out_h, out_w, out_c
+
+
+def _plan_convnext_layer(
+    layer: _GraphLayer,
+    *,
+    height: int,
+    width: int,
+    dest: str,
+    layer_index: int,
+    weights_in_ram: bool,
+    weight_arrays: list[tuple[str, np.ndarray]],
+    forward_lines: list[str],
+    composite_scratch: list[tuple[str, int]],
+) -> tuple[int, int, int]:
+    spec = layer.spec
+    ch = int(spec["channels"])
+    eps = float(spec.get("eps", 1e-6))
+    pairs = layer.tensor_pairs
+    names = _emit_pair_arrays(weight_arrays, pairs, f"kCnv{layer_index}")
+    exprs = [(_weight_data_expr(w, weights_in_ram), _weight_data_expr(b, weights_in_ram)) for w, b in names]
+    expanded = ch * 4
+    scratch_elems = height * width * expanded + expanded
+    scratch_name = f"g_convnext_scratch_{layer_index}"
+    composite_scratch.append((scratch_name, scratch_elems))
+
+    forward_lines.append(_view3d(dest, height, width, ch, "layer_out"))
+    forward_lines.append(
+        f"    {{\n"
+        f"        ConvNeXtV2Block block{{}};\n"
+        f"        block.channels = {ch};\n"
+        f"        block.eps = {eps:.8e}f;\n"
+        f"        block.dw_weights = {exprs[0][0]};\n"
+        f"        block.dw_bias = {exprs[0][1]};\n"
+        f"        block.ln_weight = {exprs[1][0]};\n"
+        f"        block.ln_bias = {exprs[1][1]};\n"
+        f"        block.pw1_weight = {exprs[2][0]};\n"
+        f"        block.pw1_bias = {exprs[2][1]};\n"
+        f"        block.grn_gamma = {exprs[3][0]};\n"
+        f"        block.grn_beta = {exprs[3][1]};\n"
+        f"        block.pw2_weight = {exprs[4][0]};\n"
+        f"        block.pw2_bias = {exprs[4][1]};\n"
+        f"        block.scratch = {scratch_name};\n"
+        f"        block.scratch_elems = {scratch_elems}u;\n"
+        f"        block.forward(current, layer_out);\n"
+        f"    }}\n"
+    )
+    return height, width, ch
+
+
+def _plan_cnn(
+    arch: dict[str, Any],
+    layers: list[_GraphLayer],
+    *,
+    weights_in_ram: bool,
+    omit_final_softmax: bool = False,
+) -> LoweredPlan:
     height, width, channels = arch["input"]
     dense_in = 0
     weight_arrays: list[tuple[str, np.ndarray]] = []
+    composite_scratch: list[tuple[str, int]] = []
+    includes: set[str] = set()
     forward_lines: list[str] = [
         "    float* read_buffer = const_cast<float*>(input);\n",
         "    float* write_buffer = scratch_a;\n",
@@ -402,12 +658,14 @@ def _plan_cnn(arch: dict[str, Any], layers: list[_GraphLayer], *, weights_in_ram
             out_features = layer.spec["units"]
             activation = layer.spec.get("activation", "none")
             alpha = float(layer.spec.get("alpha", 0.01))
+            is_last = layer is layers[-1]
+            if is_last and omit_final_softmax and activation == "softmax":
+                activation = "none"
             act_cpp = _ACTIVATION_CPP[activation]
             w_name = f"kWeight{layer_index}"
             b_name = f"kBias{layer_index}"
             weight_arrays.append((w_name, layer.tensors.weight))
             weight_arrays.append((b_name, layer.tensors.bias.reshape(1, out_features)))
-            is_last = layer is layers[-1]
             if is_last:
                 forward_lines.append(_view2d("output", 1, out_features, "layer_out"))
             else:
@@ -436,6 +694,99 @@ def _plan_cnn(arch: dict[str, Any], layers: list[_GraphLayer], *, weights_in_ram
                 )
             dense_in = out_features
             layer_index += 1
+        elif layer_type == "layernorm2d":
+            ch = layer.spec["channels"]
+            eps = float(layer.spec.get("eps", 1e-6))
+            w_name = f"kWeight{layer_index}"
+            b_name = f"kBias{layer_index}"
+            assert layer.tensors.weight is not None and layer.tensors.bias is not None
+            weight_arrays.append((w_name, layer.tensors.weight))
+            weight_arrays.append((b_name, layer.tensors.bias))
+            # In-place LayerNorm into current (or copy to dest if last).
+            if is_last:
+                forward_lines.append(_view3d(dest, height, width, channels, "layer_out"))
+                forward_lines.append(
+                    f"    Kernels::LayerNorm2dForward(current, {_weight_data_expr(w_name, weights_in_ram)}, "
+                    f"{_weight_data_expr(b_name, weights_in_ram)}, {ch}, {eps:.8e}f, layer_out);\n"
+                )
+            else:
+                forward_lines.append(
+                    f"    Kernels::LayerNorm2dForward(current, {_weight_data_expr(w_name, weights_in_ram)}, "
+                    f"{_weight_data_expr(b_name, weights_in_ram)}, {ch}, {eps:.8e}f, current);\n"
+                )
+            layer_index += 1
+        elif layer_type == "mobilenetv4_uib":
+            includes.add("mobilenetv4_uib.hpp")
+            out_h, out_w, out_c = _plan_uib_layer(
+                layer,
+                height=height,
+                width=width,
+                dest=dest,
+                layer_index=layer_index,
+                weights_in_ram=weights_in_ram,
+                weight_arrays=weight_arrays,
+                forward_lines=forward_lines,
+                composite_scratch=composite_scratch,
+            )
+            if not is_last:
+                _append_ping_pong(
+                    forward_lines,
+                    rank2=False,
+                    height=out_h,
+                    width=out_w,
+                    channels=out_c,
+                    features=0,
+                )
+            height, width, channels = out_h, out_w, out_c
+            layer_index += 1
+        elif layer_type == "resnet_basic_block":
+            includes.add("resnet_basic_block.hpp")
+            out_h, out_w, out_c = _plan_resnet_layer(
+                layer,
+                height=height,
+                width=width,
+                dest=dest,
+                layer_index=layer_index,
+                weights_in_ram=weights_in_ram,
+                weight_arrays=weight_arrays,
+                forward_lines=forward_lines,
+                composite_scratch=composite_scratch,
+            )
+            if not is_last:
+                _append_ping_pong(
+                    forward_lines,
+                    rank2=False,
+                    height=out_h,
+                    width=out_w,
+                    channels=out_c,
+                    features=0,
+                )
+            height, width, channels = out_h, out_w, out_c
+            layer_index += 1
+        elif layer_type == "convnextv2_block":
+            includes.add("convnextv2_block.hpp")
+            out_h, out_w, out_c = _plan_convnext_layer(
+                layer,
+                height=height,
+                width=width,
+                dest=dest,
+                layer_index=layer_index,
+                weights_in_ram=weights_in_ram,
+                weight_arrays=weight_arrays,
+                forward_lines=forward_lines,
+                composite_scratch=composite_scratch,
+            )
+            if not is_last:
+                _append_ping_pong(
+                    forward_lines,
+                    rank2=False,
+                    height=out_h,
+                    width=out_w,
+                    channels=out_c,
+                    features=0,
+                )
+            height, width, channels = out_h, out_w, out_c
+            layer_index += 1
         else:
             raise ValueError(f"unsupported layer type: {layer_type}")
 
@@ -453,17 +804,29 @@ def _plan_cnn(arch: dict[str, Any], layers: list[_GraphLayer], *, weights_in_ram
         weight_arrays=weight_arrays,
         load_body=_build_load_body(weight_arrays, weights_in_ram=weights_in_ram),
         forward_body=body,
+        composite_scratch=composite_scratch,
+        includes=tuple(sorted(includes)),
     )
 
 
-def plan_lowered(arch: dict[str, Any], weights: np.ndarray, *, weights_in_ram: bool = False) -> LoweredPlan:
+def plan_lowered(
+    arch: dict[str, Any],
+    weights: np.ndarray,
+    *,
+    weights_in_ram: bool = False,
+    omit_final_softmax: bool = False,
+) -> LoweredPlan:
     if not can_lower_arch(arch):
         raise ValueError("architecture contains layers that cannot be lowered")
     layers, _state = _decompose(arch, weights)
     if arch["network"] == "mlp":
-        return _plan_mlp(arch, layers, weights_in_ram=weights_in_ram)
+        return _plan_mlp(
+            arch, layers, weights_in_ram=weights_in_ram, omit_final_softmax=omit_final_softmax
+        )
     if arch["network"] == "cnn":
-        return _plan_cnn(arch, layers, weights_in_ram=weights_in_ram)
+        return _plan_cnn(
+            arch, layers, weights_in_ram=weights_in_ram, omit_final_softmax=omit_final_softmax
+        )
     raise ValueError(f"unsupported network: {arch['network']}")
 
 
@@ -545,6 +908,10 @@ def render_lowered_cpp_source(
         scratch_decl = f"alignas(16) static float scratch_a[{plan.scratch_floats}];\n"
         if plan.scratch_buffers > 1:
             scratch_decl += f"alignas(16) static float scratch_b[{plan.scratch_floats}];\n"
+    for name, elems in plan.composite_scratch:
+        scratch_decl += f"alignas(16) static float {name}[{elems}];\n"
+
+    include_lines = "".join(f'#include "{inc}"\n' for inc in plan.includes)
 
     main_block = ""
     if include_main:
@@ -604,7 +971,7 @@ int main(void)
 
 #include "active_kernel.hpp"
 #include "tensor_factory.hpp"
-
+{include_lines}
 #include <array>
 #include <cstring>
 #include <span>

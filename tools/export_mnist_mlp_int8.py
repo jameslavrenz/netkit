@@ -14,7 +14,7 @@ sys.path.insert(0, str(ROOT / "python"))
 
 from netkit import RegressionSuite
 from netkit.datasets import load_mnist
-from netkit.quantize import forward_quantized_mlp, quantize_mlp, quantized_mlp_to_spec
+from netkit.quantize import forward_quantized_mlp, quantize_float_input, quantize_mlp, quantized_mlp_to_spec
 from netkit.reader import read_nk
 from netkit.torch_models import TutorialMlp784
 from netkit.torch_pack import forward_mlp_netkit, pack_tutorial_mlp
@@ -131,15 +131,19 @@ def main() -> None:
 
     cases: list[RegressionCase] = []
     used_digits: set[int] = set()
+    input_scale = pack.quant_layers[0].input_scale
+    input_zp = pack.quant_layers[0].input_zero_point
     for i in range(x_test.shape[0]):
         label = int(y_test[i])
         if label in used_digits:
             continue
         probs = forward_quantized_mlp(x_test[i], ARCH, pack, output_float=True)
+        # TCAS stores floats; embed prequantized int8 as float values in [-128, 127].
+        input_i8 = quantize_float_input(x_test[i], input_scale, input_zp)
         cases.append(
             RegressionCase(
                 name=f"MNIST digit {label} (test idx {i})",
-                input=x_test[i],
+                input=input_i8.astype(np.float32),
                 expected=probs,
                 label=label,
             )

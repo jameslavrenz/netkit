@@ -1,6 +1,7 @@
 #pragma once
 
 #include "cmsis_hoisted_plan.hpp"
+#include "quant_integer.hpp"
 #include "quant_output.hpp"
 
 #include <cstdint>
@@ -29,7 +30,11 @@ struct Conv2DPlan
     int32_t stride = 1;
     int32_t pad_h = 0;
     int32_t pad_w = 0;
-    bool apply_relu = false;
+    QuantInteger::QuantClamp clamp = QuantInteger::QuantClamp::None;
+    // Float scales retained for XNNPACK qs8 (CMSIS uses multipliers/shifts only).
+    float input_scale = 1.0f;
+    float weight_scale = 1.0f;
+    float output_scale = 1.0f;
     int32_t in_h = 0;
     int32_t in_w = 0;
     int32_t in_c = 0;
@@ -53,7 +58,10 @@ struct DepthwiseConv2DPlan
     int32_t stride = 1;
     int32_t pad_h = 0;
     int32_t pad_w = 0;
-    bool apply_relu = false;
+    QuantInteger::QuantClamp clamp = QuantInteger::QuantClamp::None;
+    float input_scale = 1.0f;
+    float weight_scale = 1.0f;
+    float output_scale = 1.0f;
     int32_t in_h = 0;
     int32_t in_w = 0;
     int32_t channels = 0;
@@ -87,6 +95,7 @@ struct Pool2DPlan
     int32_t input_zero_point = 0;
     float output_scale = 1.0f;
     int32_t output_zero_point = 0;
+    QuantInteger::QuantClamp clamp = QuantInteger::QuantClamp::None;
 #if NETKIT_CMSIS_PLAN_HOIST
     Pool2DCmsisHoist cmsis{};
 #endif
@@ -135,7 +144,10 @@ struct FcPlan
     int32_t input_offset = 0;
     int32_t filter_offset = 0;
     int32_t output_offset = 0;
-    bool apply_relu = false;
+    QuantInteger::QuantClamp clamp = QuantInteger::QuantClamp::None;
+    float input_scale = 1.0f;
+    float weight_scale = 1.0f;
+    float output_scale = 1.0f;
     int32_t in_features = 0;
     int32_t out_features = 0;
     int32_t multiplier = 0;

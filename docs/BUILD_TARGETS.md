@@ -238,22 +238,23 @@ CMSIS backends are **not** inferred from `NETKIT_ARCH` alone — use `NETKIT_CMS
 
 **MCU board firmware:** `boards/nucleo-f446re-cnn-int8/Makefile` **overrides** `NETKIT_CMSIS_DSP` and `NETKIT_CMSIS_NN` to `1` so a host env that leaves CMSIS-NN off cannot link CMSIS stub kernels. Pass `NETKIT_CPPFLAGS` on the LTO link line so CMSIS macros match compile units.
 
-| `NETKIT_TARGET` | Default `NETKIT_CMSIS_DSP` | Default `NETKIT_CMSIS_NN` |
-|-----------------|----------------------------|---------------------------|
-| `cpu` | 1 | 0 |
-| `mcu` | 1 | 1 (effective only with Cortex-M `NETKIT_ARCH`) |
-| `mpu` | 1 | 0 |
+| `NETKIT_TARGET` | Default `NETKIT_CMSIS_DSP` | Default `NETKIT_CMSIS_NN` | Default `NETKIT_XNNPACK` |
+|-----------------|----------------------------|---------------------------|--------------------------|
+| `cpu` | 1 | 0 | 1 (requires `./tools/fetch_xnnpack.sh`) |
+| `mcu` | 1 | 1 (effective only with Cortex-M `NETKIT_ARCH`) | 0 |
+| `mpu` | 1 | 0 | 1 (requires `./tools/fetch_xnnpack.sh`) |
 
 ```bash
 make cmsis-init
+make xnnpack-init                # once, for cpu/mpu XNNPACK LayerFast
 
-# Profile defaults (no extra flags needed after cmsis-init)
-make test-cpp                    # cpu: CMSIS-DSP
+# Profile defaults (no extra flags needed after fetch)
+make test-cpp                    # cpu: CMSIS-DSP + XNNPACK
 make NETKIT_TARGET=mcu lib       # mcu: CMSIS-DSP + CMSIS-NN (set NETKIT_ARCH=CM4 for NN)
-make NETKIT_TARGET=mpu lib       # mpu: CMSIS-DSP only
+make NETKIT_TARGET=mpu lib       # mpu: CMSIS-DSP + XNNPACK
 
-# Explicit off (reference kernels)
-make NETKIT_CMSIS_DSP=0 NETKIT_CMSIS_NN=0 rebuild test
+# Explicit off (reference kernels / CMSIS-DSP only)
+make NETKIT_CMSIS_DSP=0 NETKIT_CMSIS_NN=0 NETKIT_XNNPACK=0 rebuild test
 
 # Reference-kernel 4× loop unroll — experimental (MPU only if at all; increases .text)
 make NETKIT_LOOP_UNROLL=1 test-cpp
@@ -263,6 +264,7 @@ make NETKIT_LOOP_UNROLL=1 test-cpp
 |---------------|-------|--------|
 | `NETKIT_CMSIS_NN=1` | `NETKIT_USE_CMSIS_NN` | MCU + Cortex-M `NETKIT_ARCH` only (ignored with warning on cpu/mpu) |
 | `NETKIT_CMSIS_DSP=1` | `NETKIT_USE_CMSIS_DSP` | Ops add/mul/scale/clip/matmul; FC/batch-norm on desktop/MPU; `ARM_MATH_LOOPUNROLL` |
+| `NETKIT_XNNPACK=1` | `NETKIT_USE_XNNPACK` | cpu/mpu float32 LayerFast + int8 qs8 (conv/depthwise/pool/FC); ignored on mcu; soft-falls back if not fetched |
 | `NETKIT_LOOP_UNROLL=1` | `NETKIT_LOOP_UNROLL=1` | **Experimental.** 4× manual unroll in reference kernels only (default 0). Larger `.text`; verify flash budget. Most likely an **MPU** consideration — avoid on flash-limited MCUs. |
 | `NETKIT_ARCH=<core>` | `ARM_MATH_*` (see table above) | Core-specific CMSIS-DSP/NN tuning |
 
@@ -270,9 +272,26 @@ Dense weights use CMSIS-NN `[out, in]` layout via `Kernels::FullyConnectedWithBi
 
 Float32 CMSIS-NN support is **experimental** upstream. Helium (MVE) and Neon targets get optimized kernels when `NETKIT_ARCH` and the toolchain flags align.
 
+### XNNPACK
+
+[Google XNNPACK](https://github.com/google/XNNPACK) (BSD-3) accelerates float32 and int8 (qs8) kernels on **cpu** and **mpu** when `NETKIT_XNNPACK=1` (the default for those profiles). It is the host/MPU analogue of CMSIS-NN on MCU:
+
+- **float32:** `XnnpackKernel` is `LayerFast` in `active_kernel.hpp` (conv, depthwise, max/avg pool, FC with ReLU/ReLU6 clamp).
+- **int8:** `XnnpackQuant` is tried first in the quantized plan / `QuantOps` path (qs8 conv, depthwise, max pool, FC), then CMSIS-NN if enabled, then reference.
+
+MCU builds default to `NETKIT_XNNPACK=0` and ignore the flag if forced on.
+
+```bash
+./tools/fetch_xnnpack.sh   # or: make xnnpack-init
+make NETKIT_XNNPACK=1 lib  # default on cpu/mpu once fetched
+make NETKIT_XNNPACK=0 lib  # force reference/CMSIS-DSP LayerFast path
+```
+
+If headers/libs are missing, Make prints a warning and builds without XNNPACK (reference LayerFast). CI forces `NETKIT_XNNPACK=0`.
+
 ### Kernel dispatch (CRTP)
 
-Backends are composed at **compile time** via `active_kernel.hpp` — there is no runtime backend switch. Layer and ops code call `Kernels::Op(...)`; `ComposedKernel` tries CMSIS `Try*` methods and falls back to `ReferenceKernel`.
+Backends are composed at **compile time** via `active_kernel.hpp` — there is no runtime backend switch. Layer and ops code call `Kernels::Op(...)`; `ComposedKernel` tries CMSIS/XNNPACK `Try*` methods and falls back to `ReferenceKernel`.
 
 ### Layer dispatch (OpsResolver)
 

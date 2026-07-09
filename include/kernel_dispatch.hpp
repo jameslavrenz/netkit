@@ -473,7 +473,7 @@ namespace detail
                                                     output);
         }
 
-        static void MaxPool2dForwardImpl(const Tensor& input,
+        static bool MaxPool2dForwardImpl(const Tensor& input,
                                          int pool_h,
                                          int pool_w,
                                          int stride,
@@ -481,6 +481,7 @@ namespace detail
                                          int pad_w,
                                          int pad_h_end,
                                          int pad_w_end,
+                                         NetkitKernelActivation fuse_activation,
                                          Tensor& output)
         {
             if constexpr (NkAcceleratedKernel<LayerFast>)
@@ -492,13 +493,22 @@ namespace detail
                                                        stride,
                                                        pad_h,
                                                        pad_w,
-                                                       NetkitKernelActivation::None,
+                                                       fuse_activation,
                                                        output))
-                        return;
+                        return kernel_activation_is_fused(fuse_activation);
                 }
             }
-            ReferenceKernel::MaxPool2dForwardImpl(
-                input, pool_h, pool_w, stride, pad_h, pad_w, pad_h_end, pad_w_end, output);
+            ReferenceKernel::MaxPool2dForwardImpl(input,
+                                                  pool_h,
+                                                  pool_w,
+                                                  stride,
+                                                  pad_h,
+                                                  pad_w,
+                                                  pad_h_end,
+                                                  pad_w_end,
+                                                  fuse_activation,
+                                                  output);
+            return kernel_activation_is_fused(fuse_activation);
         }
 
         static void AvgPool2dForwardImpl(const Tensor& input,

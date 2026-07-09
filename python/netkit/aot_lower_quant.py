@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 
+from .arch_writer import _make_divisible, _uib_output_spatial
 from .quantize import _quantize_multiplier, _softmax_s8_params
 from .quant_nk_reader import QuantNkBundle, read_quant_nk
 from .reference_forward import _out_dim
@@ -16,8 +17,10 @@ LOWERABLE_QUANT_LAYER_TYPES = frozenset(
     {
         "conv2d",
         "max_pool2d",
+        "avg_pool2d",
         "flatten",
         "dense",
+        "mobilenetv4_uib",
     }
 )
 
@@ -36,12 +39,15 @@ class QuantLoweredPlan:
     load_body: str
     arena_after_load: int
     arena_after_forward: int
+    composite_scratch: list[tuple[str, int]] = field(default_factory=list)
+    quant_desc_arrays: list[tuple[str, Any]] = field(default_factory=list)
 
 
 def can_lower_quantized_arch(arch: dict[str, Any]) -> bool:
-    return arch.get("network") == "cnn" and all(
-        layer["type"] in LOWERABLE_QUANT_LAYER_TYPES for layer in arch["layers"]
-    )
+    network = arch.get("network")
+    if network not in {"cnn", "mlp"}:
+        return False
+    return all(layer["type"] in LOWERABLE_QUANT_LAYER_TYPES for layer in arch["layers"])
 
 
 def _round_up(value: int, alignment: int) -> int:
@@ -72,6 +78,21 @@ def _plan_output_shape(layer: dict[str, Any], h: int, w: int, c: int) -> tuple[i
         oh = _out_dim(h, pool_h, stride, pad_h, pad_h_end)
         ow = _out_dim(w, pool_w, stride, pad_w, pad_w_end)
         return oh * ow * c, oh, ow, c
+    if layer_type == "avg_pool2d":
+        pool_h = layer["pool_size"]
+        pool_w = layer.get("pool_w", pool_h)
+        stride = layer.get("stride", pool_h)
+        pad_h = layer.get("pad_h", 0)
+        pad_w = layer.get("pad_w", 0)
+        pad_h_end = layer.get("pad_h_end", pad_h)
+        pad_w_end = layer.get("pad_w_end", pad_w)
+        oh = _out_dim(h, pool_h, stride, pad_h, pad_h_end)
+        ow = _out_dim(w, pool_w, stride, pad_w, pad_w_end)
+        return oh * ow * c, oh, ow, c
+    if layer_type == "mobilenetv4_uib":
+        oh, ow = _uib_output_spatial(h, w, layer)
+        oc = int(layer["out_channels"])
+        return oh * ow * oc, oh, ow, oc
     if layer_type == "flatten":
         features = h * w * c
         return features, 1, features, 1
@@ -80,6 +101,39 @@ def _plan_output_shape(layer: dict[str, Any], h: int, w: int, c: int) -> tuple[i
         return units, 1, units, 1
     raise ValueError(f"unsupported layer for quant lowering: {layer_type}")
 
+
+def _uib_subop_count(layer: dict[str, Any]) -> int:
+    count = 2  # expand + project
+    if int(layer.get("start_dw_kernel", 0)):
+        count += 1
+    if int(layer.get("middle_dw_kernel", 0)):
+        count += 1
+    return count
+
+
+def _format_quant_desc(name: str, quant: Any) -> str:
+    return (
+        f"static const NkFormat::MlpLayerQuantDesc {name} = {{\n"
+        f"    .input_scale = {quant.input_scale:.8f}f,\n"
+        f"    .input_zero_point = {quant.input_zero_point},\n"
+        f"    .weight_scale = {quant.weight_scale:.8f}f,\n"
+        f"    .weight_zero_point = {quant.weight_zero_point},\n"
+        f"    .bias_scale = {quant.bias_scale:.8f}f,\n"
+        f"    .bias_zero_point = {quant.bias_zero_point},\n"
+        f"    .output_scale = {quant.output_scale:.8f}f,\n"
+        f"    .output_zero_point = {quant.output_zero_point},\n"
+        f"}};"
+    )
+
+
+def _mlp_input_shape(arch: dict[str, Any]) -> tuple[int, int, int]:
+    """Treat MLP [batch, features] as 1x1xfeatures for dense-only planning."""
+    shape = arch["input"]
+    if len(shape) == 2:
+        return 1, 1, int(shape[1])
+    if len(shape) == 3:
+        return int(shape[0]), int(shape[1]), int(shape[2])
+    raise ValueError(f"unsupported input shape for quant lowering: {shape}")
 
 def _cmsis_conv_s8_workspace(in_c: int, kernel: int) -> int:
     rhs_cols = kernel * kernel * in_c
@@ -124,13 +178,18 @@ def _format_int32_array(name: str, values: np.ndarray) -> str:
     return "\n".join(lines)
 
 
-def plan_lowered_quant(nk_path: str | Path) -> QuantLoweredPlan:
+def plan_lowered_quant(
+    nk_path: str | Path, *, omit_final_softmax: bool = False
+) -> QuantLoweredPlan:
     bundle = read_quant_nk(nk_path)
     if not can_lower_quantized_arch(bundle.arch):
-        raise ValueError("architecture cannot be lowered as quantized CNN")
+        raise ValueError("architecture cannot be lowered as quantized model")
 
     arch = bundle.arch
-    h, w, c = bundle.input_shape
+    if arch.get("network") == "mlp":
+        h, w, c = _mlp_input_shape(arch)
+    else:
+        h, w, c = bundle.input_shape
     even_max = 0
     odd_max = 0
     workspace_bytes = 0
@@ -139,6 +198,8 @@ def plan_lowered_quant(nk_path: str | Path) -> QuantLoweredPlan:
 
     weight_arrays: list[tuple[str, np.ndarray]] = []
     bias_arrays: list[tuple[str, np.ndarray]] = []
+    composite_scratch: list[tuple[str, int]] = []
+    quant_desc_arrays: list[tuple[str, Any]] = []
     forward_lines: list[str] = [
         "    KernelWorkspace workspace{g_workspace, kWorkspaceBytes};",
         "    KernelWorkspaceScope workspace_scope(&workspace);",
@@ -151,6 +212,9 @@ def plan_lowered_quant(nk_path: str | Path) -> QuantLoweredPlan:
 
     weight_idx = 0
     quant_idx = 0
+    # Track activation scale/zp for avg_pool (mirrors CmsisQuantPlan chaining).
+    act_scale = bundle.quant_layers[0].input_scale if bundle.quant_layers else 1.0
+    act_zp = bundle.quant_layers[0].input_zero_point if bundle.quant_layers else 0
 
     for layer_index, layer in enumerate(arch["layers"]):
         in_h, in_w, in_c = h, w, c
@@ -193,6 +257,8 @@ def plan_lowered_quant(nk_path: str | Path) -> QuantLoweredPlan:
             )
             quant_idx += 1
             weight_idx += 1
+            act_scale = bundle.quant_layers[quant_idx - 1].output_scale
+            act_zp = bundle.quant_layers[quant_idx - 1].output_zero_point
 
         elif layer_type == "max_pool2d":
             plan_name = f"kPool{layer_index}Plan"
@@ -208,6 +274,120 @@ def plan_lowered_quant(nk_path: str | Path) -> QuantLoweredPlan:
                     "        current = slot_b;",
                     "    }",
                     "    use_a = !use_a;",
+                    "",
+                ]
+            )
+
+        elif layer_type == "avg_pool2d":
+            plan_name = f"kAvgPool{layer_index}Plan"
+            pool_h = layer["pool_size"]
+            pool_w = layer.get("pool_w", pool_h)
+            stride = layer.get("stride", pool_h)
+            pad_h = layer.get("pad_h", 0)
+            pad_w = layer.get("pad_w", 0)
+            pad_h_end = layer.get("pad_h_end", pad_h)
+            pad_w_end = layer.get("pad_w_end", pad_w)
+            forward_lines.extend(
+                [
+                    "    {",
+                    "        int8_t* dest = use_a ? slot_a : slot_b;",
+                    f"        QuantOps::AvgPool2dNhwcQuant(",
+                    f"            current, {in_h}u, {in_w}u, {in_c}u,",
+                    f"            {pool_h}, {pool_w}, {stride},",
+                    f"            {pad_h}, {pad_w}, {pad_h_end}, {pad_w_end},",
+                    f"            {act_scale:.8f}f, {act_zp},",
+                    f"            {act_scale:.8f}f, {act_zp}, dest);",
+                    "        current = dest;",
+                    "        use_a = !use_a;",
+                    "    }",
+                    "",
+                ]
+            )
+
+        elif layer_type == "mobilenetv4_uib":
+            n_sub = _uib_subop_count(layer)
+            in_c_u = int(layer["in_channels"])
+            out_c_u = int(layer["out_channels"])
+            start_k = int(layer.get("start_dw_kernel", 0))
+            middle_k = int(layer.get("middle_dw_kernel", 0))
+            stride = int(layer.get("stride", 1))
+            middle_down = bool(layer.get("middle_dw_downsample", 1))
+            expand_ratio = float(layer["expand_ratio"])
+            expand_c = _make_divisible(in_c_u * expand_ratio, 8)
+            residual = in_c_u if (stride == 1 and in_c_u == out_c_u) else 0
+            scratch_bytes = (2 * in_h * in_w * expand_c + in_h * in_w * residual)
+            scratch_name = f"g_uib_i8_scratch_{layer_index}"
+            composite_scratch.append((scratch_name, scratch_bytes))
+
+            block_input_scale = act_scale
+            block_input_zp = act_zp
+            sub_names: list[tuple[str, str, str]] = []
+            for sub_i in range(n_sub):
+                w_arr = bundle.weight_tensors[weight_idx]
+                b_arr = bundle.bias_tensors[weight_idx]
+                q = bundle.quant_layers[quant_idx]
+                w_name = f"kW{weight_idx}"
+                b_name = f"kB{weight_idx}"
+                q_name = f"kUibQ{layer_index}_{sub_i}"
+                weight_arrays.append((w_name, w_arr))
+                bias_arrays.append((b_name, b_arr))
+                quant_desc_arrays.append((q_name, q))
+                sub_names.append((w_name, b_name, q_name))
+                weight_idx += 1
+                quant_idx += 1
+
+            # Sub-op order: optional start_dw, expand, optional middle_dw, proj
+            si = 0
+            start_w = start_b = "nullptr"
+            start_q = "NkFormat::MlpLayerQuantDesc{}"
+            if start_k:
+                start_w, start_b, start_q = sub_names[si]
+                si += 1
+            expand_w, expand_b, expand_q = sub_names[si]
+            si += 1
+            middle_w = middle_b = "nullptr"
+            middle_q = "NkFormat::MlpLayerQuantDesc{}"
+            if middle_k:
+                middle_w, middle_b, middle_q = sub_names[si]
+                si += 1
+            proj_w, proj_b, proj_q = sub_names[si]
+
+            act_scale = bundle.quant_layers[quant_idx - 1].output_scale
+            act_zp = bundle.quant_layers[quant_idx - 1].output_zero_point
+
+            forward_lines.extend(
+                [
+                    "    {",
+                    "        int8_t* dest = use_a ? slot_a : slot_b;",
+                    "        MobileNetV4Uib uib{};",
+                    f"        uib.in_channels = {in_c_u};",
+                    f"        uib.out_channels = {out_c_u};",
+                    f"        uib.start_dw_kernel = {start_k};",
+                    f"        uib.middle_dw_kernel = {middle_k};",
+                    f"        uib.stride = {stride};",
+                    f"        uib.middle_dw_downsample = {'true' if middle_down else 'false'};",
+                    f"        uib.expand_ratio = {expand_ratio:.8f}f;",
+                    "        uib.quant_enabled = true;",
+                    f"        uib.block_input_scale = {block_input_scale:.8f}f;",
+                    f"        uib.block_input_zero_point = {block_input_zp};",
+                    f"        uib.start_dw_weights_q = {start_w if start_k else 'nullptr'};",
+                    f"        uib.start_dw_bias_q = {start_b if start_k else 'nullptr'};",
+                    f"        uib.start_dw_quant = {start_q if start_k else 'NkFormat::MlpLayerQuantDesc{}'};",
+                    f"        uib.expand_weights_q = {expand_w};",
+                    f"        uib.expand_bias_q = {expand_b};",
+                    f"        uib.expand_quant = {expand_q};",
+                    f"        uib.middle_dw_weights_q = {middle_w if middle_k else 'nullptr'};",
+                    f"        uib.middle_dw_bias_q = {middle_b if middle_k else 'nullptr'};",
+                    f"        uib.middle_dw_quant = {middle_q if middle_k else 'NkFormat::MlpLayerQuantDesc{}'};",
+                    f"        uib.proj_weights_q = {proj_w};",
+                    f"        uib.proj_bias_q = {proj_b};",
+                    f"        uib.proj_quant = {proj_q};",
+                    f"        uib.scratch_i8 = {scratch_name};",
+                    f"        uib.scratch_i8_bytes = {scratch_bytes}u;",
+                    f"        uib.forward_quant(current, dest, {in_h}u, {in_w}u);",
+                    "        current = dest;",
+                    "        use_a = !use_a;",
+                    "    }",
                     "",
                 ]
             )
@@ -230,7 +410,7 @@ def plan_lowered_quant(nk_path: str | Path) -> QuantLoweredPlan:
             workspace_bytes = max(workspace_bytes, fc_ws)
             layer_workspace.append((f"kFc{weight_idx}Plan", fc_ws))
 
-            if layer.get("activation") == "softmax":
+            if layer.get("activation") == "softmax" and not omit_final_softmax:
                 logits_elements = out_features
                 sm_name = f"kSoftmax{weight_idx}Plan"
                 forward_lines.extend(
@@ -239,6 +419,17 @@ def plan_lowered_quant(nk_path: str | Path) -> QuantLoweredPlan:
                         f"            {plan_name}, current, {w_name}, {b_name}, g_logits))",
                         "        return false;",
                         f"    if (!CmsisNnQuant::TrySoftmaxS8Plan({sm_name}, g_logits, output))",
+                        "        return false;",
+                        "    return true;",
+                        "",
+                    ]
+                )
+            elif layer.get("activation") == "softmax" and omit_final_softmax:
+                # Classification: write logits directly (argmax-equivalent).
+                forward_lines.extend(
+                    [
+                        f"    if (!CmsisNnQuant::TryFullyConnectedQuantPlan(",
+                        f"            {plan_name}, current, {w_name}, {b_name}, output))",
                         "        return false;",
                         "    return true;",
                         "",
@@ -264,15 +455,24 @@ def plan_lowered_quant(nk_path: str | Path) -> QuantLoweredPlan:
                 )
             quant_idx += 1
             weight_idx += 1
+            act_scale = bundle.quant_layers[quant_idx - 1].output_scale
+            act_zp = bundle.quant_layers[quant_idx - 1].output_zero_point
 
-    if not any(
+        else:
+            raise ValueError(f"unsupported layer for quant lowering: {layer_type}")
+
+    has_softmax_tail = any(
         layer.get("type") == "dense" and layer.get("activation") == "softmax"
         for layer in arch["layers"]
-    ):
-        forward_lines.append(
-            "    for (std::uint32_t i = 0; i < kOutputElements; ++i)\n"
-            "        output[i] = current[i];\n"
-        )
+    )
+    if not has_softmax_tail or omit_final_softmax:
+        # Softmax-omitted path already wrote to `output`; only copy when the last
+        # op left results in `current`.
+        if not (has_softmax_tail and omit_final_softmax):
+            forward_lines.append(
+                "    for (std::uint32_t i = 0; i < kOutputElements; ++i)\n"
+                "        output[i] = current[i];\n"
+            )
     forward_lines.append("    return true;\n")
 
     first_quant = bundle.quant_layers[0]
@@ -284,11 +484,15 @@ def plan_lowered_quant(nk_path: str | Path) -> QuantLoweredPlan:
             w_idx += 1
         elif layer["type"] == "max_pool2d":
             load_lines.append(f"CmsisNnQuant::FinalizePool2DPlan(kPool{layer_index}Plan);")
+        elif layer["type"] == "avg_pool2d":
+            pass
+        elif layer["type"] == "mobilenetv4_uib":
+            w_idx += _uib_subop_count(layer)
         elif layer["type"] == "dense":
             load_lines.append(
                 f"CmsisNnQuant::FinalizeFcPlan(kFc{w_idx}Plan, kW{w_idx}, kB{w_idx}, arena);"
             )
-            if layer.get("activation") == "softmax":
+            if layer.get("activation") == "softmax" and not omit_final_softmax:
                 q = bundle.quant_layers[w_idx]
                 load_lines.append(
                     f"kSoftmax{w_idx}Plan.params = "
@@ -313,12 +517,17 @@ def plan_lowered_quant(nk_path: str | Path) -> QuantLoweredPlan:
         load_body=load_body,
         arena_after_load=0,
         arena_after_forward=0,
+        composite_scratch=composite_scratch,
+        quant_desc_arrays=quant_desc_arrays,
     )
 
 
-def _emit_plan_structs(bundle: QuantNkBundle) -> str:
+def _emit_plan_structs(bundle: QuantNkBundle, *, omit_final_softmax: bool = False) -> str:
     lines: list[str] = []
-    h, w, c = bundle.input_shape
+    if bundle.arch.get("network") == "mlp":
+        h, w, c = _mlp_input_shape(bundle.arch)
+    else:
+        h, w, c = bundle.input_shape
     weight_idx = 0
     quant_idx = 0
 
@@ -330,7 +539,13 @@ def _emit_plan_structs(bundle: QuantNkBundle) -> str:
         if layer_type == "conv2d":
             quant = bundle.quant_layers[quant_idx]
             ws = _cmsis_conv_s8_workspace(in_c, layer["kernel_size"])
-            apply_relu = layer.get("activation") == "relu"
+            act = layer.get("activation", "none")
+            if act == "relu":
+                clamp = "QuantInteger::QuantClamp::ReLU"
+            elif act == "relu6":
+                clamp = "QuantInteger::QuantClamp::ReLU6"
+            else:
+                clamp = "QuantInteger::QuantClamp::None"
             lines.append(
                 f"""static CmsisQuantPlan::Conv2DPlan kConv{weight_idx}Plan = {{
     .input_offset = {-quant.input_zero_point},
@@ -338,7 +553,8 @@ def _emit_plan_structs(bundle: QuantNkBundle) -> str:
     .stride = {layer.get("stride", 1)},
     .pad_h = {layer.get("pad_h", 0)},
     .pad_w = {layer.get("pad_w", 0)},
-    .apply_relu = {"true" if apply_relu else "false"},
+    .clamp = {clamp},
+    .output_scale = {quant.output_scale:.8f}f,
     .in_h = {in_h},
     .in_w = {in_w},
     .in_c = {in_c},
@@ -374,20 +590,35 @@ def _emit_plan_structs(bundle: QuantNkBundle) -> str:
 }};"""
             )
 
+        elif layer_type in {"avg_pool2d", "flatten"}:
+            pass
+
+        elif layer_type == "mobilenetv4_uib":
+            n_sub = _uib_subop_count(layer)
+            quant_idx += n_sub
+            weight_idx += n_sub
+
         elif layer_type == "dense":
             quant = bundle.quant_layers[quant_idx]
             in_features = in_h * in_w * in_c
             out_features = layer["units"]
             effective = quant.input_scale * quant.weight_scale / quant.output_scale
             mult, shift = _quantize_multiplier(effective)
-            apply_relu = layer.get("activation") == "relu"
+            act = layer.get("activation", "none")
+            if act == "relu":
+                clamp = "QuantInteger::QuantClamp::ReLU"
+            elif act == "relu6":
+                clamp = "QuantInteger::QuantClamp::ReLU6"
+            else:
+                clamp = "QuantInteger::QuantClamp::None"
             fc_ws = _cmsis_fc_s8_workspace(in_features, out_features)
             lines.append(
                 f"""static CmsisQuantPlan::FcPlan kFc{weight_idx}Plan = {{
     .input_offset = {-quant.input_zero_point},
     .filter_offset = {-quant.weight_zero_point},
     .output_offset = {-quant.output_zero_point},
-    .apply_relu = {"true" if apply_relu else "false"},
+    .clamp = {clamp},
+    .output_scale = {quant.output_scale:.8f}f,
     .in_features = {in_features},
     .out_features = {out_features},
     .multiplier = {mult},
@@ -396,7 +627,7 @@ def _emit_plan_structs(bundle: QuantNkBundle) -> str:
     .ready = true,
 }};"""
             )
-            if layer.get("activation") == "softmax":
+            if layer.get("activation") == "softmax" and not omit_final_softmax:
                 lines.append(
                     f"""static CmsisQuantPlan::SoftmaxPlan kSoftmax{weight_idx}Plan = {{
     .params = {{}},
@@ -461,7 +692,6 @@ public:
     Model() = default;
 
     bool load(Arena& arena);
-    bool forward(Arena& arena, const float* input, int8_t* output) const;
     bool forwardInt8(Arena& arena, const int8_t* input, int8_t* output) const;
     [[nodiscard]] bool isLoaded() const {{ return loaded_; }}
 
@@ -479,6 +709,8 @@ def render_lowered_quant_cpp_source(
     plan: QuantLoweredPlan,
     include_main: bool,
     flash_section: bool,
+    *,
+    omit_final_softmax: bool = False,
 ) -> str:
     bundle = read_quant_nk(nk_path)
     weight_blocks: list[str] = []
@@ -501,11 +733,18 @@ def render_lowered_quant_cpp_source(
             weight_blocks.append(_format_int32_array(f"kConv{weight_idx}Shift", shifts))
             quant_idx += 1
             weight_idx += 1
+        elif layer["type"] == "mobilenetv4_uib":
+            n_sub = _uib_subop_count(layer)
+            quant_idx += n_sub
+            weight_idx += n_sub
         elif layer["type"] == "dense":
             quant_idx += 1
             weight_idx += 1
 
-    plan_structs = _emit_plan_structs(bundle)
+    for name, quant in plan.quant_desc_arrays:
+        weight_blocks.append(_format_quant_desc(name, quant))
+
+    plan_structs = _emit_plan_structs(bundle, omit_final_softmax=omit_final_softmax)
 
     if flash_section:
         flash_attr = (
@@ -533,6 +772,11 @@ def render_lowered_quant_cpp_source(
         scratch += f"alignas(16) static std::uint8_t g_workspace[{plan.workspace_bytes}];\n"
     else:
         scratch += "alignas(16) static std::uint8_t g_workspace[1];\n"
+    for name, elems in plan.composite_scratch:
+        scratch += f"alignas(16) static int8_t {name}[{elems}];\n"
+
+    need_uib = any(layer["type"] == "mobilenetv4_uib" for layer in bundle.arch["layers"])
+    uib_include = '#include "mobilenetv4_uib.hpp"\n' if need_uib else ""
 
     return f"""/* Generated by netkit AOT compiler (quant lowered) */
 {flash_attr}
@@ -540,9 +784,10 @@ def render_lowered_quant_cpp_source(
 
 #include "cmsis_nn_quant.hpp"
 #include "kernel_workspace.hpp"
+#include "nk_format.hpp"
 #include "quant_ops.hpp"
 #include "quant_plan_types.hpp"
-
+{uib_include}
 #include <cstdint>
 
 namespace netkit::aot::{symbol} {{
@@ -565,16 +810,6 @@ bool Model::forwardInt8(Arena& /*arena*/, const int8_t* input, int8_t* output) c
     if (!loaded_ || !input || !output)
         return false;
 {plan.forward_body}}}
-
-bool Model::forward(Arena& arena, const float* input, int8_t* output) const
-{{
-    if (!loaded_ || !input || !output)
-        return false;
-    int8_t input_q[kInputElements];
-    for (std::uint32_t i = 0; i < kInputElements; ++i)
-        input_q[i] = QuantOps::QuantizeFloat(input[i], kInputScale, kInputZeroPoint);
-    return forwardInt8(arena, input_q, output);
-}}
 
 }}  // namespace netkit::aot::{symbol}
 """

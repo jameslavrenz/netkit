@@ -44,6 +44,8 @@ class _TensorPair:
 class _GraphLayer:
     spec: dict[str, Any]
     tensors: _TensorPair
+    # Multi-tensor composites (UIB / ResNet / ConvNeXt); empty for primitives.
+    tensor_pairs: list[tuple[np.ndarray, np.ndarray]] = field(default_factory=list)
 
 
 @dataclass
@@ -82,6 +84,8 @@ def _decompose_mlp(arch: dict[str, Any], weights: np.ndarray) -> tuple[list[_Gra
 
 
 def _decompose_cnn(arch: dict[str, Any], weights: np.ndarray) -> tuple[list[_GraphLayer], _ShapeState]:
+    from .arch_writer import _make_divisible, _resnet_output_spatial, _uib_output_spatial
+
     layers: list[_GraphLayer] = []
     height, width, channels = arch["input"]
     dense_in = 0
@@ -133,6 +137,145 @@ def _decompose_cnn(arch: dict[str, Any], weights: np.ndarray) -> tuple[list[_Gra
             bias = weights[offset : offset + ch].copy()
             offset += ch
             layers.append(_GraphLayer(spec=dict(layer), tensors=_TensorPair(weight=scale, bias=bias)))
+        elif layer_type == "layernorm2d":
+            ch = layer["channels"]
+            ln_w = weights[offset : offset + ch].copy()
+            offset += ch
+            ln_b = weights[offset : offset + ch].copy()
+            offset += ch
+            layers.append(_GraphLayer(spec=dict(layer), tensors=_TensorPair(weight=ln_w, bias=ln_b)))
+        elif layer_type == "mobilenetv4_uib":
+            in_c = layer["in_channels"]
+            out_c = layer["out_channels"]
+            start_k = int(layer.get("start_dw_kernel", 0))
+            middle_k = int(layer.get("middle_dw_kernel", 0))
+            expand_c = _make_divisible(in_c * float(layer["expand_ratio"]), 8)
+            pairs: list[tuple[np.ndarray, np.ndarray]] = []
+            if start_k:
+                dw_elems = start_k * start_k * in_c
+                w = weights[offset : offset + dw_elems].reshape(in_c, start_k, start_k).copy()
+                offset += dw_elems
+                b = weights[offset : offset + in_c].copy()
+                offset += in_c
+                pairs.append((w, b))
+                scale = weights[offset : offset + in_c].copy()
+                offset += in_c
+                beta = weights[offset : offset + in_c].copy()
+                offset += in_c
+                pairs.append((scale, beta))
+            expand_elems = expand_c * in_c
+            w = weights[offset : offset + expand_elems].reshape(expand_c, 1, 1, in_c).copy()
+            offset += expand_elems
+            b = weights[offset : offset + expand_c].copy()
+            offset += expand_c
+            pairs.append((w, b))
+            scale = weights[offset : offset + expand_c].copy()
+            offset += expand_c
+            beta = weights[offset : offset + expand_c].copy()
+            offset += expand_c
+            pairs.append((scale, beta))
+            if middle_k:
+                dw_elems = middle_k * middle_k * expand_c
+                w = weights[offset : offset + dw_elems].reshape(expand_c, middle_k, middle_k).copy()
+                offset += dw_elems
+                b = weights[offset : offset + expand_c].copy()
+                offset += expand_c
+                pairs.append((w, b))
+                scale = weights[offset : offset + expand_c].copy()
+                offset += expand_c
+                beta = weights[offset : offset + expand_c].copy()
+                offset += expand_c
+                pairs.append((scale, beta))
+            proj_elems = out_c * expand_c
+            w = weights[offset : offset + proj_elems].reshape(out_c, 1, 1, expand_c).copy()
+            offset += proj_elems
+            b = weights[offset : offset + out_c].copy()
+            offset += out_c
+            pairs.append((w, b))
+            scale = weights[offset : offset + out_c].copy()
+            offset += out_c
+            beta = weights[offset : offset + out_c].copy()
+            offset += out_c
+            pairs.append((scale, beta))
+            layers.append(_GraphLayer(spec=dict(layer), tensors=_TensorPair(), tensor_pairs=pairs))
+            height, width = _uib_output_spatial(height, width, layer)
+            channels = out_c
+        elif layer_type == "resnet_basic_block":
+            in_c = layer["in_channels"]
+            out_c = layer["out_channels"]
+            stride = int(layer.get("stride", 1))
+            identity = stride == 1 and in_c == out_c
+            pairs = []
+            conv1_elems = out_c * 3 * 3 * in_c
+            w = weights[offset : offset + conv1_elems].reshape(out_c, 3, 3, in_c).copy()
+            offset += conv1_elems
+            b = weights[offset : offset + out_c].copy()
+            offset += out_c
+            pairs.append((w, b))
+            scale = weights[offset : offset + out_c].copy()
+            offset += out_c
+            beta = weights[offset : offset + out_c].copy()
+            offset += out_c
+            pairs.append((scale, beta))
+            conv2_elems = out_c * 3 * 3 * out_c
+            w = weights[offset : offset + conv2_elems].reshape(out_c, 3, 3, out_c).copy()
+            offset += conv2_elems
+            b = weights[offset : offset + out_c].copy()
+            offset += out_c
+            pairs.append((w, b))
+            scale = weights[offset : offset + out_c].copy()
+            offset += out_c
+            beta = weights[offset : offset + out_c].copy()
+            offset += out_c
+            pairs.append((scale, beta))
+            if not identity:
+                shortcut_elems = out_c * in_c
+                w = weights[offset : offset + shortcut_elems].reshape(out_c, 1, 1, in_c).copy()
+                offset += shortcut_elems
+                b = weights[offset : offset + out_c].copy()
+                offset += out_c
+                pairs.append((w, b))
+                scale = weights[offset : offset + out_c].copy()
+                offset += out_c
+                beta = weights[offset : offset + out_c].copy()
+                offset += out_c
+                pairs.append((scale, beta))
+            layers.append(_GraphLayer(spec=dict(layer), tensors=_TensorPair(), tensor_pairs=pairs))
+            height, width = _resnet_output_spatial(height, width, layer)
+            channels = out_c
+        elif layer_type == "convnextv2_block":
+            ch = layer["channels"]
+            expanded = ch * 4
+            pairs = []
+            dw_elems = 7 * 7 * ch
+            w = weights[offset : offset + dw_elems].reshape(ch, 7, 7).copy()
+            offset += dw_elems
+            b = weights[offset : offset + ch].copy()
+            offset += ch
+            pairs.append((w, b))
+            ln_w = weights[offset : offset + ch].copy()
+            offset += ch
+            ln_b = weights[offset : offset + ch].copy()
+            offset += ch
+            pairs.append((ln_w, ln_b))
+            pw1_elems = expanded * ch
+            w = weights[offset : offset + pw1_elems].reshape(expanded, ch).copy()
+            offset += pw1_elems
+            b = weights[offset : offset + expanded].copy()
+            offset += expanded
+            pairs.append((w, b))
+            grn_g = weights[offset : offset + expanded].copy()
+            offset += expanded
+            grn_b = weights[offset : offset + expanded].copy()
+            offset += expanded
+            pairs.append((grn_g, grn_b))
+            pw2_elems = ch * expanded
+            w = weights[offset : offset + pw2_elems].reshape(ch, expanded).copy()
+            offset += pw2_elems
+            b = weights[offset : offset + ch].copy()
+            offset += ch
+            pairs.append((w, b))
+            layers.append(_GraphLayer(spec=dict(layer), tensors=_TensorPair(), tensor_pairs=pairs))
         elif layer_type == "flatten":
             layers.append(_GraphLayer(spec=dict(layer), tensors=_TensorPair()))
             dense_in = height * width * channels

@@ -10,9 +10,10 @@
 #include "arena.hpp"
 #include "arena_util.hpp"
 #include "cnn.hpp"
+#include "cmsis_dsp_util.hpp"
 #include "mnist_cnn_test_images.h"
+#include "mobilenetv4_netkit_int8_test_images.h"
 #include "nk_loader.hpp"
-#include "quant_output.hpp"
 #include "tensor_factory.hpp"
 
 #include <algorithm>
@@ -20,6 +21,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <span>
 #include <vector>
 
@@ -87,6 +89,23 @@ Tensor MakeNhwcView(float* data, uint32_t h, uint32_t w, uint32_t c)
     return TensorFactory::ViewND(data, 3, std::span<const uint32_t>(shape));
 }
 
+Tensor MakeNhwcViewInt8(int8_t* data, uint32_t h, uint32_t w, uint32_t c)
+{
+    Tensor input{};
+    input.data = data;
+    input.type = DataType::Int8;
+    input.rank = 3;
+    input.shape[0] = h;
+    input.shape[1] = w;
+    input.shape[2] = c;
+    input.stride[0] = w * c;
+    input.stride[1] = c;
+    input.stride[2] = 1;
+    input.num_elements = h * w * c;
+    input.bytes = input.num_elements * sizeof(int8_t);
+    return input;
+}
+
 int RunBenchmark(const char* model_path)
 {
     NkLoader::ParsedModel parsed{};
@@ -104,11 +123,13 @@ int RunBenchmark(const char* model_path)
         return 1;
     }
 
-    const std::size_t arena_capacity = ArenaBytesForModel(parsed);
+    // Int8 plan activations need a large host arena; floor at kArenaCapacity.
+    const std::size_t arena_capacity =
+        std::max(ArenaBytesForModel(parsed), kArenaCapacity);
 #if defined(NETKIT_ARENA_HEAP)
     ArenaUtil::Scoped arena_scope(arena_capacity, nullptr);
 #else
-    static unsigned char* arena_memory = new unsigned char[kArenaCapacity];
+    static unsigned char* arena_memory = new unsigned char[arena_capacity];
     ArenaUtil::Scoped arena_scope(arena_capacity, arena_memory);
 #endif
     if (!arena_scope)
@@ -139,20 +160,40 @@ int RunBenchmark(const char* model_path)
         return 1;
     }
 
-    if (network->IsQuantized())
-        network->SetQuantOutputFormat(QuantOutputFormat::Float32);
-
     const uint32_t output_cols = NkLoader::OutputElements(parsed);
-    const char* dtype = network->IsQuantized() ? "int8" : "float32";
+    const bool quantized = network->IsQuantized();
+    const char* dtype = quantized ? "int8" : "float32";
 
-    // Build 10 MNIST-derived inputs (one per class).
-    const int num_images = kMnistCnnBenchmarkImageCount;
-    std::vector<std::vector<float>> inputs(static_cast<size_t>(num_images));
-    for (int i = 0; i < num_images; ++i)
+    // Float: upsample MNIST float fixtures. Int8: prequantized Python export (no C++ quant).
+    const int num_images =
+        quantized ? kMobilenetV4Int8BenchmarkImageCount : kMnistCnnBenchmarkImageCount;
+    std::vector<std::vector<float>> float_inputs;
+    std::vector<std::vector<int8_t>> int8_inputs;
+    if (quantized)
     {
-        inputs[static_cast<size_t>(i)].resize(kInH * kInW * kInC);
-        UpsampleMnistTo56x56x3(kMnistCnnBenchmarkImages[i].pixels,
-                               inputs[static_cast<size_t>(i)].data());
+        if (kMobilenetV4Int8BenchmarkInputSize !=
+            static_cast<int>(kInH * kInW * kInC))
+        {
+            std::fprintf(stderr, "int8 fixture size mismatch\n");
+            return 1;
+        }
+        int8_inputs.resize(static_cast<size_t>(num_images));
+        for (int i = 0; i < num_images; ++i)
+        {
+            int8_inputs[static_cast<size_t>(i)].assign(
+                kMobilenetV4Int8BenchmarkImages[i].pixels,
+                kMobilenetV4Int8BenchmarkImages[i].pixels + kMobilenetV4Int8BenchmarkInputSize);
+        }
+    }
+    else
+    {
+        float_inputs.resize(static_cast<size_t>(num_images));
+        for (int i = 0; i < num_images; ++i)
+        {
+            float_inputs[static_cast<size_t>(i)].resize(kInH * kInW * kInC);
+            UpsampleMnistTo56x56x3(kMnistCnnBenchmarkImages[i].pixels,
+                                   float_inputs[static_cast<size_t>(i)].data());
+        }
     }
 
     const char* dw_mode = (NETKIT_DW_ROW_ACCUM ? "row-accum(4)" : "serial");
@@ -173,7 +214,10 @@ int RunBenchmark(const char* model_path)
     {
         for (int i = 0; i < num_images; ++i)
         {
-            Tensor input = MakeNhwcView(inputs[static_cast<size_t>(i)].data(), kInH, kInW, kInC);
+            Tensor input =
+                quantized
+                    ? MakeNhwcViewInt8(int8_inputs[static_cast<size_t>(i)].data(), kInH, kInW, kInC)
+                    : MakeNhwcView(float_inputs[static_cast<size_t>(i)].data(), kInH, kInW, kInC);
 
             const auto start = std::chrono::steady_clock::now();
             Tensor& output = network->forward(input, arena);
@@ -185,8 +229,21 @@ int RunBenchmark(const char* model_path)
                 return 1;
             }
             samples.push_back(std::chrono::duration<double, std::micro>(end - start).count());
-            last_pred = ArgMax(static_cast<const float*>(output.data),
-                               static_cast<int>(output_cols));
+            if (quantized)
+            {
+                if (output.type != DataType::Int8)
+                {
+                    std::fprintf(stderr, "expected int8 output\n");
+                    return 1;
+                }
+                last_pred = static_cast<int>(CmsisQuantUtil::ArgMaxInt8(
+                    static_cast<const int8_t*>(output.data), output_cols));
+            }
+            else
+            {
+                last_pred = ArgMax(static_cast<const float*>(output.data),
+                                   static_cast<int>(output_cols));
+            }
         }
     }
 

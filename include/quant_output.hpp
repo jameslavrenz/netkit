@@ -2,11 +2,11 @@
 
 #include <cstdint>
 
-// Quantized inference output: int8 activations end-to-end; float32 only at the boundary when requested.
+// Quantized inference output: int8 activations end-to-end.
+// Float↔int8 conversion is Python-only (export / offline post-process).
 enum class QuantOutputFormat : uint8_t
 {
     Int8 = 0,
-    Float32 = 1,
 };
 
 namespace QuantOps
@@ -28,10 +28,6 @@ void SoftmaxS8(const int8_t* logits,
                uint32_t count,
                float logit_scale,
                int8_t* output);
-
-float DequantizeSoftmaxOutput(int8_t value);
-
-void DequantizeSoftmaxOutput(const int8_t* src, float* dst, uint32_t count);
 
 uint32_t ArgMaxInt8(const int8_t* values, uint32_t count);
 

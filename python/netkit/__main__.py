@@ -44,6 +44,11 @@ def main(argv: list[str] | None = None) -> int:
     pack.add_argument("--height", type=int, default=None, help="Input height (arch default if omitted)")
     pack.add_argument("--width", type=int, default=None, help="Input width (arch default if omitted)")
     pack.add_argument("--num-classes", type=int, default=10)
+    pack.add_argument(
+        "--pretrained",
+        action="store_true",
+        help="Load ImageNet-pretrained timm weights (default: random init)",
+    )
 
     inspect = sub.add_parser("inspect", help="Print .nk header and tensor catalog")
     inspect.add_argument("input", help="Path to .nk model")
@@ -91,6 +96,14 @@ def main(argv: list[str] | None = None) -> int:
         choices=("cpu", "mpu", "mcu"),
         default="cpu",
         help="Firmware target for arena sizing (mcu subtracts flash payload from probe peaks)",
+    )
+    aot.add_argument(
+        "--omit-final-softmax",
+        action="store_true",
+        help=(
+            "Skip final Dense Softmax and emit logits instead "
+            "(argmax-equivalent; for classification benches)"
+        ),
     )
     weights_group = aot.add_mutually_exclusive_group()
     weights_group.add_argument(
@@ -146,7 +159,9 @@ def main(argv: list[str] | None = None) -> int:
         height = args.height if args.height is not None else default_h
         width = args.width if args.width is not None else default_w
 
-        model = load_backbone_model(args.arch, num_classes=args.num_classes)
+        model = load_backbone_model(
+            args.arch, num_classes=args.num_classes, pretrained=args.pretrained
+        )
         arch, weights = pack_backbone_from_torch(
             args.arch,
             model,
@@ -204,6 +219,7 @@ def main(argv: list[str] | None = None) -> int:
                 args.weights_in_ram if args.weights_in_ram is not None else False
             ),
             lower=not args.no_lower,
+            omit_final_softmax=args.omit_final_softmax,
         )
         print(f"Wrote {result.header_path}")
         print(f"Wrote {result.source_path}")

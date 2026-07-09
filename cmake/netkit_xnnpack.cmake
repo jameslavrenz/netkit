@@ -1,0 +1,57 @@
+# Optional XNNPACK LayerFast backend for cpu/mpu builds.
+
+function(netkit_add_xnnpack target)
+    if(NOT NETKIT_XNNPACK)
+        return()
+    endif()
+
+    if(NETKIT_TARGET STREQUAL "mcu")
+        message(WARNING "NETKIT_XNNPACK=ON ignored — XNNPACK is cpu/mpu only")
+        return()
+    endif()
+
+    set(XNNPACK_DIR "${CMAKE_SOURCE_DIR}/third_party/XNNPACK")
+    set(XNNPACK_LIB_DIR "${XNNPACK_DIR}/netkit_lib")
+    if(NOT EXISTS "${XNNPACK_DIR}/include/xnnpack.h")
+        message(WARNING "NETKIT_XNNPACK=ON but headers missing — run ./tools/fetch_xnnpack.sh")
+        return()
+    endif()
+    if(NOT EXISTS "${XNNPACK_LIB_DIR}/libXNNPACK.a")
+        message(WARNING "NETKIT_XNNPACK=ON but libXNNPACK.a missing — run ./tools/fetch_xnnpack.sh")
+        return()
+    endif()
+
+    target_sources(${target} PRIVATE
+        "${CMAKE_SOURCE_DIR}/src/xnnpack_backend.cpp"
+        "${CMAKE_SOURCE_DIR}/src/xnnpack_quant_backend.cpp")
+    target_include_directories(${target} PUBLIC
+        "${XNNPACK_DIR}/include"
+        "${XNNPACK_DIR}/netkit_include")
+    target_compile_definitions(${target} PUBLIC NETKIT_USE_XNNPACK=1)
+    target_link_directories(${target} PUBLIC "${XNNPACK_LIB_DIR}")
+    if(APPLE)
+        target_link_options(${target} PUBLIC "LINKER:-force_load,${XNNPACK_LIB_DIR}/libXNNPACK.a")
+    else()
+        target_link_libraries(${target} PUBLIC
+            -Wl,--whole-archive XNNPACK -Wl,--no-whole-archive)
+    endif()
+    if(EXISTS "${XNNPACK_LIB_DIR}/libxnnpack-microkernels-prod.a")
+        target_link_libraries(${target} PUBLIC xnnpack-microkernels-prod)
+    elseif(EXISTS "${XNNPACK_LIB_DIR}/libxnnpack-microkernels-all.a")
+        target_link_libraries(${target} PUBLIC xnnpack-microkernels-all)
+    endif()
+    if(EXISTS "${XNNPACK_LIB_DIR}/libkleidiai.a")
+        target_link_libraries(${target} PUBLIC kleidiai)
+    endif()
+    if(EXISTS "${XNNPACK_LIB_DIR}/libpthreadpool.a")
+        target_link_libraries(${target} PUBLIC pthreadpool)
+    endif()
+    if(EXISTS "${XNNPACK_LIB_DIR}/libcpuinfo.a")
+        target_link_libraries(${target} PUBLIC cpuinfo)
+    endif()
+    if(EXISTS "${XNNPACK_LIB_DIR}/libfxdiv.a")
+        target_link_libraries(${target} PUBLIC fxdiv)
+    endif()
+    find_package(Threads REQUIRED)
+    target_link_libraries(${target} PUBLIC Threads::Threads)
+endfunction()

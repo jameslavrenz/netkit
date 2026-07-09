@@ -1,8 +1,9 @@
 /*
  * netkit.h — C23 public API for netkit
  *
- * Inference: float32 reference path; int8 quantized models load via `.nk` and run through
- * `nk_model_load` / `nk_model_run` (output dequantized to float for MLP softmax).
+ * Inference: float32 models use float I/O; int8 quantized models require int8 I/O
+ * (prequantized at .nk export time in Python — no C++ float→int8 or dequant).
+ * Use `nk_model_run` for float32; `nk_model_run_int8` / AOT `forwardInt8` for int8.
  * Documentation:
  *   docs/PHILOSOPHY.md       — product vision, Phase 1/2, roadmap
  *   docs/GETTING_STARTED.md  — build, test, first inference
@@ -543,6 +544,14 @@ nk_status_t nk_model_run(const nk_model_t* model,
                          float* output,
                          uint32_t output_capacity,
                          uint32_t* output_count);
+/** Int8 models only: prequantized int8 input → int8 output (no float quant/dequant). */
+nk_status_t nk_model_run_int8(const nk_model_t* model,
+                              nk_arena_t* arena,
+                              const int8_t* input,
+                              uint32_t input_count,
+                              int8_t* output,
+                              uint32_t output_capacity,
+                              uint32_t* output_count);
 nk_status_t nk_inspect_model(const char* nk_path, nk_arena_t* arena, nk_inspect_info_t* info);
 /** Inspect embedded .nk bytes (same arena peaks as CLI inspect --full for buffer load). */
 nk_status_t nk_inspect_model_memory(const uint8_t* data,

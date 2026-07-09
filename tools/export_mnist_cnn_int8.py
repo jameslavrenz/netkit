@@ -18,7 +18,7 @@ sys.path.insert(0, str(ROOT / "python"))
 
 from netkit import RegressionSuite
 from netkit.datasets import load_mnist
-from netkit.quantize import forward_quantized_cnn, quantize_cnn, quantized_cnn_to_spec
+from netkit.quantize import forward_quantized_cnn, quantize_cnn, quantize_float_input, quantized_cnn_to_spec
 from netkit.reader import read_nk
 from netkit.tflite_quant_align import (
     extract_tflite_cnn_quant_specs,
@@ -77,10 +77,14 @@ def _select_digit_cases_fast(
         label = int(y_test[i])
         if pred != label or label in used_digits:
             continue
+        # TCAS stores floats; embed prequantized int8 as float values in [-128, 127].
+        input_i8 = quantize_float_input(
+            x_test[i].reshape(-1), pack.quant_layers[0].input_scale, pack.quant_layers[0].input_zero_point
+        )
         cases.append(
             RegressionCase(
                 name=name_fmt.format(digit=label, i=i),
-                input=x_test[i],
+                input=input_i8.astype(np.float32),
                 expected=probs,
                 label=label,
             )

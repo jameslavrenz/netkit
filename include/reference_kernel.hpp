@@ -55,7 +55,7 @@ struct ReferenceKernel : KernelBase<ReferenceKernel>
                                           NetkitKernelActivation fuse_activation,
                                           Tensor& output);
 
-    static void MaxPool2dForwardImpl(const Tensor& input,
+    static bool MaxPool2dForwardImpl(const Tensor& input,
                                      int pool_h,
                                      int pool_w,
                                      int stride,
@@ -63,6 +63,7 @@ struct ReferenceKernel : KernelBase<ReferenceKernel>
                                      int pad_w,
                                      int pad_h_end,
                                      int pad_w_end,
+                                     NetkitKernelActivation fuse_activation,
                                      Tensor& output);
     static void AvgPool2dForwardImpl(const Tensor& input,
                                      int pool_h,

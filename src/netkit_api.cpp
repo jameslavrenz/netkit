@@ -7,6 +7,7 @@
 #include "conv2d.hpp"
 #include "mlp.hpp"
 #include "cnn.hpp"
+#include "cmsis_quant_plan.hpp"
 #include "quant_output.hpp"
 #if defined(NETKIT_DESKTOP)
 #include "nk_regression.hpp"
@@ -78,9 +79,12 @@ namespace
 
     void CopyModelOutputToFloat(const Tensor& output, float* dest, uint32_t count)
     {
+        // Int8 models must not be dequantized in C++. Callers that need float
+        // probabilities should use Python offline (or an int8 output API).
         if (output.type == DataType::Int8)
         {
-            QuantOps::DequantizeSoftmaxOutput(static_cast<const int8_t*>(output.data), dest, count);
+            for (uint32_t i = 0; i < count; ++i)
+                dest[i] = 0.0f;
             return;
         }
 
@@ -259,6 +263,23 @@ namespace
         return input;
     }
 
+    Tensor MakeNhwcInputInt8(int8_t* data, uint32_t h, uint32_t w, uint32_t c)
+    {
+        Tensor input{};
+        input.data = data;
+        input.type = DataType::Int8;
+        input.rank = 3;
+        input.shape[0] = h;
+        input.shape[1] = w;
+        input.shape[2] = c;
+        input.stride[0] = w * c;
+        input.stride[1] = c;
+        input.stride[2] = 1;
+        input.num_elements = h * w * c;
+        input.bytes = input.num_elements * sizeof(int8_t);
+        return input;
+    }
+
     nk_status_t InspectModelFull(const NkLoader::ParsedModel& parsed,
                                  const char* resolved_path,
                                  const uint8_t* buffer,
@@ -299,10 +320,26 @@ namespace
             }
 
             info->arena_bytes_after_load = nk_arena_used(arena);
-            Tensor input = TensorFactory::Create2D(arena_ref, input_shape[0], input_shape[1]);
             const uint32_t output_cols = NkLoader::OutputElements(parsed) / input_shape[0];
-            Tensor output = TensorFactory::Create2D(arena_ref, input_shape[0], output_cols);
-            network->forward(input, output, arena_ref);
+            if (network->IsQuantized())
+            {
+                int8_t* in_i8 = static_cast<int8_t*>(
+                    arena_ref.alloc(info->arch.input_elements * sizeof(int8_t), alignof(int8_t)));
+                int8_t* out_i8 = static_cast<int8_t*>(
+                    arena_ref.alloc(info->arch.output_elements * sizeof(int8_t), alignof(int8_t)));
+                if (!in_i8 || !out_i8)
+                    return NK_ERR_ARENA_OVERFLOW;
+                std::memset(in_i8, 0, info->arch.input_elements * sizeof(int8_t));
+                Tensor input = TensorFactory::View2DInt8(in_i8, input_shape[0], input_shape[1]);
+                Tensor output = TensorFactory::View2DInt8(out_i8, input_shape[0], output_cols);
+                network->forward(input, output, arena_ref);
+            }
+            else
+            {
+                Tensor input = TensorFactory::Create2D(arena_ref, input_shape[0], input_shape[1]);
+                Tensor output = TensorFactory::Create2D(arena_ref, input_shape[0], output_cols);
+                network->forward(input, output, arena_ref);
+            }
             info->arena_bytes_after_forward = nk_arena_used(arena);
             info->arena_remaining = nk_arena_remaining(arena);
             SetLastError(nullptr);
@@ -324,12 +361,24 @@ namespace
             }
 
             info->arena_bytes_after_load = nk_arena_used(arena);
-            float zero_input[NK_MAX_CASE_FLOATS] = {};
-            Tensor input = MakeNhwcInput(
-                zero_input, input_shape[0], input_shape[1], input_shape[2]);
-            Tensor& output = network->forward(input, arena_ref);
-            if (!output.data)
-                return NK_ERR_ARENA_OVERFLOW;
+            if (network->IsQuantized())
+            {
+                int8_t zero_input_i8[NK_MAX_CASE_FLOATS] = {};
+                Tensor input = MakeNhwcInputInt8(
+                    zero_input_i8, input_shape[0], input_shape[1], input_shape[2]);
+                Tensor& output = network->forward(input, arena_ref);
+                if (!output.data)
+                    return NK_ERR_ARENA_OVERFLOW;
+            }
+            else
+            {
+                float zero_input[NK_MAX_CASE_FLOATS] = {};
+                Tensor input = MakeNhwcInput(
+                    zero_input, input_shape[0], input_shape[1], input_shape[2]);
+                Tensor& output = network->forward(input, arena_ref);
+                if (!output.data)
+                    return NK_ERR_ARENA_OVERFLOW;
+            }
             info->arena_bytes_after_forward = nk_arena_used(arena);
             info->arena_remaining = nk_arena_remaining(arena);
             SetLastError(nullptr);
@@ -1541,6 +1590,8 @@ nk_status_t nk_model_run(const nk_model_t* model,
     const ModelState* state = ModelPtr(model);
     if (!state->loaded)
         return NK_ERR_MODEL_NOT_LOADED;
+    if (nk_model_is_quantized(model))
+        return NK_ERR_INVALID_ARGUMENT;  // use nk_model_run_int8
     if (input_count != state->arch.input_elements)
         return NK_ERR_INVALID_ARGUMENT;
     if (output_capacity < state->arch.output_elements)
@@ -1556,17 +1607,8 @@ nk_status_t nk_model_run(const nk_model_t* model,
         for (uint32_t i = 0; i < input_count; ++i)
             input_data[i] = input[i];
         const uint32_t output_cols = state->arch.output_elements / state->arch.input_shape[0];
-        Tensor output_tensor{};
-        if (state->mlp->IsQuantized())
-        {
-            int8_t* out_i8 = static_cast<int8_t*>(
-                ArenaPtr(arena)->alloc(state->arch.output_elements * sizeof(int8_t), alignof(int8_t)));
-            output_tensor = TensorFactory::View2DInt8(out_i8, state->arch.input_shape[0], output_cols);
-        }
-        else
-        {
-            output_tensor = TensorFactory::Create2D(*ArenaPtr(arena), state->arch.input_shape[0], output_cols);
-        }
+        Tensor output_tensor =
+            TensorFactory::Create2D(*ArenaPtr(arena), state->arch.input_shape[0], output_cols);
         if (!output_tensor.data)
             return NK_ERR_ARENA_OVERFLOW;
         state->mlp->forward(input_tensor, output_tensor, *ArenaPtr(arena));
@@ -1600,6 +1642,57 @@ nk_status_t nk_model_run(const nk_model_t* model,
 
     *output_count = state->arch.output_elements;
     return NK_OK;
+}
+
+nk_status_t nk_model_run_int8(const nk_model_t* model,
+                              nk_arena_t* arena,
+                              const int8_t* input,
+                              uint32_t input_count,
+                              int8_t* output,
+                              uint32_t output_capacity,
+                              uint32_t* output_count)
+{
+    if (!model || !arena || !input || !output || !output_count)
+        return NK_ERR_INVALID_ARGUMENT;
+    const ModelState* state = ModelPtr(model);
+    if (!state->loaded)
+        return NK_ERR_MODEL_NOT_LOADED;
+    if (!nk_model_is_quantized(model))
+        return NK_ERR_INVALID_ARGUMENT;  // use nk_model_run for float32
+    if (input_count != state->arch.input_elements)
+        return NK_ERR_INVALID_ARGUMENT;
+    if (output_capacity < state->arch.output_elements)
+        return NK_ERR_BUFFER_TOO_SMALL;
+
+    if (state->kind == NK_NETWORK_MLP)
+    {
+        Tensor input_tensor = TensorFactory::View2DInt8(
+            const_cast<int8_t*>(input), state->arch.input_shape[0], state->arch.input_shape[1]);
+        const uint32_t output_cols = state->arch.output_elements / state->arch.input_shape[0];
+        Tensor output_tensor =
+            TensorFactory::View2DInt8(output, state->arch.input_shape[0], output_cols);
+        if (!input_tensor.data || !output_tensor.data)
+            return NK_ERR_INVALID_ARGUMENT;
+        state->mlp->forward(input_tensor, output_tensor, *ArenaPtr(arena));
+        if (output_tensor.type != DataType::Int8)
+            return NK_ERR_INVALID_ARGUMENT;
+        *output_count = state->arch.output_elements;
+        return NK_OK;
+    }
+
+    if (state->kind == NK_NETWORK_CNN)
+    {
+        CmsisQuantPlan::Runtime* runtime = state->cnn->quant_runtime();
+        if (!runtime)
+            return NK_ERR_INVALID_ARGUMENT;
+        if (!CmsisQuantPlan::ForwardInt8ToBuffer(
+                *runtime, *state->cnn, input, output, state->arch.output_elements))
+            return NK_ERR_INVALID_ARGUMENT;
+        *output_count = state->arch.output_elements;
+        return NK_OK;
+    }
+
+    return NK_ERR_UNSUPPORTED_NETWORK;
 }
 
 nk_status_t nk_inspect_model(const char* nk_path, nk_arena_t* arena, nk_inspect_info_t* info)

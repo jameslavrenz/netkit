@@ -22,17 +22,24 @@ Profile builds use `forward_timed()` (NETKIT) or TFLM `MicroProfiler` (TFLM) to 
 
 ## Compiler flags (fair comparison)
 
-The netkit benchmark builds its own `libnetkit_bench.a` with the **same host toolchain and flags as TFLM** (`benchmark/common/tflm_host_flags.mk`):
+Benchmarks use **two** host flag profiles, selected by peer:
+
+| Peer | Profile file | Opt | SIMD / NEON |
+|------|--------------|-----|-------------|
+| **TFLM Micro** (MNIST `compare.sh`) | `benchmark/common/tflm_host_flags.mk` | `-O2` | `TF_LITE_DISABLE_X86_NEON` (TFLM host default) |
+| **TF Lite / LiteRT** (ImageNet MPU) | `benchmark/common/tflite_host_flags.mk` | `-O3 -DNDEBUG` | enabled (matches LiteRT `darwin_*-opt` / XNNPACK Release) |
+
+Shared across both profiles:
 
 | Setting | Value |
 |---------|--------|
-| Compiler | `g++` / `gcc` |
-| Core / harness | `-Os` + TFLM `CXXFLAGS` |
-| Runtime kernels | `-O2` + TFLM `CXXFLAGS` |
-| Link | `-lm` (osx has no `--gc-sections`) |
+| Compiler | host `c++` / `cc` (Apple Clang or GCC) |
+| Link | `-lm` (+ XNNPACK libs when enabled) |
 | Exceptions / RTTI | `-fno-exceptions -fno-rtti` |
 
-The only intentional deviation is `-std=c++20` instead of TFLM's `-std=c++17`, because netkit's runtime API uses `std::span`.
+ImageNet targets pass `BENCH_FLAG_PROFILE=tflite` so netkit is not accidentally compared under TFLM's `-O2` + disabled-NEON settings. MNIST / `compare.sh` keep the TFLM profile.
+
+The only intentional C++ dialect deviation is `-std=c++20` instead of TFLM's `-std=c++17`, because netkit's runtime API uses `std::span`.
 
 The main repo `libnetkit.a` (clang, debug) is **not** used by these benchmarks.
 
@@ -109,6 +116,33 @@ make -C benchmark/tflm run-mobilenetv4-int8        # TFLM int8 (after export-mob
 Int8 netkit loads `models/mobilenetv4_small_int8.nk` (UIB composite quant op, per-tensor symmetric int8). Int8 TFLM uses `generated/mobilenetv4_small_int8.tflite` with prequantized `mobilenetv4_int8_test_images.{h,cc}`.
 
 This benchmark is **not** part of `compare.sh` / `run-all` (separate MobileNetV4 harness) and accuracy is not meaningful (fixture weights) — it measures invoke latency only.
+
+## ImageNet MobileNetV4 (pretrained, host / MPU)
+
+Pretrained `mobilenetv4_conv_small` (224×224×3, 1000 classes) compared across netkit, TFLM, and TF Lite / LiteRT on the same 10 ImageNet images.
+
+**Compiler policy:** netkit ImageNet targets use `BENCH_FLAG_PROFILE=tflite` (`-O3 -DNDEBUG`, SIMD enabled) to match LiteRT's opt build — **not** the TFLM Micro `-O2` + `TF_LITE_DISABLE_X86_NEON` profile.
+
+```bash
+./tools/fetch_xnnpack.sh   # once
+make -C benchmark/netkit run-mobilenetv4-imagenet-xnnpack   # netkit XNNPACK, tflite flags
+make -C benchmark/netkit run-mobilenetv4-imagenet-cmsis     # netkit CMSIS-DSP, tflite flags
+make -C benchmark/tflite run-mobilenetv4-imagenet           # TF Lite XNNPACK, 1 thread
+make -C benchmark/tflite run-mobilenetv4-imagenet-ref       # TF Lite builtin-ref
+make -C benchmark/tflm run-mobilenetv4-imagenet             # TFLM (still TFLM -O2 host flags)
+```
+
+### ImageNet int8
+
+Same 10 images, int8 end-to-end. Quantize/dequant is **Python-only** (export / offline); C++ and interpreters feed/consume int8 and ArgMax on int8 logits.
+
+| Runtime | Target | Notes |
+|---------|--------|-------|
+| netkit | `make -C benchmark/netkit run-mobilenetv4-imagenet-int8` | XNNPACK qs8 default; fixtures from `--quant-source nk` |
+| TFLM | `make -C benchmark/tflm run-mobilenetv4-imagenet-int8` | Host builtin int8 kernels (no XNNPACK) |
+| TF Lite | `make -C benchmark/tflite run-mobilenetv4-imagenet-int8` | LiteRT XNNPACK; quantize inputs in the Python bench |
+
+Export: `make -C benchmark/tflm export-mobilenetv4-imagenet-int8` (TFLite + TFLM fixtures) and `python3 tools/write_mobilenetv4_imagenet_int8.py` (`.nk`). Netkit fixtures: `python3 benchmark/tflm/tools/export_imagenet_mnv4_int8_test_images.py --quant-source nk`.
 
 ## Models
 

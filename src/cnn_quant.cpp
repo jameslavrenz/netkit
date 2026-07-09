@@ -16,8 +16,6 @@ bool CNNNetwork::InitQuantizedActivationBuffers(Arena& arena, uint32_t in_h, uin
     max_activation_elements = 0;
     layer_output_views_ = nullptr;
     output_cache_ = {};
-    float_output_buffer_ = nullptr;
-    float_output_elements_ = 0;
     quant_runtime_ = nullptr;
 
     if (!blocks || num_layers == 0)

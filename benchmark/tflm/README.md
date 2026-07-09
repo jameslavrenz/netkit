@@ -67,7 +67,7 @@ make run           # build with TFLM flags + run benchmark
 | `CXX` | `g++` |
 | `CC` | `gcc` |
 | `BUILD_TYPE` | `default` (TFLM error-checking build) |
-| Flags | `-DTF_LITE_STATIC_MEMORY`, `-fno-rtti`, `-fno-exceptions`, `-Os` core / `-O2` kernels |
+| Flags | `-DTF_LITE_STATIC_MEMORY`, `-fno-rtti`, `-fno-exceptions`, `-O2` core / `-O2` kernels |
 
 Inspect the exact flags TFLM selected:
 

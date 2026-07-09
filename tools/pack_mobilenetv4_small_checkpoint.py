@@ -35,9 +35,16 @@ def main() -> None:
     parser.add_argument("--height", type=int, default=56)
     parser.add_argument("--width", type=int, default=56)
     parser.add_argument("--num-classes", type=int, default=10)
+    parser.add_argument(
+        "--pretrained",
+        action="store_true",
+        help="Load ImageNet-pretrained timm weights",
+    )
     args = parser.parse_args()
 
-    model = load_backbone_model("mobilenetv4_small", num_classes=args.num_classes)
+    model = load_backbone_model(
+        "mobilenetv4_small", num_classes=args.num_classes, pretrained=args.pretrained
+    )
     arch, weights = pack_backbone_from_torch(
         "mobilenetv4_small",
         model,

@@ -5,7 +5,7 @@
 #   NETKIT_TARGET=mcu, NETKIT_ARCH=CM4
 #   NETKIT_WEIGHTS_IN_RAM=0 (coefs in flash .rodata)
 #   Toolchain: boards/nucleo-f446re/mcu_tflm_toolchain.mk (TFLM microlite tiers:
-#     CORE -Os, KERNEL/THIRD_PARTY_KERNEL -O2, -flto link)
+#     CORE/KERNEL/THIRD_PARTY all -O2, -flto link)
 #   Default: interpreter embed (--no-lower) — fair vs TFLM MicroInterpreter
 #   Optional: NETKIT_LOWERED=1 for quant lowered deployment profile
 #
@@ -259,7 +259,7 @@ $(GEN_DIR)/.embed_stamp: $(NETKIT_ROOT)/models/mnist_cnn_int8.nk
 	cd $(NETKIT_ROOT) && PYTHONPATH=$(NETKIT_ROOT)/python python3 -m netkit aot models/mnist_cnn_int8.nk \
 		-o $(abspath $(GEN_DIR)) --language cpp --target mcu --arena-headroom 0 \
 		$(if $(filter 1,$(NETKIT_WEIGHTS_IN_RAM)),--weights-in-ram,--no-weights-in-ram) \
-		$(if $(filter 1,$(NETKIT_LOWERED)),,--no-lower)
+		$(if $(filter 1,$(NETKIT_LOWERED)),,--no-lower) --omit-final-softmax
 	@touch $(GEN_DIR)/.embed_stamp
 
 # Back-compat alias (prefer export-embed).

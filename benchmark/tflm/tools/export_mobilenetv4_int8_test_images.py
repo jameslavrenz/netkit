@@ -2,7 +2,10 @@
 """Export prequantized int8 MobileNetV4 benchmark images (56x56x3 NHWC).
 
 Uses 10 MNIST TCAS cases from models/mnist_cnn.nk (one per digit), upsampled
-28x28x1 -> 56x56x3, then quantized with TFLite int8 input tensor params.
+28x28x1 -> 56x56x3, then quantized in Python (never in C++):
+
+  --quant-source tflite  → TFLite / TFLM input scale/zp (default)
+  --quant-source nk      → netkit .nk first-layer input scale/zp
 """
 
 from __future__ import annotations
@@ -15,8 +18,8 @@ from pathlib import Path
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[3]
-BENCH = Path(__file__).resolve().parents[1]
-GENERATED = BENCH / "generated"
+BENCH = Path(__file__).resolve().parent
+GENERATED = BENCH.parent / "generated"
 INPUT_SIZE = 56 * 56 * 3
 NUM_IMAGES = 10
 
@@ -55,10 +58,22 @@ def _tflite_input_quant(tflite_path: Path) -> tuple[float, int]:
     return float(scale), int(zp)
 
 
+def _nk_input_quant(nk_path: Path) -> tuple[float, int]:
+    sys.path.insert(0, str(ROOT / "python"))
+    from netkit.quant_nk_reader import read_quant_nk
+
+    bundle = read_quant_nk(nk_path)
+    if not bundle.quant_layers:
+        raise SystemExit(f"{nk_path} has no quant layers")
+    q0 = bundle.quant_layers[0]
+    return float(q0.input_scale), int(q0.input_zero_point)
+
+
 def export_int8_test_images(
     *,
     mnist_nk: Path,
-    tflite_path: Path,
+    input_scale: float,
+    input_zp: int,
     out_h: Path,
     out_cc: Path,
 ) -> None:
@@ -68,12 +83,7 @@ def export_int8_test_images(
 
     if not mnist_nk.is_file():
         raise SystemExit(f"missing {mnist_nk} — run: make export-mnist-cnn")
-    if not tflite_path.is_file():
-        raise SystemExit(
-            f"missing {tflite_path} — run: make -C benchmark/tflm export-mobilenetv4-int8"
-        )
 
-    input_scale, input_zp = _tflite_input_quant(tflite_path)
     suite = read_test_suite(mnist_nk)
     if suite is None or len(suite.cases) < NUM_IMAGES:
         raise RuntimeError(f"expected >= {NUM_IMAGES} TCAS cases in {mnist_nk}")
@@ -128,6 +138,11 @@ def export_int8_test_images(
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
+        "--quant-source",
+        choices=("tflite", "nk"),
+        default="tflite",
+    )
+    parser.add_argument(
         "--mnist-nk",
         type=Path,
         default=ROOT / "models" / "mnist_cnn.nk",
@@ -138,19 +153,39 @@ def main() -> None:
         default=GENERATED / "mobilenetv4_small_int8.tflite",
     )
     parser.add_argument(
-        "--out-h",
+        "--nk",
         type=Path,
-        default=GENERATED / "mobilenetv4_int8_test_images.h",
+        default=ROOT / "models" / "mobilenetv4_small_int8.nk",
     )
-    parser.add_argument(
-        "--out-cc",
-        type=Path,
-        default=GENERATED / "mobilenetv4_int8_test_images.cc",
-    )
+    parser.add_argument("--out-h", type=Path, default=None)
+    parser.add_argument("--out-cc", type=Path, default=None)
     args = parser.parse_args()
+
+    if args.out_h is None:
+        name = (
+            "mobilenetv4_netkit_int8_test_images"
+            if args.quant_source == "nk"
+            else "mobilenetv4_int8_test_images"
+        )
+        args.out_h = GENERATED / f"{name}.h"
+    if args.out_cc is None:
+        args.out_cc = args.out_h.with_suffix(".cc")
+
+    if args.quant_source == "tflite":
+        if not args.tflite.is_file():
+            raise SystemExit(
+                f"missing {args.tflite} — run: make -C benchmark/tflm export-mobilenetv4-int8"
+            )
+        input_scale, input_zp = _tflite_input_quant(args.tflite)
+    else:
+        if not args.nk.is_file():
+            raise SystemExit(f"missing {args.nk}")
+        input_scale, input_zp = _nk_input_quant(args.nk)
+
     export_int8_test_images(
         mnist_nk=args.mnist_nk,
-        tflite_path=args.tflite,
+        input_scale=input_scale,
+        input_zp=input_zp,
         out_h=args.out_h,
         out_cc=args.out_cc,
     )

@@ -12,6 +12,7 @@ benchmark/netkit/*_bench*
 benchmark/netkit/tmp_*
 benchmark/tflm/.venv/
 benchmark/tflm/third_party/
+benchmark/tflite/.venv/
 
 # Static libraries
 libnetkit.a
@@ -56,5 +57,11 @@ tmp_*.nk
 boards/benchmark/
 
 benchmark/tflm/generated/*_saved_model/
+models/mobilenetv4_imagenet_f32.nk
+models/mobilenetv4_imagenet_int8.nk
+
+# Large optional third-party builds (fetched locally)
+third_party/XNNPACK/
 
 /data/
+calibration_image_sample_data_20x128x128x3_float32.npy

@@ -129,9 +129,12 @@ namespace NkRegression
 
         void CopyRegressionOutput(const Tensor& output, float* dest, uint32_t count)
         {
+            // Int8 models stay int8 end-to-end — no on-device/host dequant.
+            // Regression for quantized models compares via ArgMaxInt8 only.
             if (output.type == DataType::Int8)
             {
-                QuantOps::DequantizeSoftmaxOutput(static_cast<const int8_t*>(output.data), dest, count);
+                for (uint32_t i = 0; i < count; ++i)
+                    dest[i] = 0.0f;
                 return;
             }
 
@@ -224,6 +227,38 @@ namespace NkRegression
             return input;
         }
 
+        Tensor MakeNhwcInputInt8(int8_t* data, uint32_t h, uint32_t w, uint32_t c)
+        {
+            Tensor input{};
+            input.data = data;
+            input.type = DataType::Int8;
+            input.rank = 3;
+            input.shape[0] = h;
+            input.shape[1] = w;
+            input.shape[2] = c;
+            input.stride[0] = w * c;
+            input.stride[1] = c;
+            input.stride[2] = 1;
+            input.num_elements = h * w * c;
+            input.bytes = input.num_elements * sizeof(int8_t);
+            return input;
+        }
+
+        // TCAS stores prequantized int8 as float values in [-128, 127] (Python export).
+        void CopyPrequantizedInt8(const float* src, int8_t* dst, uint32_t count)
+        {
+            for (uint32_t i = 0; i < count; ++i)
+            {
+                const float v = src[i];
+                int32_t q = static_cast<int32_t>(v >= 0.0f ? v + 0.5f : v - 0.5f);
+                if (q < -128)
+                    q = -128;
+                else if (q > 127)
+                    q = 127;
+                dst[i] = static_cast<int8_t>(q);
+            }
+        }
+
         bool RunMlpCase(MLPNetwork& network,
                         const NkLoader::ParsedModel& model,
                         const std::array<uint32_t, kMaxTensorRank>& input_shape,
@@ -247,16 +282,31 @@ namespace NkRegression
                 return false;
             }
 
-            Tensor input = TensorFactory::Create2D(arena, input_shape[0], input_shape[1]);
-            if (!input.data)
+            Tensor input{};
+            if (network.IsQuantized())
             {
-                std::cout << "FAIL " << test_case.name << ": arena overflow while allocating input\n";
-                return false;
+                int8_t* in_i8 = static_cast<int8_t*>(
+                    arena.alloc(test_case.input_count * sizeof(int8_t), alignof(int8_t)));
+                if (!in_i8)
+                {
+                    std::cout << "FAIL " << test_case.name << ": arena overflow while allocating input\n";
+                    return false;
+                }
+                CopyPrequantizedInt8(test_case.input, in_i8, test_case.input_count);
+                input = TensorFactory::View2DInt8(in_i8, input_shape[0], input_shape[1]);
             }
-
-            float* input_data = static_cast<float*>(input.data);
-            for (uint32_t i = 0; i < test_case.input_count; ++i)
-                input_data[i] = test_case.input[i];
+            else
+            {
+                input = TensorFactory::Create2D(arena, input_shape[0], input_shape[1]);
+                if (!input.data)
+                {
+                    std::cout << "FAIL " << test_case.name << ": arena overflow while allocating input\n";
+                    return false;
+                }
+                float* input_data = static_cast<float*>(input.data);
+                for (uint32_t i = 0; i < test_case.input_count; ++i)
+                    input_data[i] = test_case.input[i];
+            }
 
             const uint32_t output_cols = output_elements / input_shape[0];
             Tensor output{};
@@ -279,6 +329,26 @@ namespace NkRegression
             if (ShouldPrintAllOutputs(test_case.input_count))
                 PrintRegressionInput(input);
             network.forward(input, output, arena);
+
+            // Quantized models: int8 end-to-end — compare classification only (no dequant).
+            if (network.IsQuantized() || output.type == DataType::Int8)
+            {
+                const uint32_t pred = RegressionArgMax(output, test_case.output_count);
+                uint32_t expected_class = 0;
+                if (test_case.label >= 0)
+                    expected_class = static_cast<uint32_t>(test_case.label);
+                else
+                    expected_class = ArgMax(test_case.expected, test_case.output_count);
+
+                if (pred == expected_class)
+                {
+                    std::cout << "PASS " << test_case.name << " (int8 argmax classification correct)\n";
+                    return true;
+                }
+                std::cout << "FAIL " << test_case.name << ": classification mismatch (pred="
+                          << pred << " expected=" << expected_class << ")\n";
+                return false;
+            }
 
             float actual_buffer[NkFormat::kMaxCaseFloats] = {};
             CopyRegressionOutput(output, actual_buffer, test_case.output_count);
@@ -338,11 +408,20 @@ namespace NkRegression
                 return false;
             }
 
+            Tensor input{};
+            int8_t input_i8[NkFormat::kMaxCaseFloats] = {};
             float input_buffer[NkFormat::kMaxCaseFloats] = {};
-            for (uint32_t i = 0; i < test_case.input_count; ++i)
-                input_buffer[i] = test_case.input[i];
-
-            Tensor input = MakeNhwcInput(input_buffer, input_shape[0], input_shape[1], input_shape[2]);
+            if (network.IsQuantized())
+            {
+                CopyPrequantizedInt8(test_case.input, input_i8, test_case.input_count);
+                input = MakeNhwcInputInt8(input_i8, input_shape[0], input_shape[1], input_shape[2]);
+            }
+            else
+            {
+                for (uint32_t i = 0; i < test_case.input_count; ++i)
+                    input_buffer[i] = test_case.input[i];
+                input = MakeNhwcInput(input_buffer, input_shape[0], input_shape[1], input_shape[2]);
+            }
             if (ShouldPrintAllOutputs(test_case.input_count))
                 PrintRegressionInput(input);
 
@@ -359,6 +438,26 @@ namespace NkRegression
             {
                 std::cout << "FAIL " << test_case.name << ": expected length " << test_case.output_count
                           << " != output elements " << output.num_elements << "\n";
+                return false;
+            }
+
+            // Quantized models: int8 end-to-end — compare classification only (no dequant).
+            if (network.IsQuantized() || output.type == DataType::Int8)
+            {
+                const uint32_t pred = RegressionArgMax(output, test_case.output_count);
+                uint32_t expected_class = 0;
+                if (test_case.label >= 0)
+                    expected_class = static_cast<uint32_t>(test_case.label);
+                else
+                    expected_class = ArgMax(test_case.expected, test_case.output_count);
+
+                if (pred == expected_class)
+                {
+                    std::cout << "PASS " << test_case.name << " (int8 argmax classification correct)\n";
+                    return true;
+                }
+                std::cout << "FAIL " << test_case.name << ": classification mismatch (pred="
+                          << pred << " expected=" << expected_class << ")\n";
                 return false;
             }
 

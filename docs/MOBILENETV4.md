@@ -91,6 +91,28 @@ python tools/pack_mobilenetv4_small_checkpoint.py -o models/my_mobilenetv4_small
 
 Uses `python/netkit/torch_backbone_pack.py` to fold BatchNorm and map timm `mobilenetv4_conv_small` weights into composite UIB blocks and the 1×1 conv classifier head.
 
+ImageNet-pretrained (224×224, 1000 classes):
+
+```bash
+python -m netkit pack --arch mobilenetv4_small --pretrained \
+  -o models/mobilenetv4_imagenet_f32.nk --height 224 --width 224 --num-classes 1000
+python3 tools/write_mobilenetv4_imagenet_int8.py   # → models/mobilenetv4_imagenet_int8.nk
+```
+
+Host ImageNet benches (10 images × 5 loops, 256 MiB arena). Float and int8 I/O stay typed end-to-end — **no C++ float↔int8**; prequantized fixtures come from Python export (`--quant-source nk` for netkit, TFLite scales for TFLM/TF Lite).
+
+```bash
+./tools/fetch_xnnpack.sh   # once (cpu/mpu XNNPACK)
+# float32
+make -C benchmark/netkit run-mobilenetv4-imagenet-xnnpack
+make -C benchmark/tflm run-mobilenetv4-imagenet
+make -C benchmark/tflite run-mobilenetv4-imagenet
+# int8 (netkit/TF Lite: XNNPACK qs8; TFLM host: builtin reference)
+make -C benchmark/netkit run-mobilenetv4-imagenet-int8
+make -C benchmark/tflm run-mobilenetv4-imagenet-int8
+make -C benchmark/tflite run-mobilenetv4-imagenet-int8
+```
+
 Parity: `python/tests/test_torch_backbone_pack.py` and `test_torch_backbone_runtime_parity.py` — see [TESTING.md](TESTING.md).
 
 ## Python

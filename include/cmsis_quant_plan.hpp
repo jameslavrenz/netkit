@@ -23,13 +23,14 @@ struct Runtime
     uint32_t act_b_bytes = 0;
     int8_t* logits = nullptr;
     uint32_t logits_elements = 0;
-    int8_t* input_quant = nullptr;
+    // Expected int8 input element count (prequantized in Python; no C++ float→int8).
     uint32_t input_quant_elements = 0;
-    Arena* staging_arena = nullptr;
     uint8_t* workspace = nullptr;
     std::size_t workspace_bytes = 0;
     float input_scale = 0.0f;
     int32_t input_zero_point = 0;
+    // When true, DenseSoftmax writes FC logits and skips Softmax (argmax-equivalent).
+    bool omit_final_softmax = false;
 };
 
 bool BuildRuntime(CNNNetwork& network, Arena& arena, uint32_t in_h, uint32_t in_w, uint32_t in_c);

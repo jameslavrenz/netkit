@@ -33,6 +33,7 @@ private:
     MLPLayer* layers;
     uint32_t num_layers;
     bool quantized_ = false;
+    bool omit_final_softmax_ = false;
     QuantOutputFormat quant_output_format_ = QuantOutputFormat::Int8;
     float* ping_a{};
     float* ping_b{};
@@ -83,6 +84,12 @@ public:
     void SetQuantOutputFormat(QuantOutputFormat format) { quant_output_format_ = format; }
 
     QuantOutputFormat GetQuantOutputFormat() const { return quant_output_format_; }
+
+    // When true, a final Dense Softmax is skipped and logits are written instead.
+    // Argmax(logits) == Argmax(softmax(logits)); use for classification benches.
+    void SetOmitFinalSoftmax(bool omit) { omit_final_softmax_ = omit; }
+
+    bool OmitFinalSoftmax() const { return omit_final_softmax_; }
 
     // Forward pass through entire network (hidden activations reuse ping_a / ping_b)
     void forward(const Tensor& input, Tensor& output, Arena& arena);

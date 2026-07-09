@@ -31,6 +31,14 @@ namespace fused_ops
         Kernels::MatAddND(accum, addend, accum);
     }
 
+    // Residual epilogue used by ResNet BasicBlock: out = ReLU(branch + shortcut).
+    // Routes through Kernels::MatAddND (CMSIS-DSP / CMSIS-NN / reference).
+    inline void MatAddThenRelu(const Tensor& branch, const Tensor& shortcut, Tensor& out)
+    {
+        Kernels::MatAddND(branch, shortcut, out);
+        ReluInPlace(out);
+    }
+
     inline void GeluInPlace(Tensor& tensor)
     {
         Kernels::Gelu(tensor, tensor);

@@ -12,7 +12,13 @@ ifeq ($(GMAKE),)
   GMAKE := make
 endif
 
-.PHONY: all fetch-tflm export-assets export-mobilenetv4 export-mobilenetv4-int8 install-benchmark build build-mlp build-cnn build-cnn-profile build-mlp-profile build-mobilenetv4 build-mobilenetv4-int8 run run-mlp run-cnn run-cnn-profile run-mlp-profile run-mobilenetv4 run-mobilenetv4-int8 clean
+.PHONY: all fetch-tflm export-assets export-mobilenetv4 export-mobilenetv4-int8 \
+  export-imagenet-mnv4-images export-mobilenetv4-imagenet export-mobilenetv4-imagenet-int8 \
+  install-benchmark build build-mlp build-cnn build-cnn-profile build-mlp-profile \
+  build-mobilenetv4 build-mobilenetv4-int8 build-mobilenetv4-imagenet \
+  build-mobilenetv4-imagenet-int8 \
+  run run-mlp run-cnn run-cnn-profile run-mlp-profile run-mobilenetv4 run-mobilenetv4-int8 \
+  run-mobilenetv4-imagenet run-mobilenetv4-imagenet-int8 clean
 
 all: run
 
@@ -37,6 +43,23 @@ export-mobilenetv4:
 export-mobilenetv4-int8:
 	@./tools/run_export_mobilenetv4_int8.sh
 	@python3 tools/export_mobilenetv4_int8_test_images.py
+
+export-imagenet-mnv4-images:
+	@python3 tools/export_imagenet_mnv4_test_images.py
+
+export-mobilenetv4-imagenet:
+	@python3 tools/export_mobilenetv4_imagenet.py
+	@$(MAKE) export-imagenet-mnv4-images
+
+export-mobilenetv4-imagenet-int8:
+	@test -d generated/imagenet_sample_cache || $(MAKE) export-imagenet-mnv4-images
+	@./tools/run_export_mobilenetv4_imagenet_int8.sh
+	@NETKIT_TF_VENV=$${NETKIT_TF_VENV:-/tmp/netkit-tf-venv}; \
+	  if [ -x "$$NETKIT_TF_VENV/bin/python" ]; then \
+	    $$NETKIT_TF_VENV/bin/python tools/export_imagenet_mnv4_int8_test_images.py; \
+	  else \
+	    python3 tools/export_imagenet_mnv4_int8_test_images.py; \
+	  fi
 
 install-benchmark: fetch-tflm
 	@cp Makefile.inc $(TFLM_ROOT)/tensorflow/lite/micro/tools/make/additional_tests.inc
@@ -66,6 +89,16 @@ build-mobilenetv4-int8: install-benchmark
 	@test -f generated/mobilenetv4_small_int8.tflite || $(MAKE) export-mobilenetv4-int8
 	@$(GMAKE) -C $(TFLM_ROOT) -f $(TFLM_MAKE) EXTERNAL_DIR=$(EXTERNAL_REL) mobilenetv4_int8_benchmark
 
+build-mobilenetv4-imagenet: install-benchmark
+	@test -f generated/mobilenetv4_imagenet_f32.tflite || $(MAKE) export-mobilenetv4-imagenet
+	@test -f generated/imagenet_mnv4_test_images.cc || $(MAKE) export-imagenet-mnv4-images
+	@$(GMAKE) -C $(TFLM_ROOT) -f $(TFLM_MAKE) EXTERNAL_DIR=$(EXTERNAL_REL) mobilenetv4_imagenet_benchmark
+
+build-mobilenetv4-imagenet-int8: install-benchmark
+	@test -f generated/mobilenetv4_imagenet_int8.tflite || $(MAKE) export-mobilenetv4-imagenet-int8
+	@test -f generated/imagenet_mnv4_int8_test_images.cc || $(MAKE) export-mobilenetv4-imagenet-int8
+	@$(GMAKE) -C $(TFLM_ROOT) -f $(TFLM_MAKE) EXTERNAL_DIR=$(EXTERNAL_REL) mobilenetv4_imagenet_int8_benchmark
+
 build: build-mlp build-cnn
 
 run-mlp: build-mlp
@@ -86,8 +119,15 @@ run-mobilenetv4: build-mobilenetv4
 run-mobilenetv4-int8: build-mobilenetv4-int8
 	@$(GMAKE) -C $(TFLM_ROOT) -f $(TFLM_MAKE) EXTERNAL_DIR=$(EXTERNAL_REL) run_mobilenetv4_int8_benchmark
 
+run-mobilenetv4-imagenet: build-mobilenetv4-imagenet
+	@$(GMAKE) -C $(TFLM_ROOT) -f $(TFLM_MAKE) EXTERNAL_DIR=$(EXTERNAL_REL) run_mobilenetv4_imagenet_benchmark
+
+run-mobilenetv4-imagenet-int8: build-mobilenetv4-imagenet-int8
+	@$(GMAKE) -C $(TFLM_ROOT) -f $(TFLM_MAKE) EXTERNAL_DIR=$(EXTERNAL_REL) run_mobilenetv4_imagenet_int8_benchmark
+
 run: run-mlp run-cnn
 
 clean:
 	@if [ -f "$(TFLM_MAKE)" ]; then $(GMAKE) -C $(TFLM_ROOT) -f $(TFLM_MAKE) clean; fi
-	@rm -rf generated/mlp_saved_model generated/cnn_saved_model generated/saved_model
+	@rm -rf generated/mlp_saved_model generated/cnn_saved_model generated/saved_model \
+	  generated/mobilenetv4_imagenet_saved_model

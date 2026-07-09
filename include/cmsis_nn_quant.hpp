@@ -65,6 +65,23 @@ bool TryConv2dNhwcQuant(const int8_t* input,
                         bool apply_relu,
                         int8_t* output);
 
+bool TryDepthwiseConv2dNhwcQuant(const int8_t* input,
+                                 uint32_t in_h,
+                                 uint32_t in_w,
+                                 uint32_t channels,
+                                 const int8_t* weights,
+                                 const int32_t* bias,
+                                 int kernel_h,
+                                 int kernel_w,
+                                 int stride,
+                                 int pad_h,
+                                 int pad_w,
+                                 int pad_h_end,
+                                 int pad_w_end,
+                                 const NkFormat::MlpLayerQuantDesc& quant,
+                                 bool apply_relu,
+                                 int8_t* output);
+
 bool TryMaxPool2dNhwcQuant(const int8_t* input,
                            uint32_t in_h,
                            uint32_t in_w,
@@ -86,20 +103,7 @@ bool TryFullyConnectedQuant(const int8_t* input,
                             uint32_t out_features,
                             const NkFormat::MlpLayerQuantDesc& quant,
                             bool apply_relu,
-                            int8_t* output_int8,
-                            float* output_float);
-
-// CMSIS int8 FC -> float logits (uses logits_i8 scratch; not for in-place with input_i8).
-bool TryFullyConnectedQuantToFloat(const int8_t* input,
-                                   uint32_t batch,
-                                   uint32_t in_features,
-                                   const int8_t* weights,
-                                   const int32_t* bias,
-                                   uint32_t out_features,
-                                   const NkFormat::MlpLayerQuantDesc& quant,
-                                   bool apply_relu,
-                                   int8_t* logits_i8,
-                                   float* output_float);
+                            int8_t* output_int8);
 
 bool TrySoftmaxS8(const int8_t* input,
                   uint32_t num_rows,

@@ -34,15 +34,11 @@ alignas(16) uint8_t* tensor_arena = nullptr;
 
 using Mnv4Int8OpResolver = tflite::MicroMutableOpResolver<8>;
 
-int ArgMax10Int8(const int8_t* values, float scale, int zero_point) {
+// Positive output scale ⇒ argmax(int8) == argmax(dequant(int8)); no C++ dequant.
+int ArgMax10Int8(const int8_t* values) {
   int best = 0;
-  float max_val = (static_cast<float>(values[0]) - zero_point) * scale;
   for (int i = 1; i < 10; ++i) {
-    const float v = (static_cast<float>(values[i]) - zero_point) * scale;
-    if (v > max_val) {
-      max_val = v;
-      best = i;
-    }
+    if (values[i] > values[best]) best = i;
   }
   return best;
 }
@@ -107,9 +103,6 @@ TfLiteStatus RunBenchmark() {
   std::vector<double> samples;
   samples.reserve(num_images * kLoops);
 
-  const float out_scale = output->params.scale;
-  const int out_zp = output->params.zero_point;
-
   int last_pred = -1;
   for (int loop = 0; loop < kLoops; ++loop) {
     for (int i = 0; i < num_images; ++i) {
@@ -125,7 +118,7 @@ TfLiteStatus RunBenchmark() {
       }
       samples.push_back(
           std::chrono::duration<double, std::micro>(end - start).count());
-      last_pred = ArgMax10Int8(output->data.int8, out_scale, out_zp);
+      last_pred = ArgMax10Int8(output->data.int8);
     }
   }
 

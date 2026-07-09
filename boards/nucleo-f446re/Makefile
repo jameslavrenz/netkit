@@ -3,9 +3,8 @@
 # Build profile (explicit CMSIS opt-in):
 #   NETKIT_CMSIS_DSP=1, NETKIT_CMSIS_NN=1
 #   NETKIT_TARGET=mcu, NETKIT_ARCH=CM4, NETKIT_WEIGHTS_IN_RAM=0
-#   Toolchain: mcu_tflm_toolchain.mk (TFLM microlite tiers:
-#     CORE -Os, KERNEL/THIRD_PARTY_KERNEL -O2, -flto link) so netkit and TFLM
-#     firmware are compiled with matching flags for a fair comparison.
+#   Toolchain: mcu_tflm_toolchain.mk (CORE/KERNEL/THIRD_PARTY all -O2, -flto link)
+#     so netkit and TFLM firmware are compiled with matching speed flags.
 #
 # Usage:
 #   make cmsis-init          # once, from repo root
@@ -65,13 +64,15 @@ NETKIT_CPPFLAGS := \
 NETKIT_KERNEL_RUNTIME_SOURCES := \
 	$(NETKIT_ROOT)/src/reference_kernel.cpp \
 	$(NETKIT_ROOT)/src/ops.cpp \
-	$(NETKIT_ROOT)/src/cmsis_dsp_backend.cpp \
 	$(NETKIT_ROOT)/src/cmsis_dsp_util.cpp
+ifeq ($(NETKIT_CMSIS_DSP),1)
+NETKIT_KERNEL_RUNTIME_SOURCES += $(NETKIT_ROOT)/src/cmsis_dsp_backend.cpp
+endif
 ifeq ($(NETKIT_CMSIS_NN),1)
 NETKIT_KERNEL_RUNTIME_SOURCES += $(NETKIT_ROOT)/src/cmsis_nn_backend.cpp
 endif
 
-# Runtime infrastructure — compiled at CORE_OPTIMIZATION_LEVEL (-Os).
+# Runtime infrastructure — compiled at CORE_OPTIMIZATION_LEVEL (-O2).
 NETKIT_CORE_RUNTIME_SOURCES := \
 	$(NETKIT_ROOT)/src/arena.cpp \
 	$(NETKIT_ROOT)/src/tensor_factory.cpp \
@@ -79,6 +80,8 @@ NETKIT_CORE_RUNTIME_SOURCES := \
 	$(NETKIT_ROOT)/src/kernel_workspace.cpp \
 	$(NETKIT_ROOT)/src/cmsis_buffer_size.cpp
 
+CMSIS_DSP_SOURCES :=
+ifeq ($(NETKIT_CMSIS_DSP),1)
 CMSIS_DSP_SOURCES := \
 	$(CMSIS_DSP_DIR)/Source/BasicMathFunctions/arm_add_f32.c \
 	$(CMSIS_DSP_DIR)/Source/BasicMathFunctions/arm_mult_f32.c \
@@ -93,6 +96,7 @@ CMSIS_DSP_SOURCES := \
 	$(CMSIS_DSP_DIR)/Source/MatrixFunctions/arm_mat_init_f32.c \
 	$(CMSIS_DSP_DIR)/Source/MatrixFunctions/arm_mat_vec_mult_f32.c \
 	$(CMSIS_DSP_DIR)/Source/MatrixFunctions/arm_mat_mult_f32.c
+endif
 
 # CMSIS-NN float32 kernels (opt-in via NETKIT_CMSIS_NN=1). The netkit CmsisNnKernel
 # adapter lives in cmsis_nn_backend.cpp; the CMSIS-NN f32 kernels below satisfy its
@@ -124,8 +128,8 @@ all: check-deps export-embed $(ELF) size
 
 check-deps:
 	$(MCU_ASSERT_GCC_TOOLCHAIN)
-	@test -f $(CMSIS_DSP_DIR)/Include/arm_math.h || \
-		(echo "Run: make -C $(NETKIT_ROOT) cmsis-init" >&2; exit 1)
+	@test "$(NETKIT_CMSIS_DSP)" != "1" -o -f $(CMSIS_DSP_DIR)/Include/arm_math.h || \
+		(echo "NETKIT_CMSIS_DSP=1 requires CMSIS-DSP — run: make -C $(NETKIT_ROOT) cmsis-init" >&2; exit 1)
 	@test "$(NETKIT_CMSIS_NN)" != "1" -o -f $(CMSIS_NN_DIR)/Include/arm_nnfunctions.h || \
 		(echo "NETKIT_CMSIS_NN=1 requires CMSIS-NN — run: make -C $(NETKIT_ROOT) cmsis-init" >&2; exit 1)
 	@test -f $(NETKIT_ROOT)/models/mnist_mlp.nk || \
@@ -193,9 +197,10 @@ $(BUILD_DIR)/mnist_test_images.o: $(NETKIT_ROOT)/benchmark/tflm/generated/mnist_
 	@mkdir -p $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
+# Lowered AOT is the hot FC/activation call chain — KERNEL -O2, same as TFLM kernels.
 $(BUILD_DIR)/mnist_mlp_aot.o: $(GEN_DIR)/mnist_mlp_aot.cpp
 	@mkdir -p $(BUILD_DIR)
-	$(CXX) $(CXXFLAGS) -c $< -o $@
+	$(CXX) $(MCU_KERNEL_CXXFLAGS) $(MCU_DEBUG_FLAGS) $(INCLUDES) $(NETKIT_CPPFLAGS) -c $< -o $@
 
 $(ELF): $(OBJS) $(LIBNETKIT)
 	$(CXX) $(LDFLAGS) $(OBJS) $(LIBNETKIT) -lm -lc -lgcc -lstdc++ -lsupc++ -o $@

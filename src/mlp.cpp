@@ -9,9 +9,11 @@
 
 namespace
 {
-    void ForwardLayer(MLPLayer& layer, const Tensor& input, Tensor& output)
+    void ForwardLayer(MLPLayer& layer, const Tensor& input, Tensor& output, bool omit_final_softmax)
     {
-        const NetkitKernelActivation kernel_activation = ToKernelActivation(layer.activation);
+        NetkitKernelActivation kernel_activation = ToKernelActivation(layer.activation);
+        if (omit_final_softmax && kernel_activation == NetkitKernelActivation::Softmax)
+            kernel_activation = NetkitKernelActivation::None;
         const bool fused_in_kernel = Kernels::FullyConnectedWithBias(
             input, layer.weights, layer.bias, kernel_activation, output);
         ApplyFusedOutputActivation(kernel_activation, fused_in_kernel, output, layer.leaky_alpha);
@@ -21,10 +23,11 @@ namespace
                                const Tensor& input,
                                Tensor& output,
                                int8_t* quant_scratch,
-                               bool input_is_float)
+                               bool omit_final_softmax)
     {
         const bool apply_relu = layer.activation == ActivationType::ReLU;
-        const bool apply_softmax = layer.activation == ActivationType::Softmax;
+        const bool apply_softmax =
+            layer.activation == ActivationType::Softmax && !omit_final_softmax;
         QuantOps::ForwardQuantizedDense(input,
                                         layer.weights,
                                         layer.bias,
@@ -32,18 +35,18 @@ namespace
                                         apply_relu,
                                         apply_softmax,
                                         quant_scratch,
-                                        input_is_float,
                                         output);
     }
 
     void ForwardLayerTimed(MLPLayer& layer,
                            const Tensor& input,
                            Tensor& output,
+                           bool omit_final_softmax,
                            MLPNetwork::LayerTimingFn timing_fn,
                            void* user_data)
     {
         const auto layer_start = std::chrono::steady_clock::now();
-        ForwardLayer(layer, input, output);
+        ForwardLayer(layer, input, output, omit_final_softmax);
         const auto layer_end = std::chrono::steady_clock::now();
 
         if (timing_fn)
@@ -59,12 +62,12 @@ namespace
                                     const Tensor& input,
                                     Tensor& output,
                                     int8_t* quant_scratch,
-                                    bool input_is_float,
+                                    bool omit_final_softmax,
                                     MLPNetwork::LayerTimingFn timing_fn,
                                     void* user_data)
     {
         const auto layer_start = std::chrono::steady_clock::now();
-        ForwardQuantizedLayer(layer, input, output, quant_scratch, input_is_float);
+        ForwardQuantizedLayer(layer, input, output, quant_scratch, omit_final_softmax);
         const auto layer_end = std::chrono::steady_clock::now();
 
         if (timing_fn)
@@ -81,7 +84,7 @@ void MLPLayer::forward(const Tensor& input, Tensor& output)
 {
     if (quant.enabled)
         return;
-    ForwardLayer(*this, input, output);
+    ForwardLayer(*this, input, output, /*omit_final_softmax=*/false);
 }
 
 MLPNetwork::MLPNetwork(uint32_t num_layers, Arena& arena)
@@ -187,30 +190,30 @@ void MLPNetwork::forward(const Tensor& input, Tensor& output, Arena& /*arena*/)
 
     if (quantized_)
     {
-        const bool input_is_float = input.type != DataType::Int8;
+        if (input.type != DataType::Int8)
+            return;
+
         if (num_layers == 1)
         {
-            ForwardQuantizedLayer(layers[0], input, output, ping_i8_a, input_is_float);
+            ForwardQuantizedLayer(layers[0], input, output, ping_i8_a, omit_final_softmax_);
             return;
         }
 
         if (num_layers == 2)
         {
-            ForwardQuantizedLayer(layers[0], input, hidden_activation_, ping_i8_b, input_is_float);
-            ForwardQuantizedLayer(layers[1], hidden_activation_, output, ping_i8_b, false);
+            ForwardQuantizedLayer(layers[0], input, hidden_activation_, ping_i8_b, false);
+            ForwardQuantizedLayer(layers[1], hidden_activation_, output, ping_i8_b, omit_final_softmax_);
             return;
         }
 
         const Tensor* current_input = &input;
         Tensor* write_view = &ping_i8_view_a_;
-        bool layer_input_is_float = input_is_float;
 
         for (size_t i = 0; i < num_layers; ++i)
         {
             if (i == num_layers - 1)
             {
-                ForwardQuantizedLayer(
-                    layers[i], *current_input, output, ping_i8_b, layer_input_is_float);
+                ForwardQuantizedLayer(layers[i], *current_input, output, ping_i8_b, omit_final_softmax_);
                 return;
             }
 
@@ -222,9 +225,8 @@ void MLPNetwork::forward(const Tensor& input, Tensor& output, Arena& /*arena*/)
             *write_view = TensorFactory::View2DInt8(write_view == &ping_i8_view_a_ ? ping_i8_a : ping_i8_b,
                                                     rows,
                                                     cols);
-            ForwardQuantizedLayer(layers[i], *current_input, *write_view, ping_i8_b, layer_input_is_float);
+            ForwardQuantizedLayer(layers[i], *current_input, *write_view, ping_i8_b, false);
             current_input = write_view;
-            layer_input_is_float = false;
             write_view = (write_view == &ping_i8_view_a_) ? &ping_i8_view_b_ : &ping_i8_view_a_;
         }
         return;
@@ -232,14 +234,14 @@ void MLPNetwork::forward(const Tensor& input, Tensor& output, Arena& /*arena*/)
 
     if (num_layers == 1)
     {
-        ForwardLayer(layers[0], input, output);
+        ForwardLayer(layers[0], input, output, omit_final_softmax_);
         return;
     }
 
     if (num_layers == 2)
     {
-        ForwardLayer(layers[0], input, hidden_activation_);
-        ForwardLayer(layers[1], hidden_activation_, output);
+        ForwardLayer(layers[0], input, hidden_activation_, false);
+        ForwardLayer(layers[1], hidden_activation_, output, omit_final_softmax_);
         return;
     }
 
@@ -250,7 +252,7 @@ void MLPNetwork::forward(const Tensor& input, Tensor& output, Arena& /*arena*/)
     {
         if (i == num_layers - 1)
         {
-            ForwardLayer(layers[i], *current_input, output);
+            ForwardLayer(layers[i], *current_input, output, omit_final_softmax_);
             return;
         }
 
@@ -260,7 +262,7 @@ void MLPNetwork::forward(const Tensor& input, Tensor& output, Arena& /*arena*/)
             return;
 
         *write_view = TensorFactory::View2D(write_view == &ping_view_a_ ? ping_a : ping_b, rows, cols);
-        ForwardLayer(layers[i], *current_input, *write_view);
+        ForwardLayer(layers[i], *current_input, *write_view, false);
         current_input = write_view;
         write_view = (write_view == &ping_view_a_) ? &ping_view_b_ : &ping_view_a_;
     }
@@ -276,29 +278,44 @@ void MLPNetwork::forward_timed(const Tensor& input,
 
     if (quantized_)
     {
+        if (input.type != DataType::Int8)
+            return;
+
         if (num_layers == 1)
         {
-            ForwardQuantizedLayerTimed(layers[0], input, output, ping_i8_a, true, timing_fn, user_data);
+            ForwardQuantizedLayerTimed(
+                layers[0], input, output, ping_i8_a, omit_final_softmax_, timing_fn, user_data);
             return;
         }
 
         if (num_layers == 2)
         {
-            ForwardQuantizedLayerTimed(layers[0], input, hidden_activation_, ping_i8_b, true, timing_fn, user_data);
-            ForwardQuantizedLayerTimed(layers[1], hidden_activation_, output, ping_i8_b, false, timing_fn, user_data);
+            ForwardQuantizedLayerTimed(
+                layers[0], input, hidden_activation_, ping_i8_b, false, timing_fn, user_data);
+            ForwardQuantizedLayerTimed(layers[1],
+                                       hidden_activation_,
+                                       output,
+                                       ping_i8_b,
+                                       omit_final_softmax_,
+                                       timing_fn,
+                                       user_data);
             return;
         }
 
         const Tensor* current_input = &input;
         Tensor* write_view = &ping_i8_view_a_;
-        bool input_is_float = true;
 
         for (size_t i = 0; i < num_layers; ++i)
         {
             if (i == num_layers - 1)
             {
-                ForwardQuantizedLayerTimed(
-                    layers[i], *current_input, output, ping_i8_b, input_is_float, timing_fn, user_data);
+                ForwardQuantizedLayerTimed(layers[i],
+                                           *current_input,
+                                           output,
+                                           ping_i8_b,
+                                           omit_final_softmax_,
+                                           timing_fn,
+                                           user_data);
                 return;
             }
 
@@ -311,9 +328,8 @@ void MLPNetwork::forward_timed(const Tensor& input,
                                                     rows,
                                                     cols);
             ForwardQuantizedLayerTimed(
-                layers[i], *current_input, *write_view, ping_i8_b, input_is_float, timing_fn, user_data);
+                layers[i], *current_input, *write_view, ping_i8_b, false, timing_fn, user_data);
             current_input = write_view;
-            input_is_float = false;
             write_view = (write_view == &ping_i8_view_a_) ? &ping_i8_view_b_ : &ping_i8_view_a_;
         }
         return;
@@ -321,14 +337,15 @@ void MLPNetwork::forward_timed(const Tensor& input,
 
     if (num_layers == 1)
     {
-        ForwardLayerTimed(layers[0], input, output, timing_fn, user_data);
+        ForwardLayerTimed(layers[0], input, output, omit_final_softmax_, timing_fn, user_data);
         return;
     }
 
     if (num_layers == 2)
     {
-        ForwardLayerTimed(layers[0], input, hidden_activation_, timing_fn, user_data);
-        ForwardLayerTimed(layers[1], hidden_activation_, output, timing_fn, user_data);
+        ForwardLayerTimed(layers[0], input, hidden_activation_, false, timing_fn, user_data);
+        ForwardLayerTimed(
+            layers[1], hidden_activation_, output, omit_final_softmax_, timing_fn, user_data);
         return;
     }
 
@@ -339,7 +356,8 @@ void MLPNetwork::forward_timed(const Tensor& input,
     {
         if (i == num_layers - 1)
         {
-            ForwardLayerTimed(layers[i], *current_input, output, timing_fn, user_data);
+            ForwardLayerTimed(
+                layers[i], *current_input, output, omit_final_softmax_, timing_fn, user_data);
             return;
         }
 
@@ -349,7 +367,7 @@ void MLPNetwork::forward_timed(const Tensor& input,
             return;
 
         *write_view = TensorFactory::View2D(write_view == &ping_view_a_ ? ping_a : ping_b, rows, cols);
-        ForwardLayerTimed(layers[i], *current_input, *write_view, timing_fn, user_data);
+        ForwardLayerTimed(layers[i], *current_input, *write_view, false, timing_fn, user_data);
         current_input = write_view;
         write_view = (write_view == &ping_view_a_) ? &ping_view_b_ : &ping_view_a_;
     }

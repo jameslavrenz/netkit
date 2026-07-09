@@ -80,7 +80,7 @@ void ResNetBasicBlock::forward(const Tensor& input, Tensor& output)
     {
         if (input.num_elements != out_elems)
             return;
-        Kernels::MatAddND(work_b_tensor, input, out_tensor);
+        fused_ops::MatAddThenRelu(work_b_tensor, input, out_tensor);
     }
     else
     {
@@ -98,8 +98,6 @@ void ResNetBasicBlock::forward(const Tensor& input, Tensor& output)
         shortcut.forward(input, residual_tensor);
         fused_ops::BatchNormInPlace(residual_tensor, out_channels, shortcut_bn_scale, shortcut_bn_bias);
 
-        Kernels::MatAddND(work_b_tensor, residual_tensor, out_tensor);
+        fused_ops::MatAddThenRelu(work_b_tensor, residual_tensor, out_tensor);
     }
-
-    fused_ops::ReluInPlace(out_tensor);
 }

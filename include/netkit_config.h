@@ -137,4 +137,11 @@
 #define NETKIT_CMSIS_NN_ALLOWED 0
 #endif
 
+/* XNNPACK: host CPU and Cortex-A MPU only (not MCU). */
+#if (defined(NETKIT_TARGET_CPU) || defined(NETKIT_TARGET_MPU)) && !defined(NETKIT_TARGET_MCU)
+#define NETKIT_XNNPACK_ALLOWED 1
+#else
+#define NETKIT_XNNPACK_ALLOWED 0
+#endif
+
 #endif /* NETKIT_CONFIG_H */

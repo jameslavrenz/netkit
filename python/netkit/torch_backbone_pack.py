@@ -288,8 +288,13 @@ PACK_ARCH_DEFAULTS: dict[str, tuple[int, int]] = {
 }
 
 
-def load_backbone_model(arch_name: str, *, num_classes: int) -> nn.Module:
-    """Instantiate a random-initialized timm backbone for packing."""
+def load_backbone_model(
+    arch_name: str,
+    *,
+    num_classes: int,
+    pretrained: bool = False,
+) -> nn.Module:
+    """Instantiate a timm backbone for packing (random or ImageNet-pretrained)."""
     _require_torch()
     try:
         import timm
@@ -299,7 +304,7 @@ def load_backbone_model(arch_name: str, *, num_classes: int) -> nn.Module:
     timm_name = TIMM_BACKBONE_NAMES.get(arch_name)
     if timm_name is None:
         raise ValueError(f"unsupported arch: {arch_name}")
-    model = timm.create_model(timm_name, pretrained=False, num_classes=num_classes)
+    model = timm.create_model(timm_name, pretrained=pretrained, num_classes=num_classes)
     model.eval()
     return model
 

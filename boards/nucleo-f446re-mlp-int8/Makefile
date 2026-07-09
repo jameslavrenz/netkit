@@ -150,7 +150,7 @@ $(GEN_DIR)/.embed_stamp: $(NETKIT_ROOT)/models/mnist_mlp_int8.nk
 	cd $(NETKIT_ROOT) && PYTHONPATH=$(NETKIT_ROOT)/python python3 -m netkit aot models/mnist_mlp_int8.nk \
 		-o $(abspath $(GEN_DIR)) --language cpp --target mcu --arena-headroom 0 \
 		$(if $(filter 1,$(NETKIT_WEIGHTS_IN_RAM)),--weights-in-ram,--no-weights-in-ram) \
-		--no-lower
+		--no-lower --omit-final-softmax
 	@touch $(GEN_DIR)/.embed_stamp
 
 $(LIBNETKIT): $(NETKIT_RUNTIME_SOURCES) $(CMSIS_DSP_SOURCES) $(CMSIS_NN_SOURCES)

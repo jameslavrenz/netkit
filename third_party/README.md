@@ -29,28 +29,32 @@ When enabled (`NETKIT_CMSIS_DSP=1` / `-DNETKIT_CMSIS_DSP=ON`), netkit uses CMSIS
 - Fully-connected fallback via `arm_mat_vec_mult_f32` (desktop, or MCU/MPU when CMSIS-NN is off)
 - Batch-norm fallback via `arm_mult_f32` + `arm_add_f32` (same gating as FC)
 
-On **MCU with both CMSIS-NN and CMSIS-DSP**, overlapping ops prefer NN then generic reference. On **desktop and MPU**, `NETKIT_CMSIS_NN=1` is ignored — use CMSIS-DSP for vector/math acceleration where enabled.
+On **MCU with both CMSIS-NN and CMSIS-DSP**, overlapping ops prefer NN then generic reference. On **desktop and MPU**, `NETKIT_CMSIS_NN=1` is ignored — use CMSIS-DSP for vector/math acceleration and (when enabled) **XNNPACK** for layer ops.
+
+## XNNPACK (optional)
+
+[Google XNNPACK](https://github.com/google/XNNPACK) is BSD-3 licensed and provides highly optimized neural-network operators for desktop/server CPUs and Cortex-A (x86 AVX, Arm NEON, WASM SIMD, …).
+
+When enabled (`NETKIT_XNNPACK=1`, default on **cpu** and **mpu**), netkit uses XNNPACK for:
+
+- **float32** `LayerFast`: conv2d, depthwise conv, max/avg pool, fully-connected (ReLU/ReLU6 clamp)
+- **int8 (qs8)**: same ops via `XnnpackQuant` in the quantized plan / `QuantOps` path (tried before CMSIS-NN / reference)
+
+MCU builds default to `NETKIT_XNNPACK=0`. Forcing `=1` on MCU is ignored.
 
 ## Fetching
 
 ```bash
 make cmsis-init
+make xnnpack-init
 # or individually:
 ./tools/fetch_cmsis_core.sh
 ./tools/fetch_cmsis_nn.sh
 ./tools/fetch_cmsis_dsp.sh
-# or: git submodule update --init third_party/CMSIS-Core third_party/CMSIS-NN third_party/CMSIS-DSP
+./tools/fetch_xnnpack.sh
 ```
 
-All three are **git submodule pins**:
-
-| Submodule | Pin | Role |
-|-----------|-----|------|
-| `CMSIS-Core` | `45dab71` (CMSIS 6.3.0) | Core(M) headers for MCU cross-builds |
-| `CMSIS-NN` | `dbf45db` | Optional NN kernels |
-| `CMSIS-DSP` | `4fb9ef7` | Optional DSP kernels |
-
-`make cmsis-init` checks out those commits when submodules are not initialized.
+CMSIS packages are **git submodule pins**. XNNPACK is fetched + CMake-built into `third_party/XNNPACK/` (gitignored build tree) with a stable `netkit_lib/libXNNPACK.a` for linking.
 
 ## Architecture flags (`NETKIT_ARCH`)
 

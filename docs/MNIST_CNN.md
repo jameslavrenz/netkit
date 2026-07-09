@@ -67,7 +67,7 @@ python3 benchmark/tools/parse_mcu_cnn_int8_log.py uart.log
 python3 benchmark/tools/parse_mcu_cnn_int8_log.py --compare netkit_uart.log tflm_uart.log
 ```
 
-Int8 export aligns **layer-0 input quant** with TFLite when `benchmark/tflm/generated/mnist_cnn_int8.tflite` is present (`input_scale=1/255`, `zero_point=-128`). Weight and per-layer output scales are calibrated from netkit float weights. Benchmark inputs are prequantized in `mnist_cnn_int8_test_images.*` — no float→int8 conversion at invoke on netkit or TFLM MCU firmware.
+Int8 export aligns **layer-0 input quant** with TFLite when `benchmark/tflm/generated/mnist_cnn_int8.tflite` is present (`input_scale=1/255`, `zero_point=-128`). Weight and per-layer output scales are calibrated from netkit float weights. Benchmark and TCAS inputs are **prequantized int8 in Python** — no float→int8 conversion in C++ (MCU firmware or host `libnetkit`).
 
 ## Regenerating
 

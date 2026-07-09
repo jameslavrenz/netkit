@@ -11,6 +11,7 @@
 #include "quant_output.hpp"
 #include "quant_trace.hpp"
 #include "tensor_factory.hpp"
+#include "xnnpack_quant.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -124,10 +125,29 @@ namespace
         return h * w * c;
     }
 
+
+    QuantInteger::QuantClamp ClampFromConvActivation(ConvActivationType activation)
+    {
+        if (activation == ConvActivationType::ReLU)
+            return QuantInteger::QuantClamp::ReLU;
+        if (activation == ConvActivationType::ReLU6)
+            return QuantInteger::QuantClamp::ReLU6;
+        return QuantInteger::QuantClamp::None;
+    }
+
+    QuantInteger::QuantClamp ClampFromMlpActivation(ActivationType activation)
+    {
+        if (activation == ActivationType::ReLU)
+            return QuantInteger::QuantClamp::ReLU;
+        if (activation == ActivationType::ReLU6)
+            return QuantInteger::QuantClamp::ReLU6;
+        return QuantInteger::QuantClamp::None;
+    }
+
     bool BuildConvPlan(CmsisQuantPlan::Conv2DPlan& plan,
                        const Conv2D& conv,
                        const NkFormat::MlpLayerQuantDesc& quant,
-                       bool apply_relu,
+                       QuantInteger::QuantClamp clamp,
                        uint32_t in_h,
                        uint32_t in_w,
                        uint32_t in_c,
@@ -151,7 +171,10 @@ namespace
         plan.stride = conv.stride;
         plan.pad_h = conv.pad_h;
         plan.pad_w = conv.pad_w;
-        plan.apply_relu = apply_relu;
+        plan.clamp = clamp;
+        plan.input_scale = quant.input_scale;
+        plan.weight_scale = quant.weight_scale;
+        plan.output_scale = quant.output_scale;
         plan.in_h = static_cast<int32_t>(in_h);
         plan.in_w = static_cast<int32_t>(in_w);
         plan.in_c = static_cast<int32_t>(in_c);
@@ -222,7 +245,7 @@ namespace
     bool BuildDepthwisePlan(CmsisQuantPlan::DepthwiseConv2DPlan& plan,
                             const DepthwiseConv2D& dw,
                             const NkFormat::MlpLayerQuantDesc& quant,
-                            bool apply_relu,
+                            QuantInteger::QuantClamp clamp,
                             uint32_t in_h,
                             uint32_t in_w,
                             uint32_t in_c,
@@ -247,7 +270,10 @@ namespace
         plan.stride = dw.stride;
         plan.pad_h = dw.pad_h;
         plan.pad_w = dw.pad_w;
-        plan.apply_relu = apply_relu;
+        plan.clamp = clamp;
+        plan.input_scale = quant.input_scale;
+        plan.weight_scale = quant.weight_scale;
+        plan.output_scale = quant.output_scale;
         plan.in_h = static_cast<int32_t>(in_h);
         plan.in_w = static_cast<int32_t>(in_w);
         plan.channels = dw.channels;
@@ -323,6 +349,7 @@ namespace
             in_h, pool.pool_h, pool.stride, pool.pad_h, pool.pad_h_end));
         plan.out_w = static_cast<int32_t>(nk_op_detail::CalcOutputDimAsymmetric(
             in_w, pool.pool_w, pool.stride, pool.pad_w, pool.pad_w_end));
+        plan.clamp = ClampFromConvActivation(pool.activation);
         plan.ready = true;
         CmsisNnQuant::FinalizePool2DPlan(plan);
         return true;
@@ -361,7 +388,7 @@ namespace
 
     bool BuildFcPlan(CmsisQuantPlan::FcPlan& plan,
                      const NkFormat::MlpLayerQuantDesc& quant,
-                     bool apply_relu,
+                     QuantInteger::QuantClamp clamp,
                      uint32_t in_features,
                      uint32_t out_features)
     {
@@ -371,7 +398,10 @@ namespace
         plan.input_offset = -quant.input_zero_point;
         plan.filter_offset = -quant.weight_zero_point;
         plan.output_offset = -quant.output_zero_point;
-        plan.apply_relu = apply_relu;
+        plan.clamp = clamp;
+        plan.input_scale = quant.input_scale;
+        plan.weight_scale = quant.weight_scale;
+        plan.output_scale = quant.output_scale;
         plan.in_features = static_cast<int32_t>(in_features);
         plan.out_features = static_cast<int32_t>(out_features);
 
@@ -476,11 +506,12 @@ bool BuildRuntime(CNNNetwork& network, Arena& arena, uint32_t in_h, uint32_t in_
             case CnnBlockType::Conv2D:
             {
                 lp.kind = LayerKind::Conv2D;
-                const bool apply_relu = block.conv.activation == ConvActivationType::ReLU;
+                const QuantInteger::QuantClamp clamp =
+                    ClampFromConvActivation(block.conv.activation);
                 if (!BuildConvPlan(lp.conv,
                                    block.conv.conv,
                                    block.conv.quant.params,
-                                   apply_relu,
+                                   clamp,
                                    in_h_layer,
                                    in_w_layer,
                                    in_c_layer,
@@ -495,11 +526,12 @@ bool BuildRuntime(CNNNetwork& network, Arena& arena, uint32_t in_h, uint32_t in_
             case CnnBlockType::DepthwiseConv2D:
             {
                 lp.kind = LayerKind::DepthwiseConv2D;
-                const bool apply_relu = block.depthwise_conv.activation == ConvActivationType::ReLU;
+                const QuantInteger::QuantClamp clamp =
+                    ClampFromConvActivation(block.depthwise_conv.activation);
                 if (!BuildDepthwisePlan(lp.depthwise,
                                         block.depthwise_conv.depthwise,
                                         block.depthwise_conv.quant.params,
-                                        apply_relu,
+                                        clamp,
                                         in_h_layer,
                                         in_w_layer,
                                         in_c_layer,
@@ -562,7 +594,8 @@ bool BuildRuntime(CNNNetwork& network, Arena& arena, uint32_t in_h, uint32_t in_
                 break;
             case CnnBlockType::Dense:
             {
-                const bool apply_relu = block.dense.activation == ActivationType::ReLU;
+                const QuantInteger::QuantClamp clamp =
+                    ClampFromMlpActivation(block.dense.activation);
                 const bool apply_softmax = block.dense.activation == ActivationType::Softmax;
                 const uint32_t in_features = in_h_layer * in_w_layer * in_c_layer;
                 const uint32_t out_features = block.dense.weights.shape[0];
@@ -572,7 +605,7 @@ bool BuildRuntime(CNNNetwork& network, Arena& arena, uint32_t in_h, uint32_t in_
                     logits_elements = out_features;
                     if (!BuildFcPlan(lp.fc,
                                      block.dense.quant.params,
-                                     false,
+                                     QuantInteger::QuantClamp::None,
                                      in_features,
                                      out_features))
                         return false;
@@ -595,7 +628,7 @@ bool BuildRuntime(CNNNetwork& network, Arena& arena, uint32_t in_h, uint32_t in_
                     lp.kind = LayerKind::Dense;
                     if (!BuildFcPlan(lp.fc,
                                      block.dense.quant.params,
-                                     apply_relu,
+                                     clamp,
                                      in_features,
                                      out_features))
                         return false;
@@ -606,6 +639,8 @@ bool BuildRuntime(CNNNetwork& network, Arena& arena, uint32_t in_h, uint32_t in_
                         if (!CmsisNnQuant::FinalizeFcPlan(lp.fc, weights, bias, arena))
                             return false;
                     }
+                    activation_scale = block.dense.quant.params.output_scale;
+                    activation_zero_point = block.dense.quant.params.output_zero_point;
                 }
                 workspace_bytes = std::max(workspace_bytes,
                                            static_cast<std::size_t>(lp.fc.workspace_bytes));
@@ -617,7 +652,6 @@ bool BuildRuntime(CNNNetwork& network, Arena& arena, uint32_t in_h, uint32_t in_
     }
 
     runtime->input_quant_elements = input_quant_elements;
-    runtime->staging_arena = &arena;
 
     runtime->act_a_bytes = even_max;
     runtime->act_b_bytes = odd_max;
@@ -711,6 +745,11 @@ namespace
                 case LayerKind::Conv2D:
                 {
                     const Conv2D& conv = block.conv.conv;
+                    if (XnnpackQuant::TryConv2dNhwcQuantPlan(
+                            lp.conv, current, conv.weights_q, conv.bias_q, out))
+                    {
+                        break;
+                    }
                     if (CmsisNnQuant::TryConv2dNhwcQuantPlan(
                             lp.conv, current, conv.weights_q, conv.bias_q, out))
                     {
@@ -733,7 +772,7 @@ namespace
                                               conv.pad_w_end,
                                               conv.out_channels,
                                               block.conv.quant.params,
-                                              lp.conv.apply_relu,
+                                              lp.conv.clamp,
                                               out);
                     break;
 #endif
@@ -743,6 +782,11 @@ namespace
                     const DepthwiseConv2D& dw = block.depthwise_conv.depthwise;
                     const int8_t* weights = lp.depthwise.weights_hwc ? lp.depthwise.weights_hwc
                                                                      : dw.weights_q;
+                    if (XnnpackQuant::TryDepthwiseConv2dNhwcQuantPlan(
+                            lp.depthwise, current, dw.weights_q, dw.bias_q, out))
+                    {
+                        break;
+                    }
                     if (CmsisNnQuant::TryDepthwiseConv2dNhwcQuantPlan(
                             lp.depthwise, current, weights, dw.bias_q, out))
                     {
@@ -765,13 +809,15 @@ namespace
                                                        dw.pad_h_end,
                                                        dw.pad_w_end,
                                                        block.depthwise_conv.quant.params,
-                                                       lp.depthwise.apply_relu,
+                                                       lp.depthwise.clamp,
                                                        out);
                     break;
 #endif
                 }
                 case LayerKind::MaxPool2D:
                 {
+                    if (XnnpackQuant::TryMaxPool2dNhwcQuantPlan(lp.pool, current, out))
+                        break;
                     if (CmsisNnQuant::TryMaxPool2dNhwcQuantPlan(lp.pool, current, out))
                         break;
 #if defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN && NETKIT_CMSIS_NN_ALLOWED
@@ -828,7 +874,10 @@ namespace
                     const int8_t* weights = static_cast<const int8_t*>(block.dense.weights.data);
                     const int32_t* bias = static_cast<const int32_t*>(block.dense.bias.data);
                     int8_t* dense_out = (is_last && output_dest != nullptr) ? output_dest : out;
-                    if (CmsisNnQuant::TryFullyConnectedQuantPlan(lp.fc, current, weights, bias, dense_out))
+                    if (XnnpackQuant::TryFullyConnectedQuantPlan(
+                            lp.fc, current, weights, bias, dense_out) ||
+                        CmsisNnQuant::TryFullyConnectedQuantPlan(
+                            lp.fc, current, weights, bias, dense_out))
                     {
                         if (dense_out == output_dest)
                             out = output_dest;
@@ -844,9 +893,8 @@ namespace
                                                   bias,
                                                   static_cast<uint32_t>(lp.fc.out_features),
                                                   block.dense.quant.params,
-                                                  lp.fc.apply_relu,
-                                                  dense_out,
-                                                  nullptr);
+                                                  lp.fc.clamp,
+                                                  dense_out);
                     if (dense_out == output_dest)
                         out = output_dest;
                     break;
@@ -857,8 +905,13 @@ namespace
                     const int8_t* weights = static_cast<const int8_t*>(block.dense.weights.data);
                     const int32_t* bias = static_cast<const int32_t*>(block.dense.bias.data);
                     int8_t* softmax_out = (output_dest != nullptr) ? output_dest : out;
-                    if (!CmsisNnQuant::TryFullyConnectedQuantPlan(
-                            lp.fc, current, weights, bias, runtime.logits))
+                    // Classification path: write logits directly (argmax-equivalent to Softmax).
+                    int8_t* fc_dest =
+                        runtime.omit_final_softmax ? softmax_out : runtime.logits;
+                    if (!XnnpackQuant::TryFullyConnectedQuantPlan(
+                            lp.fc, current, weights, bias, fc_dest) &&
+                        !CmsisNnQuant::TryFullyConnectedQuantPlan(
+                            lp.fc, current, weights, bias, fc_dest))
                     {
 #if defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN && NETKIT_CMSIS_NN_ALLOWED
                         return false;
@@ -870,10 +923,15 @@ namespace
                                                       bias,
                                                       static_cast<uint32_t>(lp.fc.out_features),
                                                       block.dense.quant.params,
-                                                      lp.fc.apply_relu,
-                                                      runtime.logits,
-                                                      nullptr);
+                                                      lp.fc.clamp,
+                                                      fc_dest);
 #endif
+                    }
+                    if (runtime.omit_final_softmax)
+                    {
+                        out = softmax_out;
+                        (void)output_format;
+                        break;
                     }
                     if (!CmsisNnQuant::TrySoftmaxS8Plan(lp.softmax, runtime.logits, softmax_out))
                     {
@@ -905,23 +963,10 @@ namespace
         if (output_dest != nullptr)
             return true;
 
+        (void)output_format;
         const LayerPlan& last = runtime.layers[runtime.num_layers - 1];
         output_cache = View2DInt8(current, 1, last.output_elements);
         return true;
-    }
-    bool EnsureInputQuantBuffer(Runtime& runtime)
-    {
-        if (runtime.input_quant_elements == 0)
-            return true;
-        if (runtime.input_quant != nullptr)
-            return true;
-        if (runtime.staging_arena == nullptr)
-            return false;
-
-        runtime.input_quant = static_cast<int8_t*>(
-            runtime.staging_arena->alloc(runtime.input_quant_elements * sizeof(int8_t),
-                                         alignof(int8_t)));
-        return runtime.input_quant != nullptr;
     }
 }  // namespace
 
@@ -931,25 +976,16 @@ bool Forward(Runtime& runtime,
              QuantOutputFormat output_format,
              Tensor& output_cache)
 {
-    if (input.type == DataType::Int8)
-    {
-        return ForwardInt8(runtime,
-                         network,
-                         static_cast<const int8_t*>(input.data),
-                         input.num_elements,
-                         output_format,
-                         output_cache);
-    }
-
-    const float* input_f = static_cast<const float*>(input.data);
-    if (!input_f || !EnsureInputQuantBuffer(runtime))
+    // Int8 I/O only — float↔int8 belongs in Python (export / offline), not C++.
+    if (input.type != DataType::Int8)
         return false;
 
-    for (uint32_t i = 0; i < runtime.input_quant_elements; ++i)
-        runtime.input_quant[i] =
-            QuantOps::QuantizeFloat(input_f[i], runtime.input_scale, runtime.input_zero_point);
-
-    return ForwardLayers(runtime, network, runtime.input_quant, output_format, output_cache, nullptr);
+    return ForwardInt8(runtime,
+                       network,
+                       static_cast<const int8_t*>(input.data),
+                       input.num_elements,
+                       output_format,
+                       output_cache);
 }
 
 bool ForwardInt8(Runtime& runtime,

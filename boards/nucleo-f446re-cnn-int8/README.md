@@ -15,9 +15,9 @@ Runs the **same MNIST CNN benchmark** as `benchmark/netkit/` and `benchmark/tflm
 | CMSIS | **CMSIS-NN** + **CMSIS-DSP** (q7 copy/max utils; layer kernels are CMSIS-NN) |
 | Weights | **Flash** — embedded `.nk` blob in `.rodata` (`NETKIT_WEIGHTS_IN_RAM=0`) |
 | Deployment | **Interpreter embed** — `NkLoader` + `NkOpsResolver` (same class as TFLM blob + interpreter) |
-| Dtype | int8 weights / activations; int8 softmax output; prequantized int8 test inputs |
+| Dtype | int8 weights / activations; prequantized int8 test inputs; output = logits (Softmax omitted) |
 
-Int8 conv/pool/dense/softmax use CMSIS-NN kernels on Cortex-M4 (`CmsisQuantPlan`). Benchmark firmware copies each test image into SRAM (`g_input_staging`) before the timed forward pass — same pattern as TFLM’s input tensor copy.
+Int8 conv/pool/dense use CMSIS-NN kernels on Cortex-M4 (`CmsisQuantPlan`). Final Softmax is omitted for classification (`--omit-final-softmax`); firmware argmaxes logits. Benchmark firmware copies each test image into SRAM (`g_input_staging`) before the timed forward pass — same pattern as TFLM’s input tensor copy.
 
 ## Verified on-device results (NUCLEO-F446RE @ 180 MHz, interpreter embed)
 
@@ -120,7 +120,7 @@ make flash-mnist-cnn-int8
 | **Interpreter embed** (default) | `make` | Embedded `.nk` blob + runtime loader (fair vs TFLM `MicroInterpreter`) |
 | **Quant lowered** (deployment) | `make NETKIT_LOWERED=1` | Static `CmsisQuantPlan` call chain; activations in static BSS, tiny arena |
 
-Compiler/linker flags match TFLM microlite tiers via `boards/nucleo-f446re/mcu_tflm_toolchain.mk` (CORE `-Os`, CMSIS-NN / quant dispatch `-O2`, `-flto` link with `--gc-sections`). `NETKIT_CPPFLAGS` is passed on the final link so CMSIS macros survive LTO.
+Compiler/linker flags match TFLM kernel speed via `boards/nucleo-f446re/mcu_tflm_toolchain.mk` (CORE / KERNEL / THIRD_PARTY all `-O2`, `-flto` link with `--gc-sections`). `NETKIT_CPPFLAGS` is passed on the final link so CMSIS macros survive LTO.
 
 **CMSIS always on for this board:** the Makefile uses `override NETKIT_CMSIS_DSP := 1` and `override NETKIT_CMSIS_NN := 1` so host/CI env vars (`NETKIT_CMSIS_NN=0`, `GITHUB_ACTIONS=true`, etc.) cannot accidentally link CMSIS **stub** kernels that fail forward at runtime.
 
@@ -139,7 +139,7 @@ rm -f generated/.embed_stamp && make NETKIT_LOWERED=1   # lowered
 netkit NUCLEO-F446RE MNIST CNN int8 benchmark
   backend:     cmsis-nn int8 + cmsis-dsp utils (MCU CM4, .nk loader)
   weights:     flash (embedded .nk blob)
-  dtype:       int8 end-to-end (weights, activations, inputs, softmax)
+  dtype:       int8 end-to-end (weights, activations, inputs; logits out)
   arena bytes: 65536
   nk bytes:    258440
   sysclk:      180000000 Hz

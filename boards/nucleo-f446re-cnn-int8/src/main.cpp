@@ -97,7 +97,8 @@ extern "C" int main(void)
                 aot::kQuantLowered ? "flash (static .rodata)"
                                    : (NETKIT_WEIGHTS_IN_RAM ? "ram (arena copy at load)"
                                                             : "flash (embedded .nk blob)"));
-    uart_write("  dtype:       int8 end-to-end (weights, activations, inputs, softmax)\r\n");
+    uart_write("  dtype:       int8 end-to-end (weights, activations, inputs; logits out)\r\n");
+    uart_write("  classify:    argmax(logits) — final Softmax omitted\r\n");
     uart_printf("  images:      %d per run\r\n", kImageCount);
     uart_printf("  runs:        %d (discard first invoke each run)\r\n", kRuns);
     uart_printf("  arena bytes: %u\r\n", static_cast<unsigned>(kArenaCapacity));

@@ -14,14 +14,15 @@
 # Weight load policy (buffer / AOT path only; file load always copies to arena):
 #   NETKIT_WEIGHTS_IN_RAM=1|0 — default 0 (coefs in flash/blob); set 1 to copy payload to SRAM
 #
-# Optional CMSIS backends (opt-in via NETKIT_CMSIS_*=1; profile defaults below):
+# Optional backends (profile defaults below; override on command line):
 #   NETKIT_CMSIS_NN=1      — Cortex-M MCU only (NETKIT_TARGET=mcu + NETKIT_ARCH=CM4|M33|...)
 #   NETKIT_CMSIS_DSP=1     — CMSIS-DSP float32 vector/matrix ops
+#   NETKIT_XNNPACK=1      — Google XNNPACK float32 + int8 (cpu/mpu only; run ./tools/fetch_xnnpack.sh)
 #
-# Profile defaults (override on command line, e.g. make NETKIT_CMSIS_DSP=0):
-#   cpu — CMSIS-DSP on, CMSIS-NN off
-#   mcu — both on (requires NETKIT_ARCH=CM4|M33|... for NN)
-#   mpu — CMSIS-DSP on, CMSIS-NN off
+# Profile defaults (e.g. make NETKIT_CMSIS_DSP=0 NETKIT_XNNPACK=0):
+#   cpu — CMSIS-DSP on, CMSIS-NN off, XNNPACK on
+#   mcu — CMSIS-DSP + CMSIS-NN on (requires NETKIT_ARCH for NN), XNNPACK off
+#   mpu — CMSIS-DSP on, CMSIS-NN off, XNNPACK on
 #
 # Optional reference-kernel loop unroll (netkit code only; not CMSIS):
 # NETKIT_IM2COL=0|1|2 — float Conv2D strategy: 0 direct (default), 1 partial, 2 full im2col+GEMM.
@@ -65,25 +66,31 @@ NETKIT_WEIGHTS_IN_RAM ?= 0
 ifeq ($(NETKIT_TARGET),cpu)
   NETKIT_CMSIS_DSP ?= 1
   NETKIT_CMSIS_NN ?= 0
+  NETKIT_XNNPACK ?= 1
 else ifeq ($(NETKIT_TARGET),mcu)
   NETKIT_CMSIS_DSP ?= 1
   NETKIT_CMSIS_NN ?= 1
+  NETKIT_XNNPACK ?= 0
 else ifeq ($(NETKIT_TARGET),mpu)
   NETKIT_CMSIS_DSP ?= 1
   NETKIT_CMSIS_NN ?= 0
+  NETKIT_XNNPACK ?= 1
 else
   NETKIT_CMSIS_DSP ?= 0
   NETKIT_CMSIS_NN ?= 0
+  NETKIT_XNNPACK ?= 0
 endif
 # In CI, exercise CMSIS-DSP only for the host cpu build (CMSIS-DSP's portable
 # __GNUC_PYTHON__ path). Cross-target (mcu/mpu) host compile-checks — e.g. the
 # AOT MCU codegen test's `make NETKIT_TARGET=mcu lib` — have no ARM toolchain or
 # CMSIS-Core headers on the runner, so keep them on reference kernels.
+# XNNPACK is also forced off in CI (large fetch/build; enable locally).
 ifeq ($(GITHUB_ACTIONS),true)
   ifneq ($(NETKIT_TARGET),cpu)
     override NETKIT_CMSIS_DSP := 0
     override NETKIT_CMSIS_NN := 0
   endif
+  override NETKIT_XNNPACK := 0
 endif
 # Default direct Conv2D loops (0) on cpu/mcu/mpu; override at build time if needed.
 NETKIT_IM2COL ?= 0
@@ -164,6 +171,55 @@ ifeq ($(NETKIT_CMSIS_DSP),1)
   RUNTIME_SOURCES += src/cmsis_dsp_backend.cpp
 endif
 
+# XNNPACK: cpu/mpu LayerFast accelerator (default on for those targets; off for mcu).
+XNNPACK_DIR ?= third_party/XNNPACK
+XNNPACK_LIB_DIR ?= $(XNNPACK_DIR)/netkit_lib
+XNNPACK_LDFLAGS :=
+NETKIT_XNNPACK_EFFECTIVE := 0
+ifeq ($(NETKIT_XNNPACK),1)
+  ifeq ($(NETKIT_TARGET),mcu)
+    $(warning NETKIT_XNNPACK=1 ignored on NETKIT_TARGET=mcu — XNNPACK is cpu/mpu only)
+  else ifeq ($(wildcard $(XNNPACK_DIR)/include/xnnpack.h),)
+    $(warning NETKIT_XNNPACK=1 but XNNPACK headers missing — run ./tools/fetch_xnnpack.sh; using reference kernels)
+  else ifeq ($(wildcard $(XNNPACK_LIB_DIR)/libXNNPACK.a),)
+    $(warning NETKIT_XNNPACK=1 but libXNNPACK.a missing — run ./tools/fetch_xnnpack.sh; using reference kernels)
+  else
+    NETKIT_XNNPACK_EFFECTIVE := 1
+  endif
+endif
+ifeq ($(NETKIT_XNNPACK_EFFECTIVE),1)
+  TARGET_CPPFLAGS += -DNETKIT_USE_XNNPACK=1 -I$(XNNPACK_DIR)/include -I$(XNNPACK_DIR)/netkit_include
+  RUNTIME_SOURCES += src/xnnpack_backend.cpp
+  # macOS needs force_load so microkernel registrars are not stripped.
+  UNAME_S := $(shell uname -s)
+  ifeq ($(UNAME_S),Darwin)
+    XNNPACK_LDFLAGS += -Wl,-force_load,$(XNNPACK_LIB_DIR)/libXNNPACK.a
+  else
+    XNNPACK_LDFLAGS += -Wl,--whole-archive -L$(XNNPACK_LIB_DIR) -lXNNPACK -Wl,--no-whole-archive
+  endif
+  XNNPACK_LDFLAGS += -L$(XNNPACK_LIB_DIR)
+  ifneq ($(wildcard $(XNNPACK_LIB_DIR)/libxnnpack-microkernels-prod.a),)
+    XNNPACK_LDFLAGS += -lxnnpack-microkernels-prod
+  else ifneq ($(wildcard $(XNNPACK_LIB_DIR)/libxnnpack-microkernels-all.a),)
+    XNNPACK_LDFLAGS += -lxnnpack-microkernels-all
+  endif
+  ifneq ($(wildcard $(XNNPACK_LIB_DIR)/libkleidiai.a),)
+    XNNPACK_LDFLAGS += -lkleidiai
+  endif
+  ifneq ($(wildcard $(XNNPACK_LIB_DIR)/libpthreadpool.a),)
+    XNNPACK_LDFLAGS += -lpthreadpool
+  endif
+  ifneq ($(wildcard $(XNNPACK_LIB_DIR)/libcpuinfo.a),)
+    XNNPACK_LDFLAGS += -lcpuinfo
+  endif
+  ifneq ($(wildcard $(XNNPACK_LIB_DIR)/libfxdiv.a),)
+    XNNPACK_LDFLAGS += -lfxdiv
+  endif
+  XNNPACK_LDFLAGS += -lpthread -lc++
+endif
+# Int8 qs8 stubs always compile (no-op when XNNPACK off); real path when enabled.
+RUNTIME_SOURCES += src/xnnpack_quant_backend.cpp
+
 DESKTOP_SOURCES = src/nk_regression.cpp src/cli.cpp src/test.cpp
 
 ifeq ($(NETKIT_TARGET),cpu)
@@ -201,13 +257,9 @@ TARGET_CPPFLAGS += -DNETKIT_LOOP_UNROLL=$(NETKIT_LOOP_UNROLL)
 CFLAGS += $(TARGET_CPPFLAGS)
 CXXFLAGS += $(TARGET_CPPFLAGS)
 
-# GitHub Actions: unoptimized debug CPU builds make full-backbone regression very slow.
-ifeq ($(GITHUB_ACTIONS),true)
-  ifeq ($(NETKIT_TARGET),cpu)
-    CFLAGS += -O2
-    CXXFLAGS += -O2
-  endif
-endif
+# Always -O2 for CPU/MPU builds and tests (never -Os). Matches TFLM kernel speed.
+CFLAGS += -O2
+CXXFLAGS += -O2
 
 CLI_SOURCES = src/main.cpp
 
@@ -243,7 +295,7 @@ TRIM_CORE_OBJECTS = $(TRIM_RUNTIME_SOURCES:.cpp=.o)
 
 # Rebuild objects when target/backends change — avoids mixing CPU and MCU .o files in libnetkit.a.
 NETKIT_BUILD_STAMP = .netkit_build_stamp
-NETKIT_BUILD_ID = target=$(NETKIT_TARGET),global_arena=$(NETKIT_GLOBAL_ARENA),heap_arena=$(NETKIT_HEAP_ARENA),weights_in_ram=$(NETKIT_WEIGHTS_IN_RAM),cmsis_nn=$(NETKIT_CMSIS_NN_EFFECTIVE),cmsis_dsp=$(NETKIT_CMSIS_DSP),im2col=$(NETKIT_IM2COL),loop_unroll=$(NETKIT_LOOP_UNROLL),arch=$(NETKIT_ARCH),host_smoke=$(NETKIT_HOST_SMOKE)
+NETKIT_BUILD_ID = target=$(NETKIT_TARGET),global_arena=$(NETKIT_GLOBAL_ARENA),heap_arena=$(NETKIT_HEAP_ARENA),weights_in_ram=$(NETKIT_WEIGHTS_IN_RAM),cmsis_nn=$(NETKIT_CMSIS_NN_EFFECTIVE),cmsis_dsp=$(NETKIT_CMSIS_DSP),xnnpack=$(NETKIT_XNNPACK_EFFECTIVE),im2col=$(NETKIT_IM2COL),loop_unroll=$(NETKIT_LOOP_UNROLL),arch=$(NETKIT_ARCH),host_smoke=$(NETKIT_HOST_SMOKE)
 
 NETKIT_STALE_BINARIES = $(TARGET) $(LIB) $(TRIM_LIB) $(EXAMPLE_C) $(EXAMPLE_CPP) $(TEST_C) $(EMBEDDED_SMOKE) $(NK_INFER)
 
@@ -294,26 +346,26 @@ check-trim-lib:
 
 ifeq ($(BUILD_CLI),1)
 $(TARGET): netkit-config-sync $(LIB) $(CLI_OBJECTS)
-	$(CXX) $(CXXFLAGS) -o $@ $(CLI_OBJECTS) $(LIB)
+	$(CXX) $(CXXFLAGS) -o $@ $(CLI_OBJECTS) $(LIB) $(XNNPACK_LDFLAGS)
 endif
 
 $(EXAMPLE_C): netkit-config-sync $(LIB) $(EXAMPLE_C_OBJ)
-	$(CXX) $(CXXFLAGS) -o $@ $(EXAMPLE_C_OBJ) $(LIB)
+	$(CXX) $(CXXFLAGS) -o $@ $(EXAMPLE_C_OBJ) $(LIB) $(XNNPACK_LDFLAGS)
 
 $(EXAMPLE_CPP): netkit-config-sync $(LIB) $(EXAMPLE_CPP_OBJ)
-	$(CXX) $(CXXFLAGS) -o $@ $(EXAMPLE_CPP_OBJ) $(LIB)
+	$(CXX) $(CXXFLAGS) -o $@ $(EXAMPLE_CPP_OBJ) $(LIB) $(XNNPACK_LDFLAGS)
 
 ifeq ($(BUILD_C_TESTS),1)
 $(TEST_C): netkit-config-sync $(LIB) $(TEST_C_OBJ)
-	$(CXX) $(CXXFLAGS) -o $@ $(TEST_C_OBJ) $(LIB)
+	$(CXX) $(CXXFLAGS) -o $@ $(TEST_C_OBJ) $(LIB) $(XNNPACK_LDFLAGS)
 endif
 
 $(EMBEDDED_SMOKE): netkit-config-sync $(LIB) $(EMBEDDED_SMOKE_OBJ)
-	$(CXX) $(CXXFLAGS) -o $@ $(EMBEDDED_SMOKE_OBJ) $(LIB)
+	$(CXX) $(CXXFLAGS) -o $@ $(EMBEDDED_SMOKE_OBJ) $(LIB) $(XNNPACK_LDFLAGS)
 
 ifeq ($(BUILD_CLI),1)
 $(NK_INFER): netkit-config-sync $(LIB) $(NK_INFER_OBJ)
-	$(CXX) $(CXXFLAGS) -o $@ $(NK_INFER_OBJ) $(LIB)
+	$(CXX) $(CXXFLAGS) -o $@ $(NK_INFER_OBJ) $(LIB) $(XNNPACK_LDFLAGS)
 endif
 
 %.o: %.cpp $(NETKIT_BUILD_STAMP)
@@ -419,7 +471,12 @@ cmsis-dsp-init:
 cmsis-core-init:
 	./tools/fetch_cmsis_core.sh
 
+xnnpack-init:
+	./tools/fetch_xnnpack.sh
+
 cmsis-init: cmsis-nn-init cmsis-dsp-init cmsis-core-init
+
+.PHONY: xnnpack-init
 
 export-mnist:
 	PYTHONPATH=python python3 tools/export_mnist_mlp.py

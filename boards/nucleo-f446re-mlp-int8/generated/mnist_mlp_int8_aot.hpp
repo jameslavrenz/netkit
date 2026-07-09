@@ -36,9 +36,7 @@ public:
     Model() = default;
 
     bool load(Arena& arena);
-    bool forward(Arena& arena, const float* input, int8_t* output) const;
     bool forwardInt8(Arena& arena, const int8_t* input, int8_t* output) const;
-    bool forwardFloat(Arena& arena, const float* input, float* output) const;
     [[nodiscard]] bool isLoaded() const { return loaded_; }
 
 private:

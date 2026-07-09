@@ -42,11 +42,23 @@ void MaxPool2DLayer::forward(const Tensor& input, Tensor& output)
 {
     const int pad_h_end = this->pad_h_end;
     const int pad_w_end = this->pad_w_end;
+    const NetkitKernelActivation kernel_activation = ToKernelActivation(activation);
+    bool fused_in_kernel = false;
     if (pool_h == pool_w && pad_h == pad_h_end && pad_w == pad_w_end)
-        Kernels::MaxPool2dForward(input, pool_h, stride, pad_h, pad_w, output);
+        fused_in_kernel =
+            Kernels::MaxPool2dForward(input, pool_h, stride, pad_h, pad_w, kernel_activation, output);
     else
-        Kernels::MaxPool2dForwardPadded(
-            input, pool_h, pool_w, stride, pad_h, pad_w, pad_h_end, pad_w_end, output);
+        fused_in_kernel = Kernels::MaxPool2dForwardPadded(input,
+                                                          pool_h,
+                                                          pool_w,
+                                                          stride,
+                                                          pad_h,
+                                                          pad_w,
+                                                          pad_h_end,
+                                                          pad_w_end,
+                                                          kernel_activation,
+                                                          output);
+    ApplyFusedOutputActivation(kernel_activation, fused_in_kernel, output);
 }
 
 void AvgPool2DLayer::forward(const Tensor& input, Tensor& output)

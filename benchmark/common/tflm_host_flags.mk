@@ -1,9 +1,12 @@
 # Host TFLM compile/link flags (osx + gcc + BUILD_TYPE=default).
 #
 # Mirrored from tensorflow/lite/micro/tools/make/Makefile for fair netkit
-# benchmark comparison. Refresh if TFLM defaults change.
+# vs TFLM Micro comparison (MNIST / compare.sh). Refresh if TFLM defaults change.
 #
-# Include from benchmark/netkit/Makefile:
+# For TF Lite / LiteRT (MPU) ImageNet benches, use tflite_host_flags.mk instead
+# (BENCH_FLAG_PROFILE=tflite): -O3 -DNDEBUG and no TF_LITE_DISABLE_X86_NEON.
+#
+# Include from benchmark/netkit/bench.mk when BENCH_FLAG_PROFILE=tflm (default):
 #   include ../common/tflm_host_flags.mk
 
 TFLM_HOST_CC := gcc
@@ -44,7 +47,7 @@ TFLM_CXXFLAGS := \
   $(TFLM_HOST_COMMON_FLAGS) \
   -std=c++20
 
-TFLM_CORE_OPT := -Os
+TFLM_CORE_OPT := -O2
 TFLM_KERNEL_OPT := -O2
 
 # osx + gcc: no --gc-sections (LLVM linker backend).

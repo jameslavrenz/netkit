@@ -43,6 +43,19 @@ $(EXTERNAL_DIR)/generated/mobilenetv4_small.tflite
 $(eval $(call microlite_test,mobilenetv4_benchmark,\
 $(MOBILENETV4_BENCHMARK_SRCS),$(MOBILENETV4_BENCHMARK_HDRS),$(MOBILENETV4_BENCHMARK_GENERATOR_INPUTS)))
 
+MOBILENETV4_IMAGENET_BENCHMARK_SRCS := \
+$(EXTERNAL_DIR)/src/mobilenetv4_imagenet_main.cc \
+$(EXTERNAL_DIR)/generated/imagenet_mnv4_test_images.cc
+
+MOBILENETV4_IMAGENET_BENCHMARK_HDRS := \
+$(EXTERNAL_DIR)/generated/imagenet_mnv4_test_images.h
+
+MOBILENETV4_IMAGENET_BENCHMARK_GENERATOR_INPUTS := \
+$(EXTERNAL_DIR)/generated/mobilenetv4_imagenet_f32.tflite
+
+$(eval $(call microlite_test,mobilenetv4_imagenet_benchmark,\
+$(MOBILENETV4_IMAGENET_BENCHMARK_SRCS),$(MOBILENETV4_IMAGENET_BENCHMARK_HDRS),$(MOBILENETV4_IMAGENET_BENCHMARK_GENERATOR_INPUTS)))
+
 MOBILENETV4_INT8_BENCHMARK_SRCS := \
 $(EXTERNAL_DIR)/src/mobilenetv4_int8_main.cc \
 $(EXTERNAL_DIR)/generated/mobilenetv4_int8_test_images.cc
@@ -55,6 +68,19 @@ $(EXTERNAL_DIR)/generated/mobilenetv4_small_int8.tflite
 
 $(eval $(call microlite_test,mobilenetv4_int8_benchmark,\
 $(MOBILENETV4_INT8_BENCHMARK_SRCS),$(MOBILENETV4_INT8_BENCHMARK_HDRS),$(MOBILENETV4_INT8_BENCHMARK_GENERATOR_INPUTS)))
+
+MOBILENETV4_IMAGENET_INT8_BENCHMARK_SRCS := \
+$(EXTERNAL_DIR)/src/mobilenetv4_imagenet_int8_main.cc \
+$(EXTERNAL_DIR)/generated/imagenet_mnv4_int8_test_images.cc
+
+MOBILENETV4_IMAGENET_INT8_BENCHMARK_HDRS := \
+$(EXTERNAL_DIR)/generated/imagenet_mnv4_int8_test_images.h
+
+MOBILENETV4_IMAGENET_INT8_BENCHMARK_GENERATOR_INPUTS := \
+$(EXTERNAL_DIR)/generated/mobilenetv4_imagenet_int8.tflite
+
+$(eval $(call microlite_test,mobilenetv4_imagenet_int8_benchmark,\
+$(MOBILENETV4_IMAGENET_INT8_BENCHMARK_SRCS),$(MOBILENETV4_IMAGENET_INT8_BENCHMARK_HDRS),$(MOBILENETV4_IMAGENET_INT8_BENCHMARK_GENERATOR_INPUTS)))
 
 # Profile build only — not linked into mnist_cnn_benchmark.
 MNIST_CNN_PROFILE_BENCHMARK_SRCS := \

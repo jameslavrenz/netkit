@@ -205,7 +205,7 @@ Lowered AOT with `--weights-in-ram` copies coef arrays from flash `.rodata` sour
 | `ArenaUtil`, `BeginRegressionArena`, `EndRegressionArena` | CLI/regression sizing helpers |
 | `TensorFactory::ViewND` | ND tensor views — use `nk_tensor_view_2d` or load from `.nk` |
 | `MLPNetwork::GetLayer`, `CNNNetwork::GetBlock`, `CNNNetwork::GetOutput`, `CNNNetwork::layer_count` | In-memory network introspection after manual construction |
-| `MLPNetwork::InitQuantizedLayer`, `CNNNetwork::InitQuantized*` (`InitQuantizedConvLayer`, `InitQuantizedDenseLayer`, `InitQuantizedActivationBuffers`), `SetQuantized`, `Set`/`GetQuantOutputFormat`, `CNNNetwork::SetQuantRuntime` / `forward_quantized` | Quantized manual construction + runtime — C callers use `.nk` load + `nk_model_run` (quantized path chosen internally) and query with `nk_*_is_quantized` |
+| `MLPNetwork::InitQuantizedLayer`, `CNNNetwork::InitQuantized*` (`InitQuantizedConvLayer`, `InitQuantizedDenseLayer`, `InitQuantizedActivationBuffers`), `SetQuantized`, `Set`/`GetQuantOutputFormat` (Int8 only; float↔int8 is Python-side), `CNNNetwork::SetQuantRuntime` / `forward_quantized` | Quantized manual construction + runtime — C callers use `.nk` load + `nk_model_run` (quantized path chosen internally) and query with `nk_*_is_quantized` |
 | `CNNNetwork::forward_timed`, `MLPNetwork::forward_timed` | Benchmark-only profilers |
 | `TensorFactory::View2DInt8`, `View3DInt8` | Manual int8 tensor views — use `.nk` load path |
 | `NkLoader::ReadTestSuite`, `ModelPayloadBytes`, `NetworkKindName` | Loader utilities; C uses `nk_parse_architecture` / `nk_model_*` instead |
