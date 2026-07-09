@@ -37,7 +37,6 @@ INCLUDES := \
 	-I$(CMSIS_NN_DIR)/Include \
 	-I$(NETKIT_ROOT)/third_party/CMSIS-Core/CMSIS/Core/Include
 
-NETKIT_WEIGHTS_IN_RAM ?= 0
 NETKIT_REFERENCE_QUANT_LOOPS ?= 0
 
 override NETKIT_CMSIS_DSP := 1
@@ -51,7 +50,6 @@ NETKIT_CPPFLAGS := \
 	-DNETKIT_TARGET_MCU=1 \
 	-DNETKIT_MCU_QUANT_ONLY=1 \
 	-DNETKIT_KERNELS_OPTIMIZED_FOR_SPEED=1 \
-	-DNETKIT_WEIGHTS_IN_RAM=$(NETKIT_WEIGHTS_IN_RAM) \
 	$(if $(filter 1,$(NETKIT_CMSIS_DSP)),-DNETKIT_USE_CMSIS_DSP=1,) \
 	$(if $(filter 1,$(NETKIT_CMSIS_NN)),-DNETKIT_USE_CMSIS_NN=1,) \
 	-DNETKIT_QUANT_TRACE=0 \
@@ -149,7 +147,6 @@ $(GEN_DIR)/.embed_stamp: $(NETKIT_ROOT)/models/mnist_mlp_int8.nk
 	@mkdir -p $(GEN_DIR)
 	cd $(NETKIT_ROOT) && PYTHONPATH=$(NETKIT_ROOT)/python python3 -m netkit aot models/mnist_mlp_int8.nk \
 		-o $(abspath $(GEN_DIR)) --language cpp --target mcu --arena-headroom 0 \
-		$(if $(filter 1,$(NETKIT_WEIGHTS_IN_RAM)),--weights-in-ram,--no-weights-in-ram) \
 		--no-lower --omit-final-softmax
 	@touch $(GEN_DIR)/.embed_stamp
 

@@ -42,7 +42,7 @@ extern "C" {
 #define NK_MAX_PATH_LEN    256
 #define NK_MAX_MESSAGE_LEN 128
 
-#define NK_ARENA_STORAGE_BYTES 32
+#define NK_ARENA_STORAGE_BYTES 64
 #define NK_MODEL_STORAGE_BYTES 96
 #define NK_MLP_STORAGE_BYTES   16
 #define NK_CNN_STORAGE_BYTES   16
@@ -191,7 +191,7 @@ typedef struct nk_inspect_info
     size_t arena_bytes_after_load;
     size_t arena_bytes_after_forward;
     size_t arena_remaining;
-    /** When NETKIT_WEIGHTS_IN_RAM=0: weight+bias payload kept in flash (not in arena peaks). */
+    /** Weight+bias payload kept in flash/blob (not in arena peaks). */
     size_t flash_payload_bytes;
 } nk_inspect_info_t;
 
@@ -498,7 +498,7 @@ nk_status_t nk_mlp_load(const char* nk_path,
                         nk_arena_t* arena,
                         nk_mlp_t* mlp,
                         nk_arch_info_t* info);
-/** Load embedded MLP `.nk` bytes. When NETKIT_WEIGHTS_IN_RAM=0, `data` must outlive the network. */
+/** Load embedded MLP `.nk` bytes. `data` must outlive the network (flash/blob-backed weights). */
 nk_status_t nk_mlp_load_memory(const uint8_t* data,
                                size_t size,
                                nk_arena_t* arena,
@@ -510,7 +510,7 @@ nk_status_t nk_cnn_load(const char* nk_path,
                         nk_arena_t* arena,
                         nk_cnn_t* cnn,
                         nk_arch_info_t* info);
-/** Load embedded CNN `.nk` bytes. When NETKIT_WEIGHTS_IN_RAM=0, `data` must outlive the network. */
+/** Load embedded CNN `.nk` bytes. `data` must outlive the network (flash/blob-backed weights). */
 nk_status_t nk_cnn_load_memory(const uint8_t* data,
                                size_t size,
                                nk_arena_t* arena,
@@ -527,7 +527,7 @@ nk_status_t nk_model_load_auto(const char* nk_path,
 
 /* High-level loaded model handle (combines MLP or CNN for inference) */
 nk_status_t nk_model_load(const char* nk_path, nk_arena_t* arena, nk_model_t* model);
-/** Load embedded .nk bytes. When NETKIT_WEIGHTS_IN_RAM=0, `data` must outlive the model (flash .rodata). */
+/** Load embedded .nk bytes. `data` must outlive the model (flash .rodata / blob-backed weights). */
 nk_status_t nk_model_load_memory(const uint8_t* data,
                                  size_t size,
                                  nk_arena_t* arena,

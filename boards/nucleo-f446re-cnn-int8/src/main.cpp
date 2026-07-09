@@ -95,8 +95,7 @@ extern "C" int main(void)
                 aot::kQuantLowered ? ", quant lowered AOT" : ", .nk loader");
     uart_printf("  weights:     %s\r\n",
                 aot::kQuantLowered ? "flash (static .rodata)"
-                                   : (NETKIT_WEIGHTS_IN_RAM ? "ram (arena copy at load)"
-                                                            : "flash (embedded .nk blob)"));
+                                   : "flash (embedded .nk blob)");
     uart_write("  dtype:       int8 end-to-end (weights, activations, inputs; logits out)\r\n");
     uart_write("  classify:    argmax(logits) — final Softmax omitted\r\n");
     uart_printf("  images:      %d per run\r\n", kImageCount);

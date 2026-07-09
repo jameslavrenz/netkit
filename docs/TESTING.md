@@ -126,7 +126,7 @@ All C++ regression paths use an arena; only the **backing buffer size** varies:
 |---------|--------|------------|--------|
 | Hand tests | `src/nk_regression.cpp` | **64 KiB** | hand `.nk` models |
 | MNIST MLP | `src/nk_regression.cpp` | **2 MiB** | `mnist_mlp.nk` |
-| MNIST CNN | `src/nk_regression.cpp` | **4 MiB** | `mnist_cnn.nk` |
+| MNIST CNN | `src/nk_regression.cpp` | **64 MiB** heap default | `mnist_cnn.nk` |
 | C API smoke / unit tests | `tests/test_c_api.c` | **64 KiB** | hand models + parse/load smoke |
 | CLI `run` / `inspect` | `src/cli.cpp` | model-sized heap (cpu default) | all models |
 

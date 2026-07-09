@@ -57,9 +57,7 @@ extern "C" int main(void)
 
     uart_write("\r\nnetkit NUCLEO-F446RE MNIST MLP benchmark\r\n");
     uart_printf("  backend:     " NK_BACKEND_LABEL " (MCU CM4, lowered AOT)\r\n");
-    uart_printf("  weights:     %s\r\n",
-                NETKIT_WEIGHTS_IN_RAM ? "ram (arena copy at load)"
-                                      : "flash (embedded coef arrays)");
+    uart_printf("  weights:     flash (embedded coef arrays)\r\n");
     uart_printf("  images:      %d per run\r\n", kImageCount);
     uart_printf("  runs:        %d (discard first invoke each run)\r\n", kRuns);
     uart_printf("  arena bytes: %u\r\n", static_cast<unsigned>(aot::kArenaBytesRecommended));

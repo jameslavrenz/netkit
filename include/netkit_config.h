@@ -7,7 +7,7 @@
  *   NETKIT_TARGET_MPU  — lean embedded runtime (.nk load + inference only)
  *
  * Arena static defaults (NK_ARENA_DEFAULT_CAPACITY / Arena::kDefaultCapacity):
- *   CPU — 4 MiB   MCU — 64 KiB   MPU — 128 KiB
+ *   MCU — 64 KiB   CPU and MPU — 64 MiB
  *
  * Arena backing (override via Makefile):
  *   CPU default  — one heap malloc per session; free when session ends (CLI command or test suite).
@@ -15,11 +15,11 @@
  *   MCU / MPU default — caller-owned static/global buffer via nk_arena_init().
  *                       NETKIT_HEAP_ARENA=1 allows one init_heap() at startup; never freed.
  *
- * Optional weight storage (Makefile / CMake):
- *   NETKIT_WEIGHTS_IN_RAM — when 1 (opt-in), buffer/AOT/file load copies weight and bias
- *     payload into the arena (SRAM). When 0 (default), weights stay in the .nk blob
- *     (flash/XIP or a single arena/file-backed blob); arena holds activations and structs.
- *     Override with NETKIT_WEIGHTS_IN_RAM=0|1.
+ * Weights always stay in the .nk blob; the arena holds activations and structs.
+ *   Preferred on MCU and RTOS/bare-metal MPU: flash/XIP or Load*FromBuffer (bind views).
+ *   Optional POSIX mmap file load (NETKIT_USE_MMAP / Makefile NETKIT_MMAP):
+ *     Default ON for CPU (macOS/Linux), OFF for MCU and MPU (RTOS-first).
+ *     Opt in on embedded Linux MPU with NETKIT_MMAP=1. Arena owns the mapping.
  *
  * Optional kernel backends (Makefile / CMake — explicit NETKIT_CMSIS_*=1, profile defaults per target):
  *   NETKIT_USE_CMSIS_NN  — when NETKIT_CMSIS_NN=1 on MCU + Cortex-M NETKIT_ARCH
@@ -79,21 +79,10 @@
 #endif
 
 /* Static arena default for examples and NK_ARENA_DEFAULT_CAPACITY. */
-#if defined(NETKIT_TARGET_MPU)
-#define NK_ARENA_DEFAULT_CAPACITY (128U * 1024U)
-#elif defined(NETKIT_TARGET_MCU)
+#if defined(NETKIT_TARGET_MCU)
 #define NK_ARENA_DEFAULT_CAPACITY (64U * 1024U)
 #else
-#define NK_ARENA_DEFAULT_CAPACITY (4U * 1024U * 1024U)
-#endif
-
-/* Weight load policy: copy into arena (SRAM) vs use .nk blob in flash. Default: flash-backed. */
-#ifndef NETKIT_WEIGHTS_IN_RAM
-#define NETKIT_WEIGHTS_IN_RAM 0
-#endif
-
-#if NETKIT_WEIGHTS_IN_RAM != 0 && NETKIT_WEIGHTS_IN_RAM != 1
-#error "NETKIT_WEIGHTS_IN_RAM must be 0 or 1"
+#define NK_ARENA_DEFAULT_CAPACITY (64U * 1024U * 1024U) /* CPU and MPU */
 #endif
 
 /*
@@ -142,6 +131,25 @@
 #define NETKIT_XNNPACK_ALLOWED 1
 #else
 #define NETKIT_XNNPACK_ALLOWED 0
+#endif
+
+/*
+ * POSIX mmap for .nk file loads (macOS/Linux only at compile time).
+ * Default: CPU on, MCU/MPU off (MPU often means RTOS/bare metal without mmap).
+ * Override with -DNETKIT_USE_MMAP=0|1 or Makefile NETKIT_MMAP=0|1.
+ * When off or unavailable, file load falls back to fread into the arena;
+ * buffer/AOT load is unchanged (preferred for RTOS/firmware).
+ */
+#ifndef NETKIT_USE_MMAP
+#if defined(NETKIT_TARGET_CPU) && (defined(__APPLE__) || defined(__linux__))
+#define NETKIT_USE_MMAP 1
+#else
+#define NETKIT_USE_MMAP 0
+#endif
+#endif
+
+#if NETKIT_USE_MMAP != 0 && NETKIT_USE_MMAP != 1
+#error "NETKIT_USE_MMAP must be 0 or 1"
 #endif
 
 #endif /* NETKIT_CONFIG_H */

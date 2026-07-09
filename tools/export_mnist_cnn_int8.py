@@ -77,14 +77,14 @@ def _select_digit_cases_fast(
         label = int(y_test[i])
         if pred != label or label in used_digits:
             continue
-        # TCAS stores floats; embed prequantized int8 as float values in [-128, 127].
+        # Native int8 TCAS inputs (quantized in Python; C++ never float→int8).
         input_i8 = quantize_float_input(
             x_test[i].reshape(-1), pack.quant_layers[0].input_scale, pack.quant_layers[0].input_zero_point
         )
         cases.append(
             RegressionCase(
                 name=name_fmt.format(digit=label, i=i),
-                input=input_i8.astype(np.float32),
+                input=input_i8.astype(np.int8),
                 expected=probs,
                 label=label,
             )

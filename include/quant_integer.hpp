@@ -92,14 +92,17 @@ inline void QuantClampRange(QuantClamp clamp,
     *act_max = 127;
     if (clamp == QuantClamp::None)
         return;
+
+    // Quantized real 0.0 — for asymmetric ReLU (zp=-128) this is -128, not 0.
+    const int32_t q0 = std::clamp(output_zero_point, int32_t{-128}, int32_t{127});
     if (clamp == QuantClamp::ReLU)
     {
-        *act_min = 0;
+        *act_min = q0;
         *act_max = 127;
         return;
     }
-    // ReLU6: clamp to [0, quantize(6.0)]
-    *act_min = 0;
+    // ReLU6: clamp to [quantize(0), quantize(6.0)]
+    *act_min = q0;
     if (output_scale <= 0.0f)
     {
         *act_max = 127;
@@ -108,7 +111,7 @@ inline void QuantClampRange(QuantClamp clamp,
     const int32_t q6 =
         static_cast<int32_t>(std::llround(6.0 / static_cast<double>(output_scale))) +
         output_zero_point;
-    *act_max = std::clamp(q6, int32_t{0}, int32_t{127});
+    *act_max = std::clamp(q6, q0, int32_t{127});
 }
 
 // int32 accumulator → int8 via (input_scale * weight_scale / output_scale).

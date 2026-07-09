@@ -35,6 +35,9 @@ struct Conv2DPlan
     float input_scale = 1.0f;
     float weight_scale = 1.0f;
     float output_scale = 1.0f;
+    // Optional TFLite-style per-output-channel weight scales (points into arena).
+    const float* weight_channel_scales = nullptr;
+    uint32_t num_weight_channel_scales = 0;
     int32_t in_h = 0;
     int32_t in_w = 0;
     int32_t in_c = 0;
@@ -62,6 +65,9 @@ struct DepthwiseConv2DPlan
     float input_scale = 1.0f;
     float weight_scale = 1.0f;
     float output_scale = 1.0f;
+    // Optional TFLite-style per-output-channel weight scales (points into arena).
+    const float* weight_channel_scales = nullptr;
+    uint32_t num_weight_channel_scales = 0;
     int32_t in_h = 0;
     int32_t in_w = 0;
     int32_t channels = 0;
@@ -148,10 +154,16 @@ struct FcPlan
     float input_scale = 1.0f;
     float weight_scale = 1.0f;
     float output_scale = 1.0f;
+    const float* weight_channel_scales = nullptr;
+    uint32_t num_weight_channel_scales = 0;
     int32_t in_features = 0;
     int32_t out_features = 0;
+    // Per-tensor fallback (also first channel when per-channel arrays are set).
     int32_t multiplier = 0;
     int32_t shift = 0;
+    // Per-output-channel requant (TFLite-style); length == out_features when set.
+    int32_t* multipliers = nullptr;
+    int32_t* shifts = nullptr;
     int32_t workspace_bytes = 0;
     int32_t* kernel_sums = nullptr;
 #if NETKIT_CMSIS_PLAN_HOIST

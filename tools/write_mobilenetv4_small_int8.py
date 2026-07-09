@@ -34,13 +34,13 @@ def main() -> None:
     for case in suite.cases:
         inp = np.asarray(case.input, dtype=np.float32)
         out_f = forward_quantized_cnn(inp, arch, pack, output_float=True)
-        # TCAS stores floats; embed prequantized int8 as float values in [-128, 127].
+        # Native int8 TCAS inputs (quantized in Python; C++ never float→int8).
         input_i8 = quantize_float_input(inp.reshape(-1), input_scale, input_zp)
         int8_cases.append(
             RegressionCase(
                 name=case.name + " (int8)",
-                input=input_i8.astype(np.float32).tolist(),
-                expected=out_f.astype(np.float32).tolist(),
+                input=input_i8.astype(np.int8),
+                expected=out_f.astype(np.float32),
             )
         )
 

@@ -19,6 +19,7 @@ from netkit.reference_forward import forward_cnn, forward_mlp
 ROOT = Path(__file__).resolve().parents[2]
 MODELS = ROOT / "models"
 LIB = ROOT / "libnetkit.a"
+XNNPACK_LIB_DIR = ROOT / "third_party" / "XNNPACK" / "netkit_lib"
 
 AOT_MODELS = [
     "test_mlp.nk",
@@ -36,6 +37,41 @@ def _require_tool(name: str) -> None:
 def _require_lib() -> None:
     if not LIB.is_file():
         raise unittest.SkipTest("libnetkit.a missing — run `make lib` first")
+
+
+def _lib_needs_xnnpack() -> bool:
+    """True when libnetkit.a was built with NETKIT_USE_XNNPACK=1."""
+    try:
+        proc = subprocess.run(
+            ["nm", "-gU", str(LIB)],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return False
+    return "XnnpackKernel" in proc.stdout or "XnnpackQuant" in proc.stdout
+
+
+def _xnnpack_link_args() -> list[str]:
+    if not _lib_needs_xnnpack():
+        return []
+    xnn = XNNPACK_LIB_DIR / "libXNNPACK.a"
+    if not xnn.is_file():
+        raise unittest.SkipTest(
+            "libnetkit.a needs XNNPACK but third_party/XNNPACK/netkit_lib is missing"
+        )
+    args = [f"-Wl,-force_load,{xnn}", f"-L{XNNPACK_LIB_DIR}"]
+    for name in (
+        "xnnpack-microkernels-prod",
+        "kleidiai",
+        "pthreadpool",
+        "cpuinfo",
+    ):
+        if (XNNPACK_LIB_DIR / f"lib{name}.a").is_file():
+            args.append(f"-l{name}")
+    args.extend(["-lpthread", "-lc++"])
+    return args
 
 
 def _reference_output(arch: dict, weights: np.ndarray, flat_input: np.ndarray) -> np.ndarray:
@@ -135,7 +171,16 @@ def _compile_and_run_cpp(
         text=True,
     )
     subprocess.run(
-        ["clang++", *cppflags, str(harness), str(tmp / "aot.o"), str(LIB), "-o", str(binary)],
+        [
+            "clang++",
+            *cppflags,
+            str(harness),
+            str(tmp / "aot.o"),
+            str(LIB),
+            *_xnnpack_link_args(),
+            "-o",
+            str(binary),
+        ],
         cwd=tmp,
         check=True,
         capture_output=True,
@@ -187,6 +232,7 @@ def _compile_and_run_c(tmp: Path, source: Path, harness: Path, binary: Path) -> 
             str(tmp / "aot.o"),
             str(tmp / "harness.o"),
             str(LIB),
+            *_xnnpack_link_args(),
             "-o",
             str(binary),
         ],
@@ -255,30 +301,22 @@ class TestAotCompile(unittest.TestCase):
             self.assertIn("Kernels::FullyConnectedWithBias", cpp_source)
             self.assertNotIn("LoadMLPFromBuffer", cpp_source)
 
-    def test_aot_mcu_flash_arena_smaller_than_ram_copy(self) -> None:
+    def test_aot_mcu_flash_arena_reports_payload(self) -> None:
         nk_path = MODELS / "mlp_hand.nk"
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp = Path(tmpdir)
-            ram = compile_aot(
-                nk_path, tmp / "ram", language=AotLanguage.CPP, weights_in_ram=True, lower=False
-            )
             flash = compile_aot(
                 nk_path,
                 tmp / "flash",
                 language=AotLanguage.CPP,
-                weights_in_ram=False,
                 lower=False,
             )
             header = unpack_header(Path(nk_path).read_bytes()[:HEADER_BYTES])
             payload_bytes = weight_payload_bytes(header)
             self.assertGreater(payload_bytes, 0)
-            self.assertLess(flash.arena_bytes_after_load, ram.arena_bytes_after_load)
-            self.assertLess(flash.arena_bytes_after_forward, ram.arena_bytes_after_forward)
-            self.assertLess(flash.arena_bytes_recommended, ram.arena_bytes_recommended)
-            self.assertGreaterEqual(
-                ram.arena_bytes_after_load - flash.arena_bytes_after_load,
-                payload_bytes // 2,
-            )
+            self.assertGreater(flash.arena_bytes_after_forward, 0)
+            self.assertGreaterEqual(flash.arena_bytes_recommended, flash.arena_bytes_after_forward)
+            self.assertEqual(flash.arena_bytes_recommended % 64, 0)
 
     def test_aot_runtime_matches_reference(self) -> None:
         for model_file in AOT_MODELS:

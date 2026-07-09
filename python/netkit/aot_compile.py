@@ -166,15 +166,12 @@ def _estimate_arena_bytes(
     input_elements: int,
     output_elements: int,
     *,
-    weights_in_ram: bool,
     payload_bytes: int,
     network: str = "mlp",
     quantized: bool = False,
 ) -> tuple[int, int]:
     """Conservative fallback when ./netkit inspect is unavailable."""
-    if weights_in_ram:
-        weight_guess = max(nk_bytes, input_elements * 4 + output_elements * 4)
-    elif quantized:
+    if quantized:
         # Flash-backed int8: loader metadata only (coefs stay in .nk blob).
         weight_guess = max(10240, input_elements * 4 + output_elements * 4)
     else:
@@ -191,7 +188,7 @@ def _estimate_arena_bytes(
             cnn_floor = weight_guess + act_slot + 48 * 1024 + 8192
         else:
             # CNN load allocates graph structs and ping-pong activations — often >> .nk file size.
-            weight_bytes = payload_bytes if weights_in_ram else max(0, nk_bytes - payload_bytes)
+            weight_bytes = max(0, nk_bytes - payload_bytes)
             cnn_floor = weight_bytes + nk_bytes * 4 + input_elements * 64
         after_load = max(after_load, cnn_floor)
         after_forward = max(after_forward, after_load)
@@ -204,10 +201,9 @@ def _adjust_arena_for_flash(
     after_forward: int,
     payload_bytes: int,
     *,
-    weights_in_ram: bool,
     quantized: bool = False,
 ) -> tuple[int, int]:
-    if weights_in_ram or payload_bytes <= 0 or quantized:
+    if payload_bytes <= 0 or quantized:
         return after_load, after_forward
     return max(0, after_load - payload_bytes), max(0, after_forward - payload_bytes)
 
@@ -232,9 +228,9 @@ def _probe_arena_bytes(nk_path: Path) -> tuple[int, int]:
     return int(load_match.group(1)), int(forward_match.group(1))
 
 
-def _cmsis_s8_workspace_slack(*, network: str, quantized: bool, weights_in_ram: bool) -> int:
+def _cmsis_s8_workspace_slack(*, network: str, quantized: bool) -> int:
     """Host arena probe omits MCU CMSIS S8 kernel_workspace_ — add slack for flash builds."""
-    if not quantized or network != "cnn" or weights_in_ram:
+    if not quantized or network != "cnn":
         return 0
     return 48 * 1024
 
@@ -246,7 +242,6 @@ def _resolve_arena_bytes(
     output_elements: int,
     *,
     headroom_percent: int,
-    weights_in_ram: bool,
     payload_bytes: int,
     network: str = "mlp",
     quantized: bool = False,
@@ -258,7 +253,6 @@ def _resolve_arena_bytes(
             nk_bytes,
             input_elements,
             output_elements,
-            weights_in_ram=weights_in_ram,
             payload_bytes=payload_bytes,
             network=network,
             quantized=quantized,
@@ -267,15 +261,10 @@ def _resolve_arena_bytes(
             after_load,
             after_forward,
             payload_bytes,
-            weights_in_ram=weights_in_ram,
             quantized=quantized,
         )
-    elif weights_in_ram and payload_bytes > 0:
-        # Host inspect probes flash-backed load (NETKIT_WEIGHTS_IN_RAM=0); add payload for SRAM copy.
-        after_load += payload_bytes
-        after_forward += payload_bytes
     workspace_slack = 0 if quantized else _cmsis_s8_workspace_slack(
-        network=network, quantized=quantized, weights_in_ram=weights_in_ram
+        network=network, quantized=quantized
     )
     after_load += workspace_slack
     after_forward += workspace_slack
@@ -294,7 +283,6 @@ def compile_aot(
     optimize_options: OptimizeOptions | None = None,
     arena_headroom_percent: int = 12,
     flash_section: bool = True,
-    weights_in_ram: bool = False,
     lower: bool = True,
     omit_final_softmax: bool = False,
 ) -> AotCompileResult:
@@ -307,7 +295,7 @@ def compile_aot(
 
     Emits measured arena sizing constants for MCU firmware (static buffer allocation).
     When ``./netkit inspect --full`` is available, arena bytes come from a probe load +
-    zero-input forward (already flash-backed when ``weights_in_ram=False``). Otherwise a
+    zero-input forward (flash-backed weights). Otherwise a
     conservative estimate is used and ``weights_bytes + biases_bytes`` are subtracted
     when coefs stay in the embedded blob.
 
@@ -367,7 +355,6 @@ def compile_aot(
         plan = plan_lowered(
             arch,
             weights,
-            weights_in_ram=weights_in_ram,
             omit_final_softmax=omit_final_softmax,
         )
         after_load = plan.arena_after_load
@@ -383,7 +370,6 @@ def compile_aot(
             input_elements,
             output_elements,
             headroom_percent=arena_headroom_percent,
-            weights_in_ram=weights_in_ram,
             payload_bytes=payload_bytes,
             network=network,
             quantized=quantized,
@@ -445,7 +431,6 @@ def compile_aot(
                     plan,
                     include_main,
                     flash_section,
-                    weights_in_ram=weights_in_ram,
                 ),
                 encoding="utf-8",
             )

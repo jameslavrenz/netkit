@@ -228,6 +228,7 @@ int RunBenchmark(const char* model_path)
         NETKIT_BENCH_BACKEND, correct, num_images, top1, first_pass_mean, warm_median, warm_mean,
         cold_us, samples.size());
 
+    NkLoader::FreeParsedModelExtras(parsed);
     return 0;
 }
 

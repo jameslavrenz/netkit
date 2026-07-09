@@ -57,14 +57,25 @@ namespace QuantOps
         QuantTrace::RecordFcReference();
 
         // Int8→int8 only: integer multiply-by-quantized-multiplier (no float requantize/dequant).
+        const bool per_channel =
+            quant.weight_channel_scales != nullptr &&
+            quant.num_weight_channel_scales == out_features;
+
         int32_t multiplier = 0;
         int32_t shift = 0;
-        if (!output_int8 ||
-            !QuantInteger::EffectiveScaleMultiplier(quant.input_scale,
-                                                    quant.weight_scale,
-                                                    quant.output_scale,
-                                                    &multiplier,
-                                                    &shift))
+        if (!per_channel)
+        {
+            if (!output_int8 ||
+                !QuantInteger::EffectiveScaleMultiplier(quant.input_scale,
+                                                        quant.weight_scale,
+                                                        quant.output_scale,
+                                                        &multiplier,
+                                                        &shift))
+            {
+                return;
+            }
+        }
+        else if (!output_int8)
         {
             return;
         }
@@ -83,8 +94,21 @@ namespace QuantOps
                     acc += in_val * wt_val;
                 }
 
+                int32_t m = multiplier;
+                int32_t s = shift;
+                if (per_channel)
+                {
+                    if (!QuantInteger::EffectiveScaleMultiplier(quant.input_scale,
+                                                                quant.weight_channel_scales[oc],
+                                                                quant.output_scale,
+                                                                &m,
+                                                                &s))
+                    {
+                        return;
+                    }
+                }
                 output_int8[b * out_features + oc] = QuantInteger::RequantizeAccToInt8(
-                    acc, multiplier, shift, quant.output_zero_point, clamp, quant.output_scale);
+                    acc, m, s, quant.output_zero_point, clamp, quant.output_scale);
             }
         }
     }
@@ -215,7 +239,11 @@ namespace QuantOps
 
             int32_t multiplier = 0;
             int32_t shift = 0;
-            if (!QuantInteger::EffectiveScaleMultiplier(quant.input_scale,
+            const bool per_channel =
+                quant.weight_channel_scales != nullptr &&
+                quant.num_weight_channel_scales == static_cast<uint32_t>(out_channels);
+            if (!per_channel &&
+                !QuantInteger::EffectiveScaleMultiplier(quant.input_scale,
                                                         quant.weight_scale,
                                                         quant.output_scale,
                                                         &multiplier,
@@ -268,10 +296,24 @@ namespace QuantOps
                             }
                         }
 
+                        int32_t m = multiplier;
+                        int32_t s = shift;
+                        if (per_channel)
+                        {
+                            if (!QuantInteger::EffectiveScaleMultiplier(
+                                    quant.input_scale,
+                                    quant.weight_channel_scales[oc],
+                                    quant.output_scale,
+                                    &m,
+                                    &s))
+                            {
+                                return;
+                            }
+                        }
                         output[out_spatial_base + static_cast<uint32_t>(oc)] =
                             QuantInteger::RequantizeAccToInt8(acc,
-                                                              multiplier,
-                                                              shift,
+                                                              m,
+                                                              s,
                                                               quant.output_zero_point,
                                                               clamp,
                                                               quant.output_scale);
@@ -371,7 +413,11 @@ namespace QuantOps
 
         int32_t multiplier = 0;
         int32_t shift = 0;
-        if (!QuantInteger::EffectiveScaleMultiplier(quant.input_scale,
+        const bool per_channel =
+            quant.weight_channel_scales != nullptr &&
+            quant.num_weight_channel_scales == channels;
+        if (!per_channel &&
+            !QuantInteger::EffectiveScaleMultiplier(quant.input_scale,
                                                     quant.weight_scale,
                                                     quant.output_scale,
                                                     &multiplier,
@@ -418,8 +464,22 @@ namespace QuantOps
                         }
                     }
 
+                    int32_t m = multiplier;
+                    int32_t s = shift;
+                    if (per_channel)
+                    {
+                        if (!QuantInteger::EffectiveScaleMultiplier(
+                                quant.input_scale,
+                                quant.weight_channel_scales[c],
+                                quant.output_scale,
+                                &m,
+                                &s))
+                        {
+                            return;
+                        }
+                    }
                     output[out_spatial_base + c] = QuantInteger::RequantizeAccToInt8(
-                        acc, multiplier, shift, quant.output_zero_point, clamp, quant.output_scale);
+                        acc, m, s, quant.output_zero_point, clamp, quant.output_scale);
                 }
             }
         }
@@ -543,11 +603,14 @@ namespace QuantOps
             return;
         }
 #endif
-        // Integer path matching CMSIS-NN / TFLite elementwise_add_s8.
+        // Integer path matching TFLite / CMSIS-NN elementwise_add_s8:
+        //   twice_max = 2 * max(s1, s2)
+        //   in_mult  = s_i / twice_max
+        //   out_mult = twice_max / ((1 << left_shift) * s_out)
         constexpr int32_t kLeftShift = 20;
-        const double max_input_scale =
-            std::max(static_cast<double>(input1_scale), static_cast<double>(input2_scale));
-        if (max_input_scale <= 0.0 || output_scale <= 0.0f)
+        const double twice_max_input_scale =
+            2.0 * std::max(static_cast<double>(input1_scale), static_cast<double>(input2_scale));
+        if (twice_max_input_scale <= 0.0 || output_scale <= 0.0f)
             return;
 
         int32_t input1_mult = 0;
@@ -556,15 +619,16 @@ namespace QuantOps
         int32_t input2_shift = 0;
         int32_t output_mult = 0;
         int32_t output_shift = 0;
-        QuantInteger::QuantizeMultiplier(static_cast<double>(input1_scale) / max_input_scale,
+        QuantInteger::QuantizeMultiplier(static_cast<double>(input1_scale) / twice_max_input_scale,
                                          &input1_mult,
                                          &input1_shift);
-        QuantInteger::QuantizeMultiplier(static_cast<double>(input2_scale) / max_input_scale,
+        QuantInteger::QuantizeMultiplier(static_cast<double>(input2_scale) / twice_max_input_scale,
                                          &input2_mult,
                                          &input2_shift);
-        QuantInteger::QuantizeMultiplier(max_input_scale / static_cast<double>(output_scale),
-                                         &output_mult,
-                                         &output_shift);
+        QuantInteger::QuantizeMultiplier(
+            twice_max_input_scale / ((1LL << kLeftShift) * static_cast<double>(output_scale)),
+            &output_mult,
+            &output_shift);
 
         for (uint32_t i = 0; i < count; ++i)
         {

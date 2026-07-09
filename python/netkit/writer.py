@@ -11,6 +11,7 @@ from .pad_encoding import encode_pad_extra, encode_pool_reserved
 from .format import (
     FLAG_HAS_TESTS,
     FLAG_HAS_QUANT,
+    FLAG_HAS_INT8_TESTS,
     Activation,
     DType,
     NetworkKind,
@@ -76,12 +77,17 @@ class QuantLayerParams:
     bias_zero_point: int
     output_scale: float
     output_zero_point: int
+    # Optional per-output-channel weight scales (TFLite-style). When set with
+    # len > 1, pack_quant_section emits QUAN_FLAG_PER_CHANNEL_WEIGHTS. bias_scale
+    # is then a fallback; runtime uses input_scale * weight_scales[c].
+    weight_scales: list[float] | np.ndarray | None = None
 
 
 @dataclass
 class RegressionCase:
     name: str
-    input: list[float] | np.ndarray
+    # Float models: float32. Quantized models: native int8 (prequantized in Python).
+    input: list[float] | list[int] | np.ndarray
     expected: list[float] | np.ndarray
     label: int = -1
 
@@ -139,6 +145,8 @@ def write_nk_bytes(spec: ModelSpec) -> bytes:
     flags = 0
     if spec.tests and spec.tests.cases:
         flags |= FLAG_HAS_TESTS
+        if quantized:
+            flags |= FLAG_HAS_INT8_TESTS
     if quantized:
         flags |= FLAG_HAS_QUANT
 
@@ -284,6 +292,10 @@ def write_nk_bytes(spec: ModelSpec) -> bytes:
     align_pad = payload_alignment_padding(len(meta))
     body = meta + (b"\x00" * align_pad) + weights_blob + biases_blob
     if spec.tests and spec.tests.cases:
-        body += pack_test_section(tolerance=spec.tests.tolerance, cases=spec.tests.cases)
+        body += pack_test_section(
+            tolerance=spec.tests.tolerance,
+            cases=spec.tests.cases,
+            input_dtype=np.int8 if quantized else np.float32,
+        )
 
     return body

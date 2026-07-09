@@ -20,7 +20,7 @@ Headers live in [`include/`](../include/). Configuration: [`include/netkit_confi
 | `NETKIT_GLOBAL_ARENA=1` | `NETKIT_GLOBAL_ARENA` | Static buffer on CPU |
 | `NETKIT_HEAP_ARENA=1` (MCU/MPU) | `NETKIT_ARENA_HEAP` | Optional heap on embedded |
 
-`Arena::kDefaultCapacity` / `NK_ARENA_DEFAULT_CAPACITY`: **4 MiB** (CPU), **64 KiB** (MCU), **128 KiB** (MPU).
+`Arena::kDefaultCapacity` / `NK_ARENA_DEFAULT_CAPACITY`: **64 KiB** (MCU), **64 MiB** (CPU and MPU).
 
 See [BUILD_TARGETS.md](BUILD_TARGETS.md).
 
@@ -53,7 +53,7 @@ See [ARENA.md](ARENA.md) for the full bump-allocator guide.
 
 ```cpp
 struct Arena {
-    // kDefaultCapacity: 4 MiB (CPU), 64 KiB (MCU), 128 KiB (MPU) — see netkit_config.h
+    // kDefaultCapacity: 64 KiB (MCU), 64 MiB (CPU/MPU) — see netkit_config.h
 
     void init(void* memory, std::size_t size);
     void* alloc(std::size_t size, std::size_t alignment);  // alignment: power of two
@@ -425,6 +425,9 @@ void PrintNetworkSummary(const char* nk_path, const ParsedModel& model);
 
 LoadResult LoadMLP(const char* nk_path, Arena& arena, MLPNetwork*& network,
                    std::array<uint32_t, kMaxTensorRank>& input_shape, uint32_t& input_rank);
+// When NETKIT_USE_MMAP=1 (CPU default on macOS/Linux; opt-in on Linux MPU):
+//   mmap MAP_PRIVATE; arena owns mapping until reset/destroy.
+// Otherwise: fread into arena. Prefer Load*FromBuffer / flash on MCU and RTOS MPU.
 
 LoadResult LoadMLPFromBuffer(const uint8_t* data, std::size_t size, Arena& arena, MLPNetwork*& network,
                              std::array<uint32_t, kMaxTensorRank>& input_shape, uint32_t& input_rank);
@@ -445,7 +448,7 @@ LoadResult Load(const char* nk_path, Arena& arena, NetworkKind& kind,
 
 **High-level C++ usage** loads with `Load` / `LoadMLP` / `LoadCNN` (file) or `LoadMLPFromBuffer` / `LoadCNNFromBuffer` (embedded `.nk` bytes) and calls `forward` directly — the **interpreter path** via `NkOpsResolver`. The C API adds `nk_model_t` + `nk_model_run` as a convenience wrapper, plus typed `nk_mlp_load_memory` / `nk_cnn_load_memory` — see [c-api.md](c-api.md).
 
-**Compiled firmware:** `python -m netkit aot` generates C++26 or C23 sources. Default **C++ lowered** output is a static `Kernels::` call chain (`kLowered = true`) with optional `--weights-in-ram` (arena copy at load) or `--no-weights-in-ram` (MCU flash default). **C AOT** embeds the `.nk` blob and uses `nk_model_load_memory`. See [GETTING_STARTED.md](GETTING_STARTED.md#5-aot-compile-embed-nk-in-firmware), [API_PARITY.md](API_PARITY.md), and [PHILOSOPHY.md](PHILOSOPHY.md#deployment-modes-interpreter-or-compiled).
+**Compiled firmware:** `python -m netkit aot` generates C++26 or C23 sources. Default **C++ lowered** output is a static `Kernels::` call chain (`kLowered = true`) with coefs in flash `.rodata`. **C AOT** embeds the `.nk` blob and uses `nk_model_load_memory`. See [GETTING_STARTED.md](GETTING_STARTED.md#5-aot-compile-embed-nk-in-firmware), [API_PARITY.md](API_PARITY.md), and [PHILOSOPHY.md](PHILOSOPHY.md#deployment-modes-interpreter-or-compiled).
 
 **Format** — full binary layout in [NK_FILE_SPECIFICATION.md](NK_FILE_SPECIFICATION.md) (byte-level) and [NK_FORMAT.md](NK_FORMAT.md) (overview). Convert ONNX with `python -m netkit convert`.
 

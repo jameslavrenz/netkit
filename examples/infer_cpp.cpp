@@ -67,8 +67,12 @@ int main(int argc, char** argv)
     for (int i = 0; i < input_arg_count; ++i)
         input_buffer[i] = std::strtof(argv[i + 2], nullptr);
 
+#if defined(NETKIT_ARENA_HEAP)
+    ArenaUtil::Scoped arena_scope(Arena::kDefaultCapacity);
+#else
     alignas(std::max_align_t) static unsigned char arena_memory[Arena::kDefaultCapacity];
     ArenaUtil::Scoped arena_scope(Arena::kDefaultCapacity, arena_memory);
+#endif
     if (!arena_scope)
     {
         std::cerr << "arena init failed\n";

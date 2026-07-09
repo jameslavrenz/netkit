@@ -25,9 +25,9 @@ Set the deployment target when building or integrating netkit:
 | `NETKIT_GLOBAL_ARENA=1` (CPU) | `NETKIT_GLOBAL_ARENA` | Static arena only on CPU; no heap helpers |
 | `NETKIT_HEAP_ARENA=1` (MCU/MPU) | `NETKIT_HEAP_ARENA` → `NETKIT_ARENA_HEAP` | Optional heap API on embedded |
 
-| `NK_ARENA_DEFAULT_CAPACITY` | CPU | MCU | MPU |
-|-----------------------------|-----|-----|-----|
-| Value | **4 MiB** | **64 KiB** | **128 KiB** |
+| `NK_ARENA_DEFAULT_CAPACITY` | MCU | CPU / MPU |
+|-----------------------------|-----|-----------|
+| Value | **64 KiB** | **64 MiB** |
 
 Full guide: [BUILD_TARGETS.md](BUILD_TARGETS.md).
 
@@ -68,8 +68,8 @@ const char* nk_version_string(void);  // "0.1.0"
 | `NK_MAX_LAYERS` | 100 | Max layers in `.nk` files (matches `NkFormat::kMaxLayers`) |
 | `NK_MAX_PATH_LEN` | 256 | Path buffer size used internally |
 | `NK_MAX_MESSAGE_LEN` | 128 | Max length of last error message |
-| `NK_ARENA_DEFAULT_CAPACITY` | 4 MiB (CPU) / 64 KiB (MCU) / 128 KiB (MPU) | Default static arena size by build target |
-| `NK_ARENA_STORAGE_BYTES` | 32 | Size of `nk_arena_t.storage` |
+| `NK_ARENA_DEFAULT_CAPACITY` | 64 KiB (MCU) / 64 MiB (CPU, MPU) | Default static arena size by build target |
+| `NK_ARENA_STORAGE_BYTES` | 64 | Size of `nk_arena_t.storage` |
 | `NK_MODEL_STORAGE_BYTES` | 96 | Size of `nk_model_t.storage` |
 | `NK_MLP_STORAGE_BYTES` | 16 | Size of `nk_mlp_t.storage` |
 | `NK_CNN_STORAGE_BYTES` | 16 | Size of `nk_cnn_t.storage` |
@@ -192,7 +192,7 @@ typedef struct nk_inspect_info {
     size_t arena_bytes_after_load;
     size_t arena_bytes_after_forward;
     size_t arena_remaining;
-    size_t flash_payload_bytes;  /* non-zero when NETKIT_WEIGHTS_IN_RAM=0 */
+    size_t flash_payload_bytes;  /* weight+bias payload kept in flash/blob */
 } nk_inspect_info_t;
 ```
 
@@ -226,7 +226,7 @@ Returns `NULL` when the arena is uninitialized, arguments are invalid (`size == 
 
 `nk_arena_init_heap()` performs **one** `malloc` for the backing buffer; inference uses bump allocation inside it. `nk_arena_destroy_heap()` frees that buffer on **CPU only**; on MCU/MPU it is a no-op.
 
-**Sizing:** CPU examples use `NK_ARENA_DEFAULT_CAPACITY` (**4 MiB**) so MNIST-scale models fit. MCU/MPU use 64 KiB / 128 KiB. For custom firmware, use `nk_inspect_model()` and read `arena_bytes_after_forward`. When `NETKIT_WEIGHTS_IN_RAM=0` (MCU default), coefs stay in flash — use `flash_payload_bytes` plus arena peaks (see [ARENA.md](ARENA.md)).
+**Sizing:** CPU examples use `NK_ARENA_DEFAULT_CAPACITY` (**64 MiB**). MCU uses **64 KiB**. For custom firmware, use `nk_inspect_model()` and read `arena_bytes_after_forward`. Coefs stay in flash — use `flash_payload_bytes` plus arena peaks (see [ARENA.md](ARENA.md)).
 
 Model load / run APIs allocate internally with the correct alignment; you only need `nk_arena_alloc` when building custom integrations on top of the C API.
 
@@ -437,7 +437,7 @@ For **embedded** models (AOT firmware), pass the static `.nk` byte array to `nk_
 | `nk_parse_architecture_memory` | `NkLoader::ParseBuffer` + `FillArchInfo` | Parse embedded blob without a file |
 | `nk_arch_print` | `NkLoader::PrintNetworkSummary` | Boxed summary to stdout |
 | `nk_mlp_load` | `NkLoader::LoadMLP` | |
-| `nk_mlp_load_memory` | `NkLoader::LoadMLPFromBuffer` | Embedded `.nk` blob; flash lifetime when `NETKIT_WEIGHTS_IN_RAM=0` |
+| `nk_mlp_load_memory` | `NkLoader::LoadMLPFromBuffer` | Embedded `.nk` blob; `data` must outlive the network |
 | `nk_mlp_is_quantized` | `MLPNetwork::IsQuantized` | After load or manual init |
 | `nk_cnn_load` | `NkLoader::LoadCNN` | All layer kinds including composite blocks |
 | `nk_cnn_load_memory` | `NkLoader::LoadCNNFromBuffer` | Embedded `.nk` blob |
@@ -462,7 +462,7 @@ High-level combined handle:
 
 ```c
 nk_status_t nk_model_load(const char* nk_path, nk_arena_t* arena, nk_model_t* model);
-/* When NETKIT_WEIGHTS_IN_RAM=0, embedded blob must outlive the model (flash .rodata). */
+/* Embedded blob must outlive the model (flash .rodata / blob-backed weights). */
 nk_status_t nk_model_load_memory(const uint8_t* data, size_t size, nk_arena_t* arena, nk_model_t* model);
 nk_status_t nk_model_get_arch(const nk_model_t* model, nk_arch_info_t* info);
 uint32_t nk_model_input_count(const nk_model_t* model);
@@ -532,14 +532,9 @@ nk_status_t nk_inspect_model_memory(const uint8_t* data, size_t size,
                                       nk_arena_t* arena, nk_inspect_info_t* info);
 ```
 
-Loads the model, runs a zero-input forward pass, and reports arena high-water marks. Matches `./netkit inspect --full` for the active `NETKIT_WEIGHTS_IN_RAM` policy:
+Loads the model, runs a zero-input forward pass, and reports arena high-water marks. Matches `./netkit inspect --full`. Weights stay flash/blob-backed; `flash_payload_bytes` is `weights_bytes + biases_bytes`.
 
-| `NETKIT_WEIGHTS_IN_RAM` | Load path | `flash_payload_bytes` |
-|-------------------------|-----------|------------------------|
-| `0` (MCU default) | Buffer load — coefs stay in flash | `weights_bytes + biases_bytes` |
-| `1` (CPU/MPU default) | File load — coefs copied into arena | `0` |
-
-Use `arena_bytes_after_forward` to size embedded SRAM. On MCU with flash-backed weights, add `flash_payload_bytes` to flash budget (not arena). See [ARENA.md](ARENA.md).
+Use `arena_bytes_after_forward` to size embedded SRAM. Add `flash_payload_bytes` to flash budget (not arena). See [ARENA.md](ARENA.md).
 
 ## Complete examples
 

@@ -34,8 +34,8 @@ python -m netkit aot models/test_mlp.nk -o build/aot
 python -m netkit aot models/test_mlp.nk -o build/aot --no-lower          # embed .nk + loader
 python -m netkit aot models/test_mlp.nk -o build/aot --language c
 python -m netkit aot models/test_mlp.nk -o build/aot --main   # optional smoke main
-python -m netkit aot models/mlp_hand.nk -o build/aot --target mcu --no-weights-in-ram --arena-headroom 15
-python -m netkit aot models/mlp_hand.nk -o build/aot --weights-in-ram      # SRAM copy when RAM fits
+python -m netkit aot models/mlp_hand.nk -o build/aot --target mcu --arena-headroom 15
+# Weights always flash/blob-backed (coefs in .rodata)
 python -m netkit aot models/cnn_extended_ops.nk -o build/aot --optimize   # fewer runtime ops
 
 # Convert all bundled regression models (from repo root)

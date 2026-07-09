@@ -16,6 +16,8 @@ namespace NkFormat
 
     constexpr uint16_t kFlagHasTests = 0x0001;
     constexpr uint16_t kFlagHasQuant = 0x0002;
+    // TCAS inputs are native int8 (Python-prequantized); not float[-128,127].
+    constexpr uint16_t kFlagHasInt8Tests = 0x0004;
     constexpr uint32_t kMaxTestCases = 16;
     constexpr uint32_t kMaxCaseNameLen = 127;
     constexpr uint32_t kMaxCaseFloats = 16384;
@@ -72,9 +74,16 @@ namespace NkFormat
         int32_t bias_zero_point = 0;
         float output_scale = 1.0f;
         int32_t output_zero_point = 0;
+        // Runtime-only (not in the 32-byte .nk QUAN descriptor). When non-null
+        // with num_weight_channel_scales > 1, kernels use per-channel weight
+        // scales (TFLite-style); otherwise weight_scale is used for all channels.
+        const float* weight_channel_scales = nullptr;
+        uint32_t num_weight_channel_scales = 0;
     };
 
     constexpr std::size_t kMlpLayerQuantBytes = 32;
+    // QUAN section reserved u16 flags (after num_layers).
+    constexpr uint16_t kQuanFlagPerChannelWeights = 0x0001;
 
     enum class Activation : uint8_t
     {

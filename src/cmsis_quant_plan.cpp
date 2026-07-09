@@ -15,6 +15,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 
 namespace
@@ -175,6 +176,8 @@ namespace
         plan.input_scale = quant.input_scale;
         plan.weight_scale = quant.weight_scale;
         plan.output_scale = quant.output_scale;
+        plan.weight_channel_scales = quant.weight_channel_scales;
+        plan.num_weight_channel_scales = quant.num_weight_channel_scales;
         plan.in_h = static_cast<int32_t>(in_h);
         plan.in_w = static_cast<int32_t>(in_w);
         plan.in_c = static_cast<int32_t>(in_c);
@@ -190,16 +193,32 @@ namespace
             return false;
         plan.shifts = plan.multipliers + channels;
 
-        const double effective = static_cast<double>(quant.input_scale) *
-                                 static_cast<double>(quant.weight_scale) /
-                                 static_cast<double>(quant.output_scale);
-        int32_t multiplier = 0;
-        int32_t shift = 0;
-        QuantizeMultiplier(effective, &multiplier, &shift);
-        for (int32_t oc = 0; oc < channels; ++oc)
+        const bool per_channel =
+            quant.weight_channel_scales != nullptr &&
+            quant.num_weight_channel_scales == static_cast<uint32_t>(channels);
+        if (!per_channel)
         {
-            plan.multipliers[oc] = multiplier;
-            plan.shifts[oc] = shift;
+            const double effective = static_cast<double>(quant.input_scale) *
+                                     static_cast<double>(quant.weight_scale) /
+                                     static_cast<double>(quant.output_scale);
+            int32_t multiplier = 0;
+            int32_t shift = 0;
+            QuantizeMultiplier(effective, &multiplier, &shift);
+            for (int32_t oc = 0; oc < channels; ++oc)
+            {
+                plan.multipliers[oc] = multiplier;
+                plan.shifts[oc] = shift;
+            }
+        }
+        else
+        {
+            for (int32_t oc = 0; oc < channels; ++oc)
+            {
+                const double effective = static_cast<double>(quant.input_scale) *
+                                         static_cast<double>(quant.weight_channel_scales[oc]) /
+                                         static_cast<double>(quant.output_scale);
+                QuantizeMultiplier(effective, &plan.multipliers[oc], &plan.shifts[oc]);
+            }
         }
 
 #if defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN && NETKIT_CMSIS_NN_ALLOWED
@@ -274,6 +293,8 @@ namespace
         plan.input_scale = quant.input_scale;
         plan.weight_scale = quant.weight_scale;
         plan.output_scale = quant.output_scale;
+        plan.weight_channel_scales = quant.weight_channel_scales;
+        plan.num_weight_channel_scales = quant.num_weight_channel_scales;
         plan.in_h = static_cast<int32_t>(in_h);
         plan.in_w = static_cast<int32_t>(in_w);
         plan.channels = dw.channels;
@@ -289,16 +310,32 @@ namespace
             return false;
         plan.shifts = plan.multipliers + channels;
 
-        const double effective = static_cast<double>(quant.input_scale) *
-                                 static_cast<double>(quant.weight_scale) /
-                                 static_cast<double>(quant.output_scale);
-        int32_t multiplier = 0;
-        int32_t shift = 0;
-        QuantizeMultiplier(effective, &multiplier, &shift);
-        for (int32_t c = 0; c < channels; ++c)
+        const bool per_channel =
+            quant.weight_channel_scales != nullptr &&
+            quant.num_weight_channel_scales == static_cast<uint32_t>(channels);
+        if (!per_channel)
         {
-            plan.multipliers[c] = multiplier;
-            plan.shifts[c] = shift;
+            const double effective = static_cast<double>(quant.input_scale) *
+                                     static_cast<double>(quant.weight_scale) /
+                                     static_cast<double>(quant.output_scale);
+            int32_t multiplier = 0;
+            int32_t shift = 0;
+            QuantizeMultiplier(effective, &multiplier, &shift);
+            for (int32_t c = 0; c < channels; ++c)
+            {
+                plan.multipliers[c] = multiplier;
+                plan.shifts[c] = shift;
+            }
+        }
+        else
+        {
+            for (int32_t c = 0; c < channels; ++c)
+            {
+                const double effective = static_cast<double>(quant.input_scale) *
+                                         static_cast<double>(quant.weight_channel_scales[c]) /
+                                         static_cast<double>(quant.output_scale);
+                QuantizeMultiplier(effective, &plan.multipliers[c], &plan.shifts[c]);
+            }
         }
 
 #if defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN && NETKIT_CMSIS_NN_ALLOWED
@@ -390,7 +427,8 @@ namespace
                      const NkFormat::MlpLayerQuantDesc& quant,
                      QuantInteger::QuantClamp clamp,
                      uint32_t in_features,
-                     uint32_t out_features)
+                     uint32_t out_features,
+                     Arena& arena)
     {
         if (in_features == 0 || out_features == 0 || quant.output_scale <= 0.0f)
             return false;
@@ -402,13 +440,45 @@ namespace
         plan.input_scale = quant.input_scale;
         plan.weight_scale = quant.weight_scale;
         plan.output_scale = quant.output_scale;
+        plan.weight_channel_scales = quant.weight_channel_scales;
+        plan.num_weight_channel_scales = quant.num_weight_channel_scales;
         plan.in_features = static_cast<int32_t>(in_features);
         plan.out_features = static_cast<int32_t>(out_features);
 
-        const double effective = static_cast<double>(quant.input_scale) *
-                               static_cast<double>(quant.weight_scale) /
-                               static_cast<double>(quant.output_scale);
-        QuantizeMultiplier(effective, &plan.multiplier, &plan.shift);
+        const int32_t channels = static_cast<int32_t>(out_features);
+        plan.multipliers = static_cast<int32_t*>(arena.alloc(
+            static_cast<std::size_t>(channels) * sizeof(int32_t) * 2, alignof(int32_t)));
+        if (!plan.multipliers)
+            return false;
+        plan.shifts = plan.multipliers + channels;
+
+        const bool per_channel =
+            quant.weight_channel_scales != nullptr &&
+            quant.num_weight_channel_scales == static_cast<uint32_t>(channels);
+        if (!per_channel)
+        {
+            const double effective = static_cast<double>(quant.input_scale) *
+                                     static_cast<double>(quant.weight_scale) /
+                                     static_cast<double>(quant.output_scale);
+            QuantizeMultiplier(effective, &plan.multiplier, &plan.shift);
+            for (int32_t oc = 0; oc < channels; ++oc)
+            {
+                plan.multipliers[oc] = plan.multiplier;
+                plan.shifts[oc] = plan.shift;
+            }
+        }
+        else
+        {
+            for (int32_t oc = 0; oc < channels; ++oc)
+            {
+                const double effective = static_cast<double>(quant.input_scale) *
+                                         static_cast<double>(quant.weight_channel_scales[oc]) /
+                                         static_cast<double>(quant.output_scale);
+                QuantizeMultiplier(effective, &plan.multipliers[oc], &plan.shifts[oc]);
+            }
+            plan.multiplier = plan.multipliers[0];
+            plan.shift = plan.shifts[0];
+        }
 
 #if defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN && NETKIT_CMSIS_NN_ALLOWED
         plan.workspace_bytes = static_cast<int32_t>(
@@ -493,7 +563,16 @@ bool BuildRuntime(CNNNetwork& network, Arena& arena, uint32_t in_h, uint32_t in_
         const uint32_t in_c_layer = c;
         const uint32_t elements = PlanOutputShape(block, h, w, c);
         if (elements == 0)
+        {
+            std::fprintf(stderr,
+                         "BuildRuntime: zero output elements at layer %u type=%d h=%u w=%u c=%u\n",
+                         i,
+                         static_cast<int>(block.type),
+                         h,
+                         w,
+                         c);
             return false;
+        }
 
         lp.output_elements = elements;
         if (i % 2 == 0)
@@ -516,7 +595,10 @@ bool BuildRuntime(CNNNetwork& network, Arena& arena, uint32_t in_h, uint32_t in_
                                    in_w_layer,
                                    in_c_layer,
                                    arena))
+                {
+                    std::fprintf(stderr, "BuildRuntime: BuildConvPlan failed layer %u\n", i);
                     return false;
+                }
                 workspace_bytes = std::max(workspace_bytes,
                                            static_cast<std::size_t>(lp.conv.workspace_bytes));
                 activation_scale = block.conv.quant.params.output_scale;
@@ -537,7 +619,10 @@ bool BuildRuntime(CNNNetwork& network, Arena& arena, uint32_t in_h, uint32_t in_
                                         in_c_layer,
                                         block.depthwise_conv.depthwise.weights_q,
                                         arena))
+                {
+                    std::fprintf(stderr, "BuildRuntime: BuildDepthwisePlan failed layer %u\n", i);
                     return false;
+                }
                 workspace_bytes = std::max(workspace_bytes,
                                            static_cast<std::size_t>(lp.depthwise.workspace_bytes));
                 activation_scale = block.depthwise_conv.quant.params.output_scale;
@@ -607,21 +692,31 @@ bool BuildRuntime(CNNNetwork& network, Arena& arena, uint32_t in_h, uint32_t in_
                                      block.dense.quant.params,
                                      QuantInteger::QuantClamp::None,
                                      in_features,
-                                     out_features))
+                                     out_features,
+                                     arena))
+                    {
+                        std::fprintf(stderr, "BuildRuntime: BuildFcPlan(softmax) failed layer %u\n", i);
                         return false;
+                    }
                     {
                         const int8_t* weights =
                             static_cast<const int8_t*>(block.dense.weights.data);
                         const int32_t* bias = static_cast<const int32_t*>(block.dense.bias.data);
                         if (!CmsisNnQuant::FinalizeFcPlan(lp.fc, weights, bias, arena))
+                        {
+                            std::fprintf(stderr, "BuildRuntime: FinalizeFcPlan(softmax) failed layer %u\n", i);
                             return false;
+                        }
                     }
                     if (!BuildSoftmaxPlan(lp.softmax,
                                           block.dense.quant.params.output_scale > 0.0f
                                               ? block.dense.quant.params.output_scale
                                               : 1.0f,
                                           static_cast<int32_t>(out_features)))
+                    {
+                        std::fprintf(stderr, "BuildRuntime: BuildSoftmaxPlan failed layer %u\n", i);
                         return false;
+                    }
                 }
                 else
                 {
@@ -630,14 +725,21 @@ bool BuildRuntime(CNNNetwork& network, Arena& arena, uint32_t in_h, uint32_t in_
                                      block.dense.quant.params,
                                      clamp,
                                      in_features,
-                                     out_features))
+                                     out_features,
+                                     arena))
+                    {
+                        std::fprintf(stderr, "BuildRuntime: BuildFcPlan failed layer %u\n", i);
                         return false;
+                    }
                     {
                         const int8_t* weights =
                             static_cast<const int8_t*>(block.dense.weights.data);
                         const int32_t* bias = static_cast<const int32_t*>(block.dense.bias.data);
                         if (!CmsisNnQuant::FinalizeFcPlan(lp.fc, weights, bias, arena))
+                        {
+                            std::fprintf(stderr, "BuildRuntime: FinalizeFcPlan failed layer %u\n", i);
                             return false;
+                        }
                     }
                     activation_scale = block.dense.quant.params.output_scale;
                     activation_zero_point = block.dense.quant.params.output_zero_point;
@@ -647,6 +749,8 @@ bool BuildRuntime(CNNNetwork& network, Arena& arena, uint32_t in_h, uint32_t in_
                 break;
             }
             default:
+                std::fprintf(stderr, "BuildRuntime: unsupported layer type %d at %u\n",
+                             static_cast<int>(block.type), i);
                 return false;
         }
     }
@@ -661,7 +765,11 @@ bool BuildRuntime(CNNNetwork& network, Arena& arena, uint32_t in_h, uint32_t in_
             arena.alloc(static_cast<std::size_t>(runtime->act_a_bytes) * sizeof(int8_t),
                         alignof(int8_t)));
         if (!runtime->act_a)
+        {
+            std::fprintf(stderr, "BuildRuntime: act_a alloc failed bytes=%u rem=%zu\n",
+                         runtime->act_a_bytes, arena.remaining());
             return false;
+        }
     }
     if (runtime->act_b_bytes > 0)
     {
@@ -669,7 +777,11 @@ bool BuildRuntime(CNNNetwork& network, Arena& arena, uint32_t in_h, uint32_t in_
             arena.alloc(static_cast<std::size_t>(runtime->act_b_bytes) * sizeof(int8_t),
                         alignof(int8_t)));
         if (!runtime->act_b)
+        {
+            std::fprintf(stderr, "BuildRuntime: act_b alloc failed bytes=%u rem=%zu\n",
+                         runtime->act_b_bytes, arena.remaining());
             return false;
+        }
     }
 
     if (logits_elements > 0)

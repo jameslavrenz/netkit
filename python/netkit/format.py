@@ -17,6 +17,10 @@ TENSOR_DESC_BYTES = 24
 PAYLOAD_ALIGN = 4
 FLAG_HAS_TESTS = 0x0001
 FLAG_HAS_QUANT = 0x0002
+# TCAS inputs are native int8 bytes (not float literals in [-128, 127]).
+FLAG_HAS_INT8_TESTS = 0x0004
+# QUAN section reserved u16 (second half of <HH> after num_layers).
+QUAN_FLAG_PER_CHANNEL_WEIGHTS = 0x0001
 MLP_LAYER_QUANT_BYTES = 32
 MAX_CASE_NAME_LEN = 127
 MAX_LAYERS = 100
@@ -299,9 +303,21 @@ def pack_mlp_layer_quant(
 
 
 def pack_quant_section(quant_layers: list) -> bytes:
+    """Pack QUAN section. Optional per-channel weight scales follow descriptors.
+
+    When any layer has ``weight_scales`` (len > 1), sets QUAN_FLAG_PER_CHANNEL_WEIGHTS
+    and appends for each layer: u32 channel_count + float32[channel_count] scales.
+    channel_count==0 (or omitted) means use the per-tensor weight_scale field.
+    """
+    has_pc = any(
+        getattr(layer, "weight_scales", None) is not None
+        and len(getattr(layer, "weight_scales")) > 1
+        for layer in quant_layers
+    )
+    flags = QUAN_FLAG_PER_CHANNEL_WEIGHTS if has_pc else 0
     blob = bytearray()
     blob += QUANT_MAGIC
-    blob += struct.pack("<HH", len(quant_layers), 0)
+    blob += struct.pack("<HH", len(quant_layers), flags)
     for layer in quant_layers:
         blob += pack_mlp_layer_quant(
             input_scale=layer.input_scale,
@@ -313,13 +329,34 @@ def pack_quant_section(quant_layers: list) -> bytes:
             output_scale=layer.output_scale,
             output_zero_point=layer.output_zero_point,
         )
+    if has_pc:
+        for layer in quant_layers:
+            scales = getattr(layer, "weight_scales", None)
+            if scales is None or len(scales) <= 1:
+                blob += struct.pack("<I", 0)
+            else:
+                arr = np.asarray(scales, dtype=np.float32).reshape(-1)
+                blob += struct.pack("<I", int(arr.size))
+                blob += arr.tobytes()
     return bytes(blob)
 
 
-def pack_test_section(*, tolerance: float, cases: list) -> bytes:
+def pack_test_section(
+    *,
+    tolerance: float,
+    cases: list,
+    input_dtype: type[np.generic] | np.dtype = np.float32,
+) -> bytes:
+    """Pack TCAS regression cases.
+
+    ``input_dtype`` is ``np.int8`` for quantized models (prequantized in Python)
+    or ``np.float32`` for float models. Expected outputs stay float32 reference
+    values for float models; int8 models typically only use ``label`` in C++.
+    """
     blob = bytearray()
     blob += TEST_MAGIC
     blob += struct.pack("<If", len(cases), float(tolerance))
+    in_dt = np.dtype(input_dtype)
     for case in cases:
         name = case.name.encode("utf-8")[:MAX_CASE_NAME_LEN]
         blob += struct.pack("<B", len(name))
@@ -327,11 +364,11 @@ def pack_test_section(*, tolerance: float, cases: list) -> bytes:
         pad = (4 - ((1 + len(name)) % 4)) % 4
         blob += b"\x00" * pad
         blob += struct.pack("<i", int(case.label))
-        inp = np.asarray(case.input, dtype=np.float32).reshape(-1)
+        inp = np.asarray(case.input, dtype=in_dt).reshape(-1)
         out = np.asarray(case.expected, dtype=np.float32).reshape(-1)
-        blob += struct.pack("<I", inp.size)
+        blob += struct.pack("<I", int(inp.size))
         blob += inp.tobytes()
-        blob += struct.pack("<I", out.size)
+        blob += struct.pack("<I", int(out.size))
         blob += out.tobytes()
     return bytes(blob)
 

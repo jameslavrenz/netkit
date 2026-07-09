@@ -15,7 +15,7 @@ Runs the **same MNIST MLP benchmark** as `benchmark/netkit/`:
 | Target | `NETKIT_TARGET_MCU` |
 | Arch | `NETKIT_ARCH=CM4` (Cortex-M4F + hard float) |
 | CMSIS | **CMSIS-DSP** enabled (`NETKIT_USE_CMSIS_DSP=1`); inputs staged in SRAM before timed invoke |
-| Weights | **Flash** — lowered AOT embeds coef arrays in `.rodata` (no SRAM copy; `NETKIT_WEIGHTS_IN_RAM=0` policy) |
+| Weights | **Flash** — lowered AOT embeds coef arrays in `.rodata` (no SRAM copy) |
 | Deployment | **Lowered AOT** — static `Kernels::` FC chain (no runtime `.nk` loader) |
 
 Arena for activations: **640 bytes** (see generated `mnist_mlp_aot.hpp`).
@@ -146,4 +146,4 @@ boards/nucleo-f446re/
 
 - [benchmark/README.md](../../benchmark/README.md) — host MNIST vs TFLM methodology
 - [docs/BUILD_TARGETS.md](../../docs/BUILD_TARGETS.md) — MCU / CMSIS flags
-- [docs/ARENA.md](../../docs/ARENA.md) — `NETKIT_WEIGHTS_IN_RAM` tradeoffs
+- [docs/ARENA.md](../../docs/ARENA.md) — flash/blob-backed weights and arena sizing

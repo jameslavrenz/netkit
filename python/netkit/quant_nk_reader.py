@@ -15,6 +15,7 @@ from .format import (
     HEADER_BYTES,
     MLP_LAYER_QUANT_BYTES,
     QUANT_MAGIC,
+    QUAN_FLAG_PER_CHANNEL_WEIGHTS,
     skip_payload_alignment_padding,
     unpack_header,
 )
@@ -69,8 +70,18 @@ def read_quant_nk(path: str | Path) -> QuantNkBundle:
     magic = stream.read(4)
     if magic != QUANT_MAGIC:
         raise ValueError(f"invalid QUAN section in {path}")
-    num_quant_layers, _reserved = struct.unpack("<HH", stream.read(4))
+    num_quant_layers, quan_flags = struct.unpack("<HH", stream.read(4))
     quant_layers = [_read_quant_layer_params(stream) for _ in range(num_quant_layers)]
+    if quan_flags & QUAN_FLAG_PER_CHANNEL_WEIGHTS:
+        for ql in quant_layers:
+            (n_ch,) = struct.unpack("<I", stream.read(4))
+            if n_ch == 0:
+                continue
+            scales = np.frombuffer(stream.read(n_ch * 4), dtype=np.float32).copy()
+            if scales.size != n_ch:
+                raise ValueError(f"truncated per-channel weight scales in {path}")
+            ql.weight_scales = scales
+            ql.weight_scale = float(scales[0])
 
     meta_end = stream.tell()
     skip_payload_alignment_padding(stream, meta_end)

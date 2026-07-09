@@ -17,15 +17,14 @@ namespace NkRegression
 {
     namespace
     {
-        constexpr std::size_t kMnistCnnArenaCapacity = ArenaUtil::kMnistCnnCapacity;
-
 #if !defined(NETKIT_ARENA_HEAP)
-        constexpr std::size_t kHandArenaCapacity = ArenaUtil::kHandCapacity;
-        constexpr std::size_t kMnistMlpArenaCapacity = ArenaUtil::kMnistMlpCapacity;
-
-        alignas(std::max_align_t) unsigned char g_hand_arena[kHandArenaCapacity];
-        alignas(std::max_align_t) unsigned char g_mnist_mlp_arena[kMnistMlpArenaCapacity];
-        alignas(std::max_align_t) unsigned char g_mnist_cnn_arena[kMnistCnnArenaCapacity];
+#if defined(NETKIT_TARGET_MCU)
+        alignas(std::max_align_t) unsigned char g_arena_buffer[Arena::kDefaultCapacity];
+#else
+        // Avoid 64 MiB .bss on CPU GLOBAL_ARENA / MPU static builds.
+        constexpr std::size_t kStaticArenaCap = 4u * 1024u * 1024u;
+        alignas(std::max_align_t) unsigned char g_arena_buffer[kStaticArenaCap];
+#endif
 #endif
 
         bool FileReadable(const char* path)
@@ -52,20 +51,21 @@ namespace NkRegression
         std::size_t ArenaCapacityForModel(const NkLoader::ParsedModel& model)
         {
             const bool is_cnn = model.header.network_kind == NkFormat::NetworkKind::Cnn;
-            return ArenaUtil::CapacityForModel(NkLoader::InputElements(model),
-                                               is_cnn,
-                                               model.header.weights_bytes,
-                                               model.header.biases_bytes);
+            std::size_t capacity = ArenaUtil::CapacityForModel(NkLoader::InputElements(model),
+                                                              is_cnn,
+                                                              model.header.weights_bytes,
+                                                              model.header.biases_bytes);
+#if !defined(NETKIT_ARENA_HEAP)
+            if (capacity > sizeof(g_arena_buffer))
+                capacity = sizeof(g_arena_buffer);
+#endif
+            return capacity;
         }
 
 #if !defined(NETKIT_ARENA_HEAP)
-        unsigned char* ArenaBufferForCapacity(std::size_t capacity)
+        unsigned char* ArenaBufferForCapacity(std::size_t /*capacity*/)
         {
-            if (capacity == kMnistCnnArenaCapacity)
-                return g_mnist_cnn_arena;
-            if (capacity == kMnistMlpArenaCapacity)
-                return g_mnist_mlp_arena;
-            return g_hand_arena;
+            return g_arena_buffer;
         }
 #endif
 
@@ -129,10 +129,11 @@ namespace NkRegression
 
         void CopyRegressionOutput(const Tensor& output, float* dest, uint32_t count)
         {
-            // Int8 models stay int8 end-to-end — no on-device/host dequant.
-            // Regression for quantized models compares via ArgMaxInt8 only.
+            // Int8 models stay int8 end-to-end — never dequantize in C++.
             if (output.type == DataType::Int8)
             {
+                std::cout << "FAIL: CopyRegressionOutput called on int8 tensor "
+                             "(use ArgMaxInt8; dequant belongs in Python)\n";
                 for (uint32_t i = 0; i < count; ++i)
                     dest[i] = 0.0f;
                 return;
@@ -244,26 +245,12 @@ namespace NkRegression
             return input;
         }
 
-        // TCAS stores prequantized int8 as float values in [-128, 127] (Python export).
-        void CopyPrequantizedInt8(const float* src, int8_t* dst, uint32_t count)
-        {
-            for (uint32_t i = 0; i < count; ++i)
-            {
-                const float v = src[i];
-                int32_t q = static_cast<int32_t>(v >= 0.0f ? v + 0.5f : v - 0.5f);
-                if (q < -128)
-                    q = -128;
-                else if (q > 127)
-                    q = 127;
-                dst[i] = static_cast<int8_t>(q);
-            }
-        }
-
         bool RunMlpCase(MLPNetwork& network,
                         const NkLoader::ParsedModel& model,
                         const std::array<uint32_t, kMaxTensorRank>& input_shape,
                         const NkLoader::TestCase& test_case,
                         float tolerance,
+                        bool tests_inputs_are_int8,
                         Arena& arena)
         {
             const uint32_t required = input_shape[0] * input_shape[1];
@@ -285,6 +272,13 @@ namespace NkRegression
             Tensor input{};
             if (network.IsQuantized())
             {
+                if (!tests_inputs_are_int8)
+                {
+                    std::cout << "FAIL " << test_case.name
+                              << ": quantized model requires FLAG_HAS_INT8_TESTS "
+                                 "(native int8 TCAS from Python)\n";
+                    return false;
+                }
                 int8_t* in_i8 = static_cast<int8_t*>(
                     arena.alloc(test_case.input_count * sizeof(int8_t), alignof(int8_t)));
                 if (!in_i8)
@@ -292,11 +286,17 @@ namespace NkRegression
                     std::cout << "FAIL " << test_case.name << ": arena overflow while allocating input\n";
                     return false;
                 }
-                CopyPrequantizedInt8(test_case.input, in_i8, test_case.input_count);
+                std::memcpy(in_i8, test_case.input_i8, test_case.input_count * sizeof(int8_t));
                 input = TensorFactory::View2DInt8(in_i8, input_shape[0], input_shape[1]);
             }
             else
             {
+                if (tests_inputs_are_int8)
+                {
+                    std::cout << "FAIL " << test_case.name
+                              << ": float model cannot use int8 TCAS inputs\n";
+                    return false;
+                }
                 input = TensorFactory::Create2D(arena, input_shape[0], input_shape[1]);
                 if (!input.data)
                 {
@@ -398,6 +398,7 @@ namespace NkRegression
                         const std::array<uint32_t, kMaxTensorRank>& input_shape,
                         const NkLoader::TestCase& test_case,
                         float tolerance,
+                        bool tests_inputs_are_int8,
                         Arena& arena)
         {
             const uint32_t required = input_shape[0] * input_shape[1] * input_shape[2];
@@ -413,11 +414,24 @@ namespace NkRegression
             float input_buffer[NkFormat::kMaxCaseFloats] = {};
             if (network.IsQuantized())
             {
-                CopyPrequantizedInt8(test_case.input, input_i8, test_case.input_count);
+                if (!tests_inputs_are_int8)
+                {
+                    std::cout << "FAIL " << test_case.name
+                              << ": quantized model requires FLAG_HAS_INT8_TESTS "
+                                 "(native int8 TCAS from Python)\n";
+                    return false;
+                }
+                std::memcpy(input_i8, test_case.input_i8, test_case.input_count * sizeof(int8_t));
                 input = MakeNhwcInputInt8(input_i8, input_shape[0], input_shape[1], input_shape[2]);
             }
             else
             {
+                if (tests_inputs_are_int8)
+                {
+                    std::cout << "FAIL " << test_case.name
+                              << ": float model cannot use int8 TCAS inputs\n";
+                    return false;
+                }
                 for (uint32_t i = 0; i < test_case.input_count; ++i)
                     input_buffer[i] = test_case.input[i];
                 input = MakeNhwcInput(input_buffer, input_shape[0], input_shape[1], input_shape[2]);
@@ -596,7 +610,8 @@ namespace NkRegression
                     continue;
                 }
 
-                if (RunMlpCase(*network, parsed, input_shape, test_case, tests.tolerance, arena))
+                if (RunMlpCase(*network, parsed, input_shape, test_case, tests.tolerance,
+                               tests.inputs_are_int8, arena))
                     ++summary.passed;
                 else
                     ++summary.failed;
@@ -621,7 +636,8 @@ namespace NkRegression
                     continue;
                 }
 
-                if (RunCnnCase(*network, input_shape, test_case, tests.tolerance, arena))
+                if (RunCnnCase(*network, input_shape, test_case, tests.tolerance,
+                               tests.inputs_are_int8, arena))
                     ++summary.passed;
                 else
                     ++summary.failed;
@@ -639,7 +655,7 @@ namespace NkRegression
     void BeginRegressionArena()
     {
 #if defined(NETKIT_ARENA_HEAP)
-        (void)RegressionHeapArena(kMnistCnnArenaCapacity);
+        (void)RegressionHeapArena(Arena::kDefaultCapacity);
 #endif
     }
 

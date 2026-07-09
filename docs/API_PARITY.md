@@ -179,14 +179,14 @@ High-level combined handle (C convenience):
 | Inspect embedded blob arena peaks | `nk_inspect_model_memory` |
 | Query loaded model | `nk_model_get_arch`, `nk_model_input_count`, `nk_model_output_count`, `nk_model_kind`, `nk_model_is_quantized` |
 
-### Weight storage (`NETKIT_WEIGHTS_IN_RAM`)
+### Weight storage (always flash/blob-backed)
 
-| Policy | C++ buffer load | C buffer load |
-|--------|-----------------|---------------|
-| `NETKIT_WEIGHTS_IN_RAM=1` | Copies weight/bias payload into arena | `nk_model_load_memory` copies into arena |
-| `NETKIT_WEIGHTS_IN_RAM=0` (MCU default) | Binds views into flash blob; `data` must outlive network | Same — embed `.nk` in `.rodata` |
-
-File-based load (`nk_model_load`, `NkLoader::LoadMLP`) **always** copies payload into the arena regardless of the flag.
+| Path | Behavior |
+|------|----------|
+| Buffer / AOT load | Binds views into the `.nk` blob; `data` must outlive the network |
+| File load + `NETKIT_USE_MMAP=1` (CPU default; opt-in MPU Linux) | POSIX `mmap`; arena owns mapping until `reset()` / destroy |
+| File load without mmap (MCU, RTOS MPU default) | Copies `.nk` into arena (prefer buffer/flash instead) |
+| Arena peaks | Exclude weight/bias payload (`flash_payload_bytes` reports flash budget) |
 
 ### AOT deployment
 
@@ -195,7 +195,7 @@ File-based load (`nk_model_load`, `NkLoader::LoadMLP`) **always** copies payload
 | Interpreter (embed `.nk` + loader) | `netkit::aot::*::Model` or `*_aot_load` + `nk_model_load_memory` | `*_aot.h` + `nk_model_load_memory` |
 | Lowered (static `Kernels::` chain) | `netkit::aot::*::Model` in `*_aot.hpp` | **C++ only** — no lowered C emitter |
 
-Lowered AOT with `--weights-in-ram` copies coef arrays from flash `.rodata` sources into the arena at `Model::load()`. MCU firmware typically uses `--no-weights-in-ram` (see `boards/nucleo-f446re/`).
+Lowered AOT keeps coef arrays in flash `.rodata` (no SRAM copy at load). See `boards/nucleo-f446re/`.
 
 ### Intentional C++-only symbols
 

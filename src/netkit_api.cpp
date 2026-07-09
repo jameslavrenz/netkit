@@ -79,8 +79,8 @@ namespace
 
     void CopyModelOutputToFloat(const Tensor& output, float* dest, uint32_t count)
     {
-        // Int8 models must not be dequantized in C++. Callers that need float
-        // probabilities should use Python offline (or an int8 output API).
+        // Int8 models must not be dequantized in C++. Use nk_model_run_int8 /
+        // Python offline for float probabilities.
         if (output.type == DataType::Int8)
         {
             for (uint32_t i = 0; i < count; ++i)
@@ -211,41 +211,6 @@ namespace
                static_cast<std::size_t>(parsed.header.biases_bytes);
     }
 
-    bool ReadNkFile(const char* path, std::vector<uint8_t>& out)
-    {
-        if (!path)
-            return false;
-        FILE* file = std::fopen(path, "rb");
-        if (!file)
-            return false;
-        if (std::fseek(file, 0, SEEK_END) != 0)
-        {
-            std::fclose(file);
-            return false;
-        }
-        const long file_size = std::ftell(file);
-        if (file_size < 0)
-        {
-            std::fclose(file);
-            return false;
-        }
-        if (std::fseek(file, 0, SEEK_SET) != 0)
-        {
-            std::fclose(file);
-            return false;
-        }
-        out.resize(static_cast<std::size_t>(file_size));
-        if (file_size > 0 &&
-            std::fread(out.data(), 1, static_cast<std::size_t>(file_size), file) !=
-                static_cast<std::size_t>(file_size))
-        {
-            std::fclose(file);
-            return false;
-        }
-        std::fclose(file);
-        return true;
-    }
-
     Tensor MakeNhwcInput(float* data, uint32_t h, uint32_t w, uint32_t c)
     {
         Tensor input{};
@@ -289,11 +254,7 @@ namespace
     {
         FillArchInfoFromParsed(parsed, &info->arch);
         info->weight_floats = info->arch.expected_weight_floats;
-#if NETKIT_WEIGHTS_IN_RAM
-        info->flash_payload_bytes = 0;
-#else
         info->flash_payload_bytes = WeightPayloadBytes(parsed);
-#endif
 
         if (info->arch.input_elements > NK_MAX_CASE_FLOATS)
             return NK_ERR_INVALID_ARGUMENT;
@@ -1203,8 +1164,6 @@ size_t nk_recommended_arena_bytes(const char* nk_path)
     }
     return 0;
 #else
-    if (!NETKIT_WEIGHTS_IN_RAM)
-        capacity = capacity > WeightPayloadBytes(parsed) ? capacity - WeightPayloadBytes(parsed) : 0;
     return capacity;
 #endif
 }

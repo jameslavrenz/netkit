@@ -94,7 +94,7 @@ Worked examples: [cpp-api.md](cpp-api.md#manual-construction-call-order-1), [c-a
 
 Use `./netkit inspect models/yolox_mnv4_small.nk --full` for activation high-water. The fused head allocates scratch proportional to `3 × H' × W' × hidden_dim` inside the layer (not counted in ping-pong buffers).
 
-For MCU firmware with flash-backed weights, compile with `NETKIT_WEIGHTS_IN_RAM=0` and subtract payload bytes from inspect totals (see [ARENA.md](ARENA.md)).
+For MCU firmware, weights stay flash/blob-backed; size SRAM from inspect arena peaks and use `flash_payload_bytes` for flash budget (see [ARENA.md](ARENA.md)).
 
 ## Tests
 

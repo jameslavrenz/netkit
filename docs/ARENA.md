@@ -78,11 +78,10 @@ Default capacity constant:
 
 | Target | `NK_ARENA_DEFAULT_CAPACITY` / `Arena::kDefaultCapacity` |
 |--------|-----------------------------------------------------------|
-| CPU | **4 MiB** |
 | MCU | **64 KiB** |
-| MPU | **128 KiB** |
+| CPU / MPU | **64 MiB** |
 
-CLI/regression on CPU allocate **model-sized** heap buffers (64 KiB hand / 2 MiB MNIST MLP / 4 MiB MNIST CNN) via `ArenaUtil::CapacityForInputElements`.
+CLI/regression on CPU use the default heap capacity (`Arena::kDefaultCapacity`). Override with `./netkit --arena <size> …`.
 
 ### Heap-backed arena (CPU default; MCU/MPU optional)
 
@@ -105,8 +104,7 @@ The arena size is **not** stored in the model file. **You** (or your test harnes
 
 | Allocation | When | Notes |
 |------------|------|-------|
-| Weight blob (from `.nk`) | Load | Copied into arena when **`NETKIT_WEIGHTS_IN_RAM=1`** (CPU/MPU default) and on **file load** everywhere |
-| Weight views (flash blob) | Load | When **`NETKIT_WEIGHTS_IN_RAM=0`** (MCU default) — buffer/AOT load binds pointers into `.rodata`; no arena weight copy |
+| Weight views (flash/mmap/blob) | Load | Bind into flash, mmap, or caller blob; coefs stay out of arena bump peaks (mmap owned by arena) |
 | Network structs | Load | `MLPNetwork` / `CNNNetwork`, layer metadata |
 | Ping-pong buffers | Load | **2 ×** largest intermediate activation (float32) |
 | Kernel workspace | Load (CNN, CMSIS-NN builds) | **1 ×** max CMSIS conv/dw/GELU scratch across the graph |
@@ -114,44 +112,24 @@ The arena size is **not** stored in the model file. **You** (or your test harnes
 
 Ping-pong buffers are reserved at **load time**, so a forward pass does not grow the arena for hidden activations. Peak activation memory is roughly **2 × largest layer output**, not the sum of every layer.
 
-### Weight storage tradeoff (`NETKIT_WEIGHTS_IN_RAM`)
+### Weight storage (always flash/blob-backed)
 
-MCU parts usually have **much more flash than RAM**. The `.nk` blob (including coefficients) lives in flash via AOT embed or a const buffer. At load time, netkit can either **copy weights into the arena (SRAM)** or **leave them in the blob** and wire layer tensors to flash addresses.
+Weights never copy into a separate RAM weight buffer. At load time, netkit **binds layer tensors to blob addresses**. Misaligned payloads return a load error (`SizeMismatch`).
 
-Compile-time flag: **`NETKIT_WEIGHTS_IN_RAM`** (`include/netkit_config.h`).
+| Target | File load (`LoadMLP` / `LoadCNN` / `nk_model_load`) | Buffer / AOT |
+|--------|------------------------------------------------------|--------------|
+| **CPU** (macOS, Linux; `NETKIT_MMAP=1` default) | POSIX **`mmap` (`MAP_PRIVATE`)**; arena owns mapping until `reset()` / `destroy_heap()`. Pages stay file-backed until a write (e.g. BN fold) copy-on-writes that page | Bind into caller-owned blob; `data` must outlive the network |
+| **MPU** (default `NETKIT_MMAP=0`) | Same as MCU: `fread` into arena if you use a path API; prefer buffer/flash | Flash/XIP or embedded `.rodata`; bind views |
+| **MPU** + embedded Linux (`NETKIT_MMAP=1`) | Same mmap path as CPU | Same as above |
+| **MCU** | Copies the file into the arena (no mmap). Prefer buffer/AOT | Flash/XIP or embedded `.rodata`; bind views |
 
-| Value | Where coefs live at inference | Startup (buffer/AOT load) | RAM use | Inference speed |
-|-------|------------------------------|---------------------------|---------|-----------------|
-| **`1`** | SRAM (arena copy) | One-time `memcpy` from blob | Weights + biases + activations in arena | Faster (zero-wait SRAM reads) |
-| **`0`** | Flash (`.nk` blob) | Parse + pointer bind only | Activations + structs only; flash holds weights | Slower flash reads; fits larger models |
-
-**Defaults**
-
-| Target | `NETKIT_WEIGHTS_IN_RAM` | Typical use |
-|--------|-------------------------|-------------|
-| **MCU** | `0` | RAM is the bottleneck — keep coefs in flash unless the model is small |
-| **CPU / MPU** | `1` | Plenty of RAM — copy for speed and simpler debugging |
-
-**Choosing for firmware**
-
-1. Size static arena with `./netkit inspect --full` (or AOT constants) **including** weight copy on the host.
-2. If **weights + activations + headroom ≤ available SRAM** → build with **`NETKIT_WEIGHTS_IN_RAM=1`** for faster inference.
-3. If **weights do not fit in RAM** → keep MCU default **`NETKIT_WEIGHTS_IN_RAM=0`**; coefs stay in flash; size arena for **activations + structs only** (subtract `weights_bytes + biases_bytes` from host inspect high-water).
-
-Override:
-
-```bash
-make NETKIT_TARGET=mcu NETKIT_WEIGHTS_IN_RAM=1 lib   # small model: copy coefs to SRAM
-make NETKIT_TARGET=cpu NETKIT_WEIGHTS_IN_RAM=0 lib     # test flash-backed load on desktop
-```
-
-**Scope:** applies to **buffer / AOT load** (`LoadMLPFromBuffer` / `LoadCNNFromBuffer`, `nk_model_load_memory`). **File load** always copies payload into the arena (no persistent blob). Misaligned weight payloads fall back to arena copy even when `NETKIT_WEIGHTS_IN_RAM=0`.
+**Sizing firmware:** use `./netkit inspect --full` (or AOT constants). Arena peaks exclude weight/bias bytes when the blob is mmap'd or flash-backed; `flash_payload_bytes` reports the payload kept outside the bump arena. Size SRAM for **activations + structs + headroom** only.
 
 See [NK_FORMAT.md](NK_FORMAT.md) and [BUILD_TARGETS.md](BUILD_TARGETS.md).
 
 ### How to pick a size
 
-1. **Measure** — `./netkit inspect models/your_model.nk --full` or `nk_inspect_model()`. Use **arena bytes after forward** (includes load + ping buffers + a zero-input forward with caller I/O tensors). On **MCU + `NETKIT_WEIGHTS_IN_RAM=0`**, subtract `weights_bytes + biases_bytes` from that figure when sizing firmware RAM (coefs stay in flash; host `inspect` always uses arena copy).
+1. **Measure** — `./netkit inspect models/your_model.nk --full` or `nk_inspect_model()`. Use **arena bytes after forward** (includes load + ping buffers + a zero-input forward with caller I/O tensors). Weight/bias payload stays in flash — use `flash_payload_bytes` separately when budgeting flash, not SRAM.
 2. **Add headroom** — typically **1.5–2×** measured high-water for batch or future changes.
 3. **Declare static storage** — firmware usually uses a fixed `unsigned char memory[N]` sized from step 1–2.
 
@@ -168,16 +146,15 @@ There is no automatic growth — if `alloc` fails, loaders return an arena overf
 
 | Caller | Buffer size | Models |
 |--------|-------------|--------|
-| CLI `run` / `inspect` (CPU, heap) | **64 KiB / 2 MiB / 4 MiB** (model-sized) | Hand / MNIST MLP / MNIST CNN |
-| Examples, C API smoke (CPU) | **4 MiB** (`NK_ARENA_DEFAULT_CAPACITY`) | Includes MNIST CNN |
-| MNIST MLP tests (`src/nk_regression.cpp`) | **2 MiB** | `mnist_mlp.nk` |
-| MNIST CNN tests (`src/nk_regression.cpp`) | **4 MiB** | `mnist_cnn.nk` |
+| CLI `run` / `inspect` (CPU, heap) | **64 MiB** default; override with `--arena` | All |
+| Examples, C API smoke (CPU) | **64 MiB** (`NK_ARENA_DEFAULT_CAPACITY`) | Includes MNIST CNN |
+| Regression (`src/nk_regression.cpp`) | **64 MiB** heap (`Arena::kDefaultCapacity`) | All embedded cases |
 
-MNIST weights alone are ~400 KiB (MLP) or ~900 KiB (CNN); the test harness uses larger buffers than the default so load + ping buffers always fit. The CLI still uses 64 KiB — `./netkit inspect --full` on MNIST may report arena overflow unless you integrate with a larger buffer in your own app.
+MCU firmware typically declares a smaller static buffer (e.g. 64 KiB) sized from `inspect --full`.
 
 ### `reset()` and reload
 
-`reset()` sets the arena offset to zero and **invalidates all pointers** (weights, network, ping buffers). To run again on the same buffer you must **reload the model**. The MNIST test suite calls `arena.reset()` then `NkLoader::LoadMLP` / `LoadCNN` per case for isolation.
+`reset()` sets the arena offset to zero, **releases any mmap'd `.nk` file**, and **invalidates all pointers** (weights, network, ping buffers). To run again on the same buffer you must **reload the model**. The MNIST test suite calls `arena.reset()` then `NkLoader::LoadMLP` / `LoadCNN` per case for isolation.
 
 ## C API
 

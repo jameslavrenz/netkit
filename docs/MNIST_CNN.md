@@ -37,7 +37,7 @@ The [MNIST MLP suite](MNIST.md) on the same data reaches **98.06%** test accurac
 | `benchmark/tflm/tools/export_int8_test_images.py` | Preqantized int8 benchmark test vectors (separate from float images) |
 | `tools/compare_nk_tflite_quant.py` | Compare activation quant params vs TFLite |
 
-The MNIST CNN suite uses a **4 MiB** dedicated arena in `src/nk_regression.cpp`. See [ARENA.md](ARENA.md).
+The MNIST CNN suite uses the default heap arena (`Arena::kDefaultCapacity`, **64 MiB** on CPU) in `src/nk_regression.cpp`. See [ARENA.md](ARENA.md).
 
 ## Running
 

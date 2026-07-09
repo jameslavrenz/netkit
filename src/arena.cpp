@@ -1,4 +1,5 @@
 #include "arena.hpp"
+#include "nk_mmap.hpp"
 #include <cstddef>
 #include <cstdint>
 #if defined(NETKIT_ARENA_HEAP)
@@ -18,8 +19,25 @@ namespace
     }
 }
 
+void Arena::release_mapped_file()
+{
+    if (!mapped_file)
+        return;
+    NkMmap::Unmap(mapped_file, mapped_size);
+    mapped_file = nullptr;
+    mapped_size = 0;
+}
+
+void Arena::attach_mapped_file(const void* data, std::size_t size)
+{
+    release_mapped_file();
+    mapped_file = data;
+    mapped_size = size;
+}
+
 void Arena::init(void* memory, std::size_t size)
 {
+    release_mapped_file();
 #if defined(NETKIT_ARENA_HEAP) && defined(NETKIT_TARGET_CPU)
     if (heap_owned)
         destroy_heap();
@@ -47,6 +65,7 @@ bool Arena::init_heap(std::size_t size)
 
 void Arena::destroy_heap()
 {
+    release_mapped_file();
     if (!heap_owned || !base)
         return;
 #if defined(NETKIT_TARGET_CPU)
@@ -95,6 +114,7 @@ void* Arena::alloc(std::size_t size, std::size_t alignment)
 
 void Arena::reset()
 {
+    release_mapped_file();
     offset = 0;
 }
 

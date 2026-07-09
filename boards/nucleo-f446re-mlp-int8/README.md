@@ -13,7 +13,7 @@ Runs the **same MNIST MLP benchmark** as `benchmark/netkit/` and `benchmark/tflm
 | Target | `NETKIT_TARGET_MCU` |
 | Arch | `NETKIT_ARCH=CM4` (Cortex-M4F) |
 | CMSIS | **CMSIS-NN** + **CMSIS-DSP** (int8 FC; Softmax omitted — classify via argmax on logits) |
-| Weights | **Flash** — embedded `.nk` blob in `.rodata` (`NETKIT_WEIGHTS_IN_RAM=0`) |
+| Weights | **Flash** — embedded `.nk` blob in `.rodata` |
 | Deployment | **Interpreter embed** — `NkLoader` + quantized MLP forward |
 | Dtype | int8 weights / activations; prequantized int8 test inputs; output = logits (Softmax omitted) |
 

@@ -39,7 +39,7 @@ For production firmware with a **fixed model**, compile as much work as possible
 | Lean link | `NkOpList` + trimmed `libnetkit.a` | Only op TUs and kernels your model uses |
 | Kernel backends | `NETKIT_CMSIS_NN` / `NETKIT_CMSIS_DSP` | Hardware-accelerated matmul, conv, pool, FC where available |
 
-**Best for:** shipping firmware — minimum RAM, predictable latency, no filesystem, coefs in flash (`NETKIT_WEIGHTS_IN_RAM=0` on MCU).
+**Best for:** shipping firmware — minimum RAM, predictable latency, no filesystem, coefs in flash.
 
 Both modes call the **same kernels** (`Kernels::MatMul`, `Conv2D`, …). The compiled path moves graph rewriting and model embedding to **build time** so inference does less dispatch and allocation work. Phase 2 expands packager-side compilation (layout, quantization, target profiles) — see below.
 
@@ -112,9 +112,9 @@ Default capacities by build target (`NK_ARENA_DEFAULT_CAPACITY`):
 
 | Target | Default | Backing |
 |--------|---------|---------|
-| CPU | 4 MiB | Heap by default (`NETKIT_ARENA_HEAP`); optional static via `NETKIT_GLOBAL_ARENA=1` |
+| CPU | 64 MiB | Heap by default (`NETKIT_ARENA_HEAP`); optional static via `NETKIT_GLOBAL_ARENA=1` |
 | MCU | 64 KiB | Caller-owned static/global buffer |
-| MPU | 128 KiB | Caller-owned static/global buffer; optional heap via `NETKIT_HEAP_ARENA=1` |
+| MPU | 64 MiB | Caller-owned static/global buffer; optional heap via `NETKIT_HEAP_ARENA=1` |
 
 Full details: [BUILD_TARGETS.md](BUILD_TARGETS.md), [ARENA.md](ARENA.md).
 

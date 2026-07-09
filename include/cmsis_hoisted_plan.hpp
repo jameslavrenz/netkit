@@ -45,7 +45,8 @@ struct Pool2DCmsisHoist
 struct FcCmsisHoist
 {
     cmsis_nn_fc_params fc{};
-    cmsis_nn_per_tensor_quant_params quant{};
+    // Points at FcPlan::multipliers/shifts (per-channel or length-1).
+    cmsis_nn_quant_params quant{};
     cmsis_nn_dims input{};
     cmsis_nn_dims filter{};
     cmsis_nn_dims bias{};

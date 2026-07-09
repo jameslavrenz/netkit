@@ -12,16 +12,32 @@ from .cnn_layers import _layer_weight_tensor_count, conv2d_input_channels, depth
 from .format import (
     HEADER_BYTES,
     Activation,
+    FLAG_HAS_INT8_TESTS,
     FLAG_HAS_QUANT,
     FLAG_HAS_TESTS,
     LayerKind,
     MLP_LAYER_QUANT_BYTES,
     NetworkKind,
     QUANT_MAGIC,
+    QUAN_FLAG_PER_CHANNEL_WEIGHTS,
     TEST_MAGIC,
     skip_payload_alignment_padding,
     unpack_header,
 )
+
+
+def _skip_quan_section(stream: io.BytesIO) -> None:
+    """Advance past a QUAN block (descriptors + optional per-channel scales)."""
+    magic = stream.read(4)
+    if magic != QUANT_MAGIC:
+        raise ValueError("invalid QUAN section in .nk file")
+    num_quant_layers, quan_flags = struct.unpack("<HH", stream.read(4))
+    stream.read(num_quant_layers * MLP_LAYER_QUANT_BYTES)
+    if quan_flags & QUAN_FLAG_PER_CHANNEL_WEIGHTS:
+        for _ in range(num_quant_layers):
+            (n_ch,) = struct.unpack("<I", stream.read(4))
+            if n_ch:
+                stream.read(n_ch * 4)
 from .inspect import _read_layer_body, _read_tensor_desc
 from .writer import RegressionCase, RegressionSuite
 
@@ -202,11 +218,7 @@ def _read_nk_stream(stream: io.BytesIO) -> tuple[dict, np.ndarray]:
     bias_descs = [_read_tensor_desc(stream) for _ in range(header["num_bias_tensors"])]
 
     if header.get("flags", 0) & FLAG_HAS_QUANT:
-        magic = stream.read(4)
-        if magic != QUANT_MAGIC:
-            raise ValueError("invalid QUAN section in .nk file")
-        num_quant_layers, _reserved = struct.unpack("<HH", stream.read(4))
-        stream.read(num_quant_layers * MLP_LAYER_QUANT_BYTES)
+        _skip_quan_section(stream)
 
     meta_end = stream.tell()
     payload_start = skip_payload_alignment_padding(stream, meta_end)
@@ -284,11 +296,7 @@ def read_test_suite(path: str | Path) -> RegressionSuite | None:
         _read_tensor_desc(stream)
 
     if header.get("flags", 0) & FLAG_HAS_QUANT:
-        magic = stream.read(4)
-        if magic != QUANT_MAGIC:
-            raise ValueError("invalid QUAN section in .nk file")
-        num_quant_layers, _reserved = struct.unpack("<HH", stream.read(4))
-        stream.read(num_quant_layers * MLP_LAYER_QUANT_BYTES)
+        _skip_quan_section(stream)
 
     meta_end = stream.tell()
     skip_payload_alignment_padding(stream, meta_end)
@@ -300,6 +308,7 @@ def read_test_suite(path: str | Path) -> RegressionSuite | None:
         raise ValueError(f"missing TCAS section in {path}")
 
     case_count, tolerance = struct.unpack("<If", stream.read(8))
+    int8_inputs = bool(header["flags"] & FLAG_HAS_INT8_TESTS)
     cases: list[RegressionCase] = []
     for _ in range(case_count):
         name_len = struct.unpack("<B", stream.read(1))[0]
@@ -308,7 +317,10 @@ def read_test_suite(path: str | Path) -> RegressionSuite | None:
         stream.read(pad)
         label = struct.unpack("<i", stream.read(4))[0]
         input_count = struct.unpack("<I", stream.read(4))[0]
-        inp = np.frombuffer(stream.read(input_count * 4), dtype=np.float32).copy()
+        if int8_inputs:
+            inp = np.frombuffer(stream.read(input_count), dtype=np.int8).copy()
+        else:
+            inp = np.frombuffer(stream.read(input_count * 4), dtype=np.float32).copy()
         output_count = struct.unpack("<I", stream.read(4))[0]
         expected = np.frombuffer(stream.read(output_count * 4), dtype=np.float32).copy()
         cases.append(

@@ -138,12 +138,12 @@ def main() -> None:
         if label in used_digits:
             continue
         probs = forward_quantized_mlp(x_test[i], ARCH, pack, output_float=True)
-        # TCAS stores floats; embed prequantized int8 as float values in [-128, 127].
+        # Native int8 TCAS inputs (quantized in Python; C++ never float→int8).
         input_i8 = quantize_float_input(x_test[i], input_scale, input_zp)
         cases.append(
             RegressionCase(
                 name=f"MNIST digit {label} (test idx {i})",
-                input=input_i8.astype(np.float32),
+                input=input_i8.astype(np.int8),
                 expected=probs,
                 label=label,
             )

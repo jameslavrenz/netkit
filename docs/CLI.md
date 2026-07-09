@@ -16,6 +16,7 @@ Convert ONNX to `.nk` with the Python packager — see [python/README.md](../pyt
 
 | Option | Description |
 |--------|-------------|
+| `--arena <size>` | Override arena capacity for `run` / `inspect` (`65536`, `64K`, `64KiB`, `64M`, `64MiB`) |
 | `-h`, `--help` | Print command usage and exit (exit code `0`) |
 | `help` | Same as `-h` / `--help` when used as the command or flag |
 
@@ -24,6 +25,7 @@ Examples:
 ```bash
 ./netkit --help
 ./netkit help
+./netkit --arena 128M run models/mnist_cnn.nk --input ...
 ./netkit run --help          # global help (any position after argv[0])
 ```
 
@@ -85,7 +87,7 @@ Load a model and run one forward pass.
 1. Parses the `.nk` header and prints a boxed network summary
 2. Loads weights from the same file
 3. Validates input element count against the model input shape
-4. Runs forward pass using a **model-sized heap arena** (64 KiB hand / 2 MiB MNIST MLP / 4 MiB MNIST CNN)
+4. Runs forward pass using the default heap arena (**64 MiB**; override with `--arena`)
 5. Prints labeled input and output tensors
 
 **Input count:**
@@ -133,15 +135,22 @@ The C API equivalent is `nk_arch_print()`.
 
 **`--full`:** Load weights, run a zero-input forward pass, and report arena memory usage after load and forward. Use this to size embedded arena buffers before deployment. C API: `nk_inspect_model()` / `nk_inspect_model_memory()`.
 
-When built with **`NETKIT_WEIGHTS_IN_RAM=0`** (MCU default), inspect uses flash-backed buffer load — arena peaks exclude the weight/bias payload. The CLI prints:
+Inspect uses flash-backed buffer load — arena peaks exclude the weight/bias payload. The CLI prints:
 
 ```text
   flash payload:        N bytes (not in arena)
 ```
 
-When **`NETKIT_WEIGHTS_IN_RAM=1`**, coefs are copied into the arena at load; `nk_inspect_info_t.flash_payload_bytes` is zero.
+`nk_inspect_info_t.flash_payload_bytes` reports the same value.
 
-On the default **CPU (heap arena)** build, the CLI allocates a model-appropriate arena automatically (64 KiB hand / 2 MiB MNIST MLP / 4 MiB MNIST CNN). Examples use **`NK_ARENA_DEFAULT_CAPACITY` (4 MiB)**. Build with `NETKIT_GLOBAL_ARENA=1` for static backing — see [BUILD_TARGETS.md](BUILD_TARGETS.md).
+On the default **CPU (heap arena)** build, the CLI allocates **`NK_ARENA_DEFAULT_CAPACITY` (64 MiB)**. Override with a global option:
+
+```bash
+./netkit --arena 128M run models/mnist_cnn.nk --input ...
+./netkit --arena 64KiB inspect models/mlp_hand.nk --full
+```
+
+Sizes accept `65536`, `64K`, `64KiB`, `64M`, `64MiB` (case insensitive). Build with `NETKIT_GLOBAL_ARENA=1` for static backing — see [BUILD_TARGETS.md](BUILD_TARGETS.md).
 
 ## Path resolution
 
@@ -180,16 +189,8 @@ MCU/MPU builds (`make NETKIT_TARGET=mcu lib`) do **not** produce `./netkit`. Use
 | Setting | Default | Override |
 |---------|---------|----------|
 | Target | `NETKIT_TARGET=cpu` | — |
-| Arena backing | **Heap** (`malloc`) | `NETKIT_GLOBAL_ARENA=1` → static 4 MiB buffer in CLI |
-| Arena size (heap) | **Model-based** — see below | Not user-configurable at CLI argv level |
-
-CLI arena sizes (via `ArenaUtil::CapacityForInputElements`):
-
-| Model class | Heap size |
-|-------------|-----------|
-| Hand MLP/CNN | 64 KiB |
-| MNIST MLP (784 inputs) | 2 MiB |
-| MNIST CNN (784 inputs) | 4 MiB |
+| Arena backing | **Heap** (`malloc`) | `NETKIT_GLOBAL_ARENA=1` → static buffer in CLI (capped at 4 MiB) |
+| Arena size (heap) | **64 MiB** (`Arena::kDefaultCapacity`) | `./netkit --arena <size>` |
 
 C API embed: `nk_cli_run(argc, argv)` — requires `NETKIT_DESKTOP` (CPU build).
 

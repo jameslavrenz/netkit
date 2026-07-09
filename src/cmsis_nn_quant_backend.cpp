@@ -85,18 +85,33 @@ namespace
         if (out_channels <= 0 || quant.output_scale <= 0.0f)
             return false;
 
-        const double effective =
-            static_cast<double>(quant.input_scale) * static_cast<double>(quant.weight_scale) /
-            static_cast<double>(quant.output_scale);
+        const bool per_channel =
+            quant.weight_channel_scales != nullptr &&
+            quant.num_weight_channel_scales == static_cast<uint32_t>(out_channels);
 
-        int32_t multiplier = 0;
-        int32_t shift = 0;
-        QuantizeMultiplier(effective, &multiplier, &shift);
+        if (!per_channel)
+        {
+            const double effective =
+                static_cast<double>(quant.input_scale) * static_cast<double>(quant.weight_scale) /
+                static_cast<double>(quant.output_scale);
+            int32_t multiplier = 0;
+            int32_t shift = 0;
+            QuantizeMultiplier(effective, &multiplier, &shift);
+            for (int oc = 0; oc < out_channels; ++oc)
+            {
+                multipliers[oc] = multiplier;
+                shifts[oc] = shift;
+            }
+            return true;
+        }
 
         for (int oc = 0; oc < out_channels; ++oc)
         {
-            multipliers[oc] = multiplier;
-            shifts[oc] = shift;
+            const double effective =
+                static_cast<double>(quant.input_scale) *
+                static_cast<double>(quant.weight_channel_scales[oc]) /
+                static_cast<double>(quant.output_scale);
+            QuantizeMultiplier(effective, &multipliers[oc], &shifts[oc]);
         }
         return true;
     }
@@ -207,7 +222,7 @@ bool FinalizeFcPlan(CmsisQuantPlan::FcPlan& plan,
                     Arena& arena)
 {
 #if NETKIT_CMSIS_PLAN_HOIST
-    if (!plan.ready)
+    if (!plan.ready || !plan.multipliers || !plan.shifts)
         return false;
 
     plan.cmsis.fc = {
@@ -216,9 +231,13 @@ bool FinalizeFcPlan(CmsisQuantPlan::FcPlan& plan,
         .output_offset = plan.output_offset,
         .activation = activation_clamp(plan.clamp, plan.output_scale, -plan.output_offset),
     };
+    const bool per_channel =
+        plan.weight_channel_scales != nullptr &&
+        plan.num_weight_channel_scales == static_cast<uint32_t>(plan.out_features);
     plan.cmsis.quant = {
-        .multiplier = plan.multiplier,
-        .shift = plan.shift,
+        .multiplier = plan.multipliers,
+        .shift = plan.shifts,
+        .is_per_channel = per_channel ? 1 : 0,
     };
     plan.cmsis.input = {.n = 1, .h = 1, .w = 1, .c = plan.in_features};
     plan.cmsis.filter = {
@@ -542,12 +561,19 @@ bool TryFullyConnectedQuantPlan(const CmsisQuantPlan::FcPlan& plan,
     }
 #endif
 
-    int32_t multiplier = plan.multiplier;
-    int32_t shift = plan.shift;
+    if (!plan.multipliers || !plan.shifts)
+    {
+        QuantTrace::RecordFcCmsisFail(QuantTrace::FcFail::NullPtr, 0, workspace_bytes);
+        return false;
+    }
+
+    const bool per_channel =
+        plan.weight_channel_scales != nullptr &&
+        plan.num_weight_channel_scales == static_cast<uint32_t>(plan.out_features);
     const cmsis_nn_quant_params wrapper_quant = {
-        .multiplier = &multiplier,
-        .shift = &shift,
-        .is_per_channel = 0,
+        .multiplier = plan.multipliers,
+        .shift = plan.shifts,
+        .is_per_channel = per_channel ? 1 : 0,
     };
 
 #if NETKIT_CMSIS_PLAN_HOIST
@@ -563,11 +589,6 @@ bool TryFullyConnectedQuantPlan(const CmsisQuantPlan::FcPlan& plan,
                                                         &plan.cmsis.output,
                                                         output_int8)))
 #else
-    const cmsis_nn_per_tensor_quant_params quant_params = {
-        .multiplier = plan.multiplier,
-        .shift = plan.shift,
-    };
-
     const cmsis_nn_fc_params fc_params = {
         .input_offset = plan.input_offset,
         .filter_offset = plan.filter_offset,
@@ -960,16 +981,29 @@ bool TryFullyConnectedQuant(const int8_t* input,
         return false;
     }
 
-    int32_t multiplier = 0;
-    int32_t shift = 0;
-    const double effective =
-        static_cast<double>(quant.input_scale) * static_cast<double>(quant.weight_scale) /
-        static_cast<double>(quant.output_scale);
-    QuantizeMultiplier(effective, &multiplier, &shift);
+    int32_t multipliers_storage[CmsisQuantPlan::kMaxPerChannel];
+    int32_t shifts_storage[CmsisQuantPlan::kMaxPerChannel];
+    if (out_features > CmsisQuantPlan::kMaxPerChannel)
+    {
+        QuantTrace::RecordFcCmsisFail(QuantTrace::FcFail::BadShape, 0, workspace_bytes);
+        return false;
+    }
+    if (!FillPerChannelQuant(quant,
+                             static_cast<int>(out_features),
+                             multipliers_storage,
+                             shifts_storage))
+    {
+        QuantTrace::RecordFcCmsisFail(QuantTrace::FcFail::BadShape, 0, workspace_bytes);
+        return false;
+    }
 
-    const cmsis_nn_per_tensor_quant_params quant_params = {
-        .multiplier = multiplier,
-        .shift = shift,
+    const bool per_channel =
+        quant.weight_channel_scales != nullptr &&
+        quant.num_weight_channel_scales == out_features;
+    const cmsis_nn_quant_params wrapper_quant = {
+        .multiplier = multipliers_storage,
+        .shift = shifts_storage,
+        .is_per_channel = per_channel ? 1 : 0,
     };
 
     const cmsis_nn_fc_params fc_params = {
@@ -1012,17 +1046,17 @@ bool TryFullyConnectedQuant(const int8_t* input,
         return false;
     }
 
-    if (!cmsis_status_ok(arm_fully_connected_s8(&ctx,
-                                                &fc_params,
-                                                &quant_params,
-                                                &input_dims,
-                                                input,
-                                                &filter_dims,
-                                                weights,
-                                                &bias_dims,
-                                                bias,
-                                                &output_dims,
-                                                output_int8)))
+    if (!cmsis_status_ok(arm_fully_connected_wrapper_s8(&ctx,
+                                                        &fc_params,
+                                                        &wrapper_quant,
+                                                        &input_dims,
+                                                        input,
+                                                        &filter_dims,
+                                                        weights,
+                                                        &bias_dims,
+                                                        bias,
+                                                        &output_dims,
+                                                        output_int8)))
     {
         QuantTrace::RecordFcCmsisFail(QuantTrace::FcFail::CmsisStatus, buf_size, workspace_bytes);
         return false;
@@ -1046,9 +1080,12 @@ bool TryElementwiseAddS8(const int8_t* input1,
     if (!input1 || !input2 || !output || count == 0 || output_scale <= 0.0f)
         return false;
 
-    const double max_input_scale = std::max(static_cast<double>(input1_scale),
-                                            static_cast<double>(input2_scale));
-    if (max_input_scale <= 0.0)
+    // Match TFLite PrepareAdd / CMSIS-NN unit-test scale prep:
+    // twice_max = 2 * max(s1, s2); out_mult folds in (1 << left_shift).
+    constexpr int32_t kLeftShift = 20;
+    const double twice_max_input_scale =
+        2.0 * std::max(static_cast<double>(input1_scale), static_cast<double>(input2_scale));
+    if (twice_max_input_scale <= 0.0)
         return false;
 
     int32_t input1_mult = 0;
@@ -1057,11 +1094,16 @@ bool TryElementwiseAddS8(const int8_t* input1,
     int32_t input2_shift = 0;
     int32_t output_mult = 0;
     int32_t output_shift = 0;
-    QuantizeMultiplier(static_cast<double>(input1_scale) / max_input_scale, &input1_mult, &input1_shift);
-    QuantizeMultiplier(static_cast<double>(input2_scale) / max_input_scale, &input2_mult, &input2_shift);
-    QuantizeMultiplier(max_input_scale / static_cast<double>(output_scale), &output_mult, &output_shift);
-
-    constexpr int32_t kLeftShift = 20;
+    QuantizeMultiplier(static_cast<double>(input1_scale) / twice_max_input_scale,
+                       &input1_mult,
+                       &input1_shift);
+    QuantizeMultiplier(static_cast<double>(input2_scale) / twice_max_input_scale,
+                       &input2_mult,
+                       &input2_shift);
+    QuantizeMultiplier(
+        twice_max_input_scale / ((1LL << kLeftShift) * static_cast<double>(output_scale)),
+        &output_mult,
+        &output_shift);
     const arm_cmsis_nn_status status = arm_elementwise_add_s8(
         input1,
         input2,

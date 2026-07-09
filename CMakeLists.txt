@@ -33,7 +33,13 @@ option(NETKIT_XNNPACK "Use Google XNNPACK float32 LayerFast backends (cpu/mpu)" 
 
 option(NETKIT_GLOBAL_ARENA "Use static/global arena on CPU builds" OFF)
 option(NETKIT_HEAP_ARENA "Compile heap arena helpers on MCU/MPU builds" OFF)
-option(NETKIT_WEIGHTS_IN_RAM "Copy .nk weight/bias payload into arena at load (opt-in)" OFF)
+# mmap: default ON for cpu, OFF for mcu/mpu (RTOS-first). Opt in on embedded Linux MPU.
+if(NETKIT_TARGET STREQUAL "cpu")
+    set(_netkit_mmap_default ON)
+else()
+    set(_netkit_mmap_default OFF)
+endif()
+option(NETKIT_MMAP "POSIX mmap for .nk file loads (macOS/Linux; off by default on mcu/mpu)" ${_netkit_mmap_default})
 set(NETKIT_IM2COL "0" CACHE STRING "float Conv2D strategy: 0 direct (default), 1 partial, 2 full im2col+GEMM")
 option(NETKIT_LOOP_UNROLL "EXPERIMENTAL: 4x loop unroll in netkit reference kernels (increases .text)" OFF)
 
@@ -61,6 +67,7 @@ set(NETKIT_LAYER_OP_SOURCES
 
 set(NETKIT_RUNTIME_SOURCES
     src/arena.cpp
+    src/nk_mmap.cpp
     src/tensor_factory.cpp
     src/tensor_access.cpp
     src/reference_kernel.cpp
@@ -153,13 +160,13 @@ elseif(NETKIT_TARGET STREQUAL "mpu")
     endif()
 endif()
 
-if(NETKIT_WEIGHTS_IN_RAM)
-    target_compile_definitions(netkit PUBLIC NETKIT_WEIGHTS_IN_RAM=1)
-else()
-    target_compile_definitions(netkit PUBLIC NETKIT_WEIGHTS_IN_RAM=0)
-endif()
-
 target_compile_definitions(netkit PUBLIC NETKIT_IM2COL=${NETKIT_IM2COL})
+
+if(NETKIT_MMAP)
+    target_compile_definitions(netkit PUBLIC NETKIT_USE_MMAP=1)
+else()
+    target_compile_definitions(netkit PUBLIC NETKIT_USE_MMAP=0)
+endif()
 
 if(NETKIT_LOOP_UNROLL)
     target_compile_definitions(netkit PUBLIC NETKIT_LOOP_UNROLL=1)

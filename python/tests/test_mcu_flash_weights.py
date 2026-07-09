@@ -174,16 +174,15 @@ class TestMcuFlashWeights(unittest.TestCase):
             tmp = Path(tmpdir)
             harness = _write_probe_harness(tmp, nk_bytes)
 
-            _rebuild_lib("NETKIT_TARGET=mcu", "NETKIT_WEIGHTS_IN_RAM=0")
+            _rebuild_lib("NETKIT_TARGET=mcu")
             try:
                 used_flash = _probe_arena_used(tmp, harness)
-                _rebuild_lib("NETKIT_TARGET=mcu", "NETKIT_WEIGHTS_IN_RAM=1")
-                used_ram = _probe_arena_used(tmp, harness)
             finally:
                 _restore_desktop_build()
 
-        self.assertGreater(used_ram, used_flash)
-        self.assertGreaterEqual(used_ram - used_flash, payload_bytes)
+        # Flash-backed load: arena holds structs/activations only (payload stays in blob).
+        self.assertGreater(used_flash, 0)
+        self.assertLess(used_flash, payload_bytes)
 
 
 if __name__ == "__main__":

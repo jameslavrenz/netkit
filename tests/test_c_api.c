@@ -225,7 +225,7 @@ static void TestModelLoadRun(void)
 {
     printf("\n--- model load / run ---\n");
 
-    alignas(max_align_t) static unsigned char memory[NK_ARENA_DEFAULT_CAPACITY];
+    alignas(max_align_t) static unsigned char memory[4u * 1024u * 1024u]; /* MNIST-scale; avoid 64 MiB default */
     nk_arena_t arena;
     nk_arena_init(&arena, memory, sizeof(memory));
 
@@ -296,7 +296,7 @@ static void TestModelMetadata(void)
 {
     printf("\n--- model metadata ---\n");
 
-    alignas(max_align_t) static unsigned char memory[NK_ARENA_DEFAULT_CAPACITY];
+    alignas(max_align_t) static unsigned char memory[4u * 1024u * 1024u]; /* MNIST-scale; avoid 64 MiB default */
     nk_arena_t arena;
     nk_arena_init(&arena, memory, sizeof(memory));
 
@@ -328,7 +328,7 @@ static void TestBufferLoad(void)
     fclose(file);
     ExpectTrue(nbytes > 0, "read test_mlp.nk bytes");
 
-    alignas(max_align_t) static unsigned char memory[NK_ARENA_DEFAULT_CAPACITY];
+    alignas(max_align_t) static unsigned char memory[4u * 1024u * 1024u]; /* MNIST-scale; avoid 64 MiB default */
     nk_arena_t arena;
     nk_arena_init(&arena, memory, sizeof(memory));
 
@@ -362,7 +362,7 @@ static void TestInspectModel(void)
 {
     printf("\n--- inspect model ---\n");
 
-    alignas(max_align_t) static unsigned char memory[NK_ARENA_DEFAULT_CAPACITY];
+    alignas(max_align_t) static unsigned char memory[4u * 1024u * 1024u]; /* MNIST-scale; avoid 64 MiB default */
     nk_arena_t arena;
     nk_arena_init(&arena, memory, sizeof(memory));
 
@@ -374,18 +374,16 @@ static void TestInspectModel(void)
     ExpectTrue(info.arena_bytes_after_forward >= info.arena_bytes_after_load,
                "inspect arena after forward");
     ExpectTrue(info.arch.weights_bytes > 0, "inspect weights_bytes");
-#if !NETKIT_WEIGHTS_IN_RAM
     ExpectTrue(info.flash_payload_bytes > 0, "inspect flash_payload_bytes");
     ExpectTrue(info.flash_payload_bytes == info.arch.weights_bytes + info.arch.biases_bytes,
                "flash payload matches header");
-#endif
 }
 
 static void TestManualMlpActivationBuffers(void)
 {
     printf("\n--- manual mlp activation buffers ---\n");
 
-    alignas(max_align_t) static unsigned char memory[NK_ARENA_DEFAULT_CAPACITY];
+    alignas(max_align_t) static unsigned char memory[4u * 1024u * 1024u]; /* MNIST-scale; avoid 64 MiB default */
     nk_arena_t arena;
     nk_arena_init(&arena, memory, sizeof(memory));
 
@@ -429,7 +427,7 @@ static void TestCnnLoadHasBuffers(void)
 {
     printf("\n--- cnn load activation buffers ---\n");
 
-    alignas(max_align_t) static unsigned char memory[NK_ARENA_DEFAULT_CAPACITY];
+    alignas(max_align_t) static unsigned char memory[4u * 1024u * 1024u]; /* MNIST-scale; avoid 64 MiB default */
     nk_arena_t arena;
     nk_arena_init(&arena, memory, sizeof(memory));
 
@@ -442,7 +440,7 @@ static void TestCnnExtendedOpsLoad(void)
 {
     printf("\n--- cnn extended ops load ---\n");
 
-    alignas(max_align_t) static unsigned char memory[NK_ARENA_DEFAULT_CAPACITY];
+    alignas(max_align_t) static unsigned char memory[4u * 1024u * 1024u]; /* MNIST-scale; avoid 64 MiB default */
     nk_arena_t arena;
     nk_arena_init(&arena, memory, sizeof(memory));
 
@@ -496,7 +494,7 @@ static void TestManualYoloxDecoupledHeadLayer(void)
 
     ExpectTrue(NK_CNN_BLOCK_YOLOX_DECOUPLED_HEAD == 11, "yolox block enum value");
 
-    alignas(max_align_t) static unsigned char memory[NK_ARENA_DEFAULT_CAPACITY];
+    alignas(max_align_t) static unsigned char memory[4u * 1024u * 1024u]; /* MNIST-scale; avoid 64 MiB default */
     nk_arena_t arena;
     nk_arena_init(&arena, memory, sizeof(memory));
 

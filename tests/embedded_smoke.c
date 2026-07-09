@@ -110,7 +110,9 @@ static void TestModelLoadRun(void)
 {
     printf("\n--- model load / run ---\n");
 
-    alignas(max_align_t) static unsigned char arena_memory[NK_ARENA_DEFAULT_CAPACITY];
+    /* Small models only — avoid NK_ARENA_DEFAULT_CAPACITY (64 MiB on CPU/MPU). */
+    enum { kSmokeArenaBytes = 256 * 1024 };
+    alignas(max_align_t) static unsigned char arena_memory[kSmokeArenaBytes];
     nk_arena_t arena;
     nk_arena_init(&arena, arena_memory, sizeof(arena_memory));
 

@@ -17,7 +17,7 @@ sys.path.insert(0, str(ROOT / "python"))
 sys.path.insert(0, str(ROOT / "benchmark" / "tflm" / "tools"))
 
 from export_imagenet_mnv4_test_images import CACHE, SAMPLES, _load_rgb, preprocess  # noqa: E402
-from netkit.quantize import quantize_cnn, quantized_cnn_to_spec  # noqa: E402
+from netkit.quantize import forward_quantized_cnn, quantize_cnn, quantized_cnn_to_spec  # noqa: E402
 from netkit.reader import read_nk  # noqa: E402
 from netkit.writer import write_nk  # noqa: E402
 
@@ -25,16 +25,18 @@ SRC = ROOT / "models" / "mobilenetv4_imagenet_f32.nk"
 OUT = ROOT / "models" / "mobilenetv4_imagenet_int8.nk"
 
 
-def calibration_samples() -> np.ndarray:
+def calibration_samples() -> tuple[np.ndarray, list[int]]:
     samples = []
-    for filename, _url, _label, _short in SAMPLES:
+    labels = []
+    for filename, _url, label, _short in SAMPLES:
         path = CACHE / filename
         if not path.is_file():
             raise SystemExit(
                 f"missing {path} — run: make -C benchmark/tflm export-imagenet-mnv4-images"
             )
         samples.append(preprocess(_load_rgb(path)))
-    return np.stack(samples, axis=0)
+        labels.append(int(label))
+    return np.stack(samples, axis=0), labels
 
 
 def main() -> None:
@@ -47,9 +49,25 @@ def main() -> None:
 
     print(f"reading {SRC} ...")
     arch, weights = read_nk(SRC)
-    cal = calibration_samples()
+    cal, labels = calibration_samples()
     print(f"calibrating with {len(cal)} ImageNet samples ({cal.shape[1:]} each) ...")
     pack = quantize_cnn(arch, weights, cal, num_calibration=len(cal))
+
+    correct = 0
+    for i, (sample, label) in enumerate(zip(cal, labels)):
+        logits = forward_quantized_cnn(sample.reshape(-1), arch, pack, output_float=True)
+        pred = int(np.argmax(logits))
+        ok = pred == label
+        correct += int(ok)
+        print(f"  [{i}] label={label} pred={pred} {'OK' if ok else 'MISS'}")
+    print(f"quantized top-1: {correct}/{len(labels)}")
+    if correct < len(labels):
+        print(
+            f"WARNING: ImageNet int8 top-1 {correct}/{len(labels)} "
+            "(expected near float accuracy with per-channel weight scales; "
+            "check calibration samples / preprocessing if this stays low)"
+        )
+
     spec = quantized_cnn_to_spec(arch, pack)
     write_nk(OUT, spec)
     print(f"Wrote {OUT} ({len(pack.weight_tensors)} weight tensors, {OUT.stat().st_size} bytes)")

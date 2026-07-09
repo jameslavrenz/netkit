@@ -22,8 +22,9 @@ Int8 inference is available for MNIST **CNN** and **MLP** on **MCU + CMSIS-NN**:
 
 | Component | Type |
 |-----------|------|
-| `.nk` quant payload | int8 weights, int32 biases, per-layer `QuantLayerParams` |
-| Activations | int8 (CMSIS-NN or integer reference kernels; int8 softmax) |
+| `.nk` quant payload | int8 weights, int32 biases, per-layer `QuantLayerParams`; optional per-channel weight scales (`QUAN_FLAG_PER_CHANNEL_WEIGHTS`) |
+| Weight scales | Per-output-channel (TFLite-style) when the QUAN flag is set; else one `weight_scale` per layer |
+| Activations | int8 per-tensor (CMSIS-NN or integer reference kernels; int8 softmax) |
 | Device I/O | **int8 in → int8 out** (no float quant / dequant on MCU or in C++) |
 | CNN export | `make export-mnist-cnn-int8` |
 | MLP export | `make export-mnist-mlp-int8` |
@@ -34,9 +35,9 @@ Int8 inference is available for MNIST **CNN** and **MLP** on **MCU + CMSIS-NN**:
 
 **Kernel fusion (int8):** CMSIS-NN fuses **ReLU / ReLU6** output clamps into conv, depthwise, and FC via `QuantInteger::QuantClamp` (ReLU6 uses quantized `6.0`). Softmax, Sigmoid, Tanh, and LeakyReLU remain separate follow-up kernels — CMSIS-NN has no fused Softmax API. For **classification benches** (MNIST MCU firmware), AOT/`MLPNetwork`/`CmsisQuantPlan` support `--omit-final-softmax` / `SetOmitFinalSoftmax(true)` / `runtime.omit_final_softmax`: the final Dense Softmax is skipped and logits are written; `argmax(logits) == argmax(softmax(logits))`. Float max-pool can fuse ReLU/ReLU6 through CMSIS `cmsis_nn_activation` when the layer carries an activation tag. UIB int8 depthwise now tries CMSIS-NN before the reference loop. Residual Add is fused as a conv/FC epilogue where the graph allows it (`Conv2dForward` optional residual; `Conv2dNhwcQuant` + `ResidualAddS8`; ResNet `MatAddThenRelu`) — CMSIS still has no native conv+add, so the epilogue uses `arm_add_f32` / `arm_elementwise_add_s8` after the conv. Quant AOT lowering covers CNN primitives, MLP dense, avg-pool, and MobileNetV4 UIB composites (`forward_quant`); float AOT also lowers ResNet BasicBlock and ConvNeXt V2 blocks.
 
-TFLite input-quant alignment (layer 0) is optional when matching `benchmark/tflm/generated/mnist_*_int8.tflite` exists. Weight and hidden-layer output scales are calibrated from netkit float weights (Python export).
+TFLite input-quant alignment (layer 0) is optional when matching `benchmark/tflm/generated/mnist_*_int8.tflite` exists. Weight and hidden-layer output scales are calibrated from netkit float weights (Python export). ImageNet MobileNetV4 int8 PTQ emits per-channel weight scales so CMSIS-NN / XNNPACK `qc8w` / reference requant match TFLite’s per-axis weights.
 
-Host desktop builds do not run the CMSIS-NN quant forward path (`NETKIT_CMSIS_NN_ALLOWED=0`). On **cpu/mpu**, int8 LayerFast uses **XNNPACK qs8** when `NETKIT_XNNPACK=1`, else netkit integer reference loops. Python `forward_quantized_cnn` / `forward_quantized_mlp` and MCU firmware remain the CMSIS-NN validation paths. Host regression and ImageNet/MNIST int8 benches load **prequantized int8** inputs (Python export; TCAS stores values as float in [-128, 127]) via `nk_model_run_int8` / int8 tensor views — never float→int8 inside C++.
+Host desktop builds do not run the CMSIS-NN quant forward path (`NETKIT_CMSIS_NN_ALLOWED=0`). On **cpu/mpu**, int8 LayerFast uses **XNNPACK qs8 / qs8_qc8w** when `NETKIT_XNNPACK=1`, else netkit integer reference loops. Python `forward_quantized_cnn` / `forward_quantized_mlp` and MCU firmware remain the CMSIS-NN validation paths. Host regression and ImageNet/MNIST int8 benches load **native int8** inputs (Python-prequantized; TCAS uses `FLAG_HAS_INT8_TESTS`) via `nk_model_run_int8` / int8 tensor views — never float→int8 inside C++. Float models stay float32 end-to-end.
 
 The `DataType` / `nk_dtype_t` enums list `Int8`, `UInt8`, and `Int16` for future tensor metadata beyond the MNIST CNN path.
 

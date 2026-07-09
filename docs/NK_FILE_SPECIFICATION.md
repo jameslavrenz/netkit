@@ -303,7 +303,7 @@ If `(48 + L + catalog_bytes) % 4 != 0`, the writer inserts **0–3 zero bytes** 
 payload_offset = round_up(48 + L + catalog_bytes, 4)
 ```
 
-Weight and bias payloads must be readable as `float32` arrays on little-endian hosts. Buffer/AOT load with `NETKIT_WEIGHTS_IN_RAM=0` requires `payload_offset % 4 == 0`.
+Weight and bias payloads must be readable as `float32` arrays on little-endian hosts. Buffer/AOT load binds flash views and requires `payload_offset % 4 == 0`.
 
 ---
 

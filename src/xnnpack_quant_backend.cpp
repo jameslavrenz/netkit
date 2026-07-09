@@ -66,6 +66,8 @@ namespace
                     int8_t input_zp,
                     float input_scale,
                     float kernel_scale,
+                    const float* kernel_scales,
+                    size_t kernel_scale_count,
                     const int8_t* kernel,
                     const int32_t* bias,
                     int8_t output_zp,
@@ -82,10 +84,73 @@ namespace
     {
         if (!EnsureXnnInitialized() || !kernel || !bias || !input || !output)
             return false;
-        if (input_scale <= 0.0f || kernel_scale <= 0.0f || output_scale <= 0.0f)
+        if (input_scale <= 0.0f || output_scale <= 0.0f)
             return false;
 
+        const size_t expected_scales =
+            groups * group_output_channels; // per output channel across groups
+        const bool per_channel =
+            kernel_scales != nullptr && kernel_scale_count == expected_scales;
+
         ScopedOp scoped;
+        if (per_channel)
+        {
+            if (xnn_create_convolution2d_nhwc_qs8_qc8w(
+                    pad_h,
+                    pad_w,
+                    pad_h,
+                    pad_w,
+                    kernel_h,
+                    kernel_w,
+                    stride,
+                    stride,
+                    /*dilation_height=*/1,
+                    /*dilation_width=*/1,
+                    groups,
+                    group_input_channels,
+                    group_output_channels,
+                    input_channel_stride,
+                    output_channel_stride,
+                    input_zp,
+                    input_scale,
+                    kernel_scales,
+                    kernel,
+                    bias,
+                    output_zp,
+                    output_scale,
+                    output_min,
+                    output_max,
+                    flags,
+                    /*weights_cache=*/nullptr,
+                    &scoped.op) != xnn_status_success)
+                return false;
+
+            size_t workspace_size = 0;
+            size_t out_h = 0;
+            size_t out_w = 0;
+            if (xnn_reshape_convolution2d_nhwc_qs8_qc8w(scoped.op,
+                                                        /*batch_size=*/1,
+                                                        in_h,
+                                                        in_w,
+                                                        &workspace_size,
+                                                        &out_h,
+                                                        &out_w,
+                                                        /*threadpool=*/nullptr) !=
+                xnn_status_success)
+                return false;
+            if (out_h != expect_out_h || out_w != expect_out_w)
+                return false;
+
+            std::vector<uint8_t> workspace_storage(workspace_size);
+            void* workspace = workspace_size > 0 ? workspace_storage.data() : nullptr;
+            if (xnn_setup_convolution2d_nhwc_qs8_qc8w(scoped.op, workspace, input, output) !=
+                xnn_status_success)
+                return false;
+            return xnn_run_operator(scoped.op, /*threadpool=*/nullptr) == xnn_status_success;
+        }
+
+        if (kernel_scale <= 0.0f)
+            return false;
         if (xnn_create_convolution2d_nhwc_qs8(
                 pad_h,
                 pad_w,
@@ -169,6 +234,8 @@ bool TryConv2dNhwcQuantPlan(const CmsisQuantPlan::Conv2DPlan& plan,
                       /*input_zp=*/static_cast<int8_t>(-plan.input_offset),
                       plan.input_scale,
                       plan.weight_scale,
+                      plan.weight_channel_scales,
+                      plan.num_weight_channel_scales,
                       weights,
                       bias,
                       /*output_zp=*/static_cast<int8_t>(-plan.output_offset),
@@ -216,6 +283,8 @@ bool TryDepthwiseConv2dNhwcQuantPlan(const CmsisQuantPlan::DepthwiseConv2DPlan& 
                       /*input_zp=*/static_cast<int8_t>(-plan.input_offset),
                       plan.input_scale,
                       plan.weight_scale,
+                      plan.weight_channel_scales,
+                      plan.num_weight_channel_scales,
                       kernel,
                       bias,
                       /*output_zp=*/static_cast<int8_t>(-plan.output_offset),
@@ -291,7 +360,7 @@ bool TryFullyConnectedQuantPlan(const CmsisQuantPlan::FcPlan& plan,
 {
     if (!plan.ready || !input || !weights || !bias || !output_int8)
         return false;
-    if (plan.input_scale <= 0.0f || plan.weight_scale <= 0.0f || plan.output_scale <= 0.0f)
+    if (plan.input_scale <= 0.0f || plan.output_scale <= 0.0f)
         return false;
     // XNNPACK qs8 FC expects filter zero-point 0 (symmetric weights).
     if (plan.filter_offset != 0)
@@ -305,8 +374,42 @@ bool TryFullyConnectedQuantPlan(const CmsisQuantPlan::FcPlan& plan,
 
     const size_t in_channels = static_cast<size_t>(plan.in_features);
     const size_t out_channels = static_cast<size_t>(plan.out_features);
+    const bool per_channel =
+        plan.weight_channel_scales != nullptr &&
+        plan.num_weight_channel_scales == static_cast<uint32_t>(plan.out_features);
 
     ScopedOp scoped;
+    if (per_channel)
+    {
+        if (xnn_create_fully_connected_nc_qs8_qc8w(
+                in_channels,
+                out_channels,
+                /*input_stride=*/in_channels,
+                /*output_stride=*/out_channels,
+                /*input_zero_point=*/static_cast<int8_t>(-plan.input_offset),
+                plan.input_scale,
+                plan.weight_channel_scales,
+                weights,
+                bias,
+                /*output_zero_point=*/static_cast<int8_t>(-plan.output_offset),
+                plan.output_scale,
+                out_min,
+                out_max,
+                /*flags=*/0,
+                /*weights_cache=*/nullptr,
+                &scoped.op) != xnn_status_success)
+            return false;
+        if (xnn_reshape_fully_connected_nc_qs8_qc8w(scoped.op, /*batch_size=*/1, nullptr) !=
+            xnn_status_success)
+            return false;
+        if (xnn_setup_fully_connected_nc_qs8_qc8w(scoped.op, input, output_int8) !=
+            xnn_status_success)
+            return false;
+        return xnn_run_operator(scoped.op, nullptr) == xnn_status_success;
+    }
+
+    if (plan.weight_scale <= 0.0f)
+        return false;
     if (xnn_create_fully_connected_nc_qs8(
             in_channels,
             out_channels,
@@ -380,6 +483,8 @@ bool TryConv2dNhwcQuant(const int8_t* input,
                       static_cast<int8_t>(quant.input_zero_point),
                       quant.input_scale,
                       quant.weight_scale,
+                      quant.weight_channel_scales,
+                      quant.num_weight_channel_scales,
                       weights,
                       bias,
                       static_cast<int8_t>(quant.output_zero_point),
@@ -442,6 +547,8 @@ bool TryDepthwiseConv2dNhwcQuant(const int8_t* input,
                       static_cast<int8_t>(quant.input_zero_point),
                       quant.input_scale,
                       quant.weight_scale,
+                      quant.weight_channel_scales,
+                      quant.num_weight_channel_scales,
                       weights_chw,
                       bias,
                       static_cast<int8_t>(quant.output_zero_point),
@@ -529,7 +636,7 @@ bool TryFullyConnectedQuant(const int8_t* input,
 {
     if (!input || !weights || !bias || !output_int8 || batch == 0)
         return false;
-    if (quant.input_scale <= 0.0f || quant.weight_scale <= 0.0f || quant.output_scale <= 0.0f)
+    if (quant.input_scale <= 0.0f || quant.output_scale <= 0.0f)
         return false;
     if (quant.weight_zero_point != 0)
         return false;
@@ -542,7 +649,42 @@ bool TryFullyConnectedQuant(const int8_t* input,
     int8_t out_max = 127;
     ActivationClampS8(clamp, quant.output_scale, quant.output_zero_point, out_min, out_max);
 
+    const bool per_channel =
+        quant.weight_channel_scales != nullptr &&
+        quant.num_weight_channel_scales == out_features;
+
     ScopedOp scoped;
+    if (per_channel)
+    {
+        if (xnn_create_fully_connected_nc_qs8_qc8w(
+                in_features,
+                out_features,
+                in_features,
+                out_features,
+                static_cast<int8_t>(quant.input_zero_point),
+                quant.input_scale,
+                quant.weight_channel_scales,
+                weights,
+                bias,
+                static_cast<int8_t>(quant.output_zero_point),
+                quant.output_scale,
+                out_min,
+                out_max,
+                0,
+                nullptr,
+                &scoped.op) != xnn_status_success)
+            return false;
+        if (xnn_reshape_fully_connected_nc_qs8_qc8w(scoped.op, batch, nullptr) !=
+            xnn_status_success)
+            return false;
+        if (xnn_setup_fully_connected_nc_qs8_qc8w(scoped.op, input, output_int8) !=
+            xnn_status_success)
+            return false;
+        return xnn_run_operator(scoped.op, nullptr) == xnn_status_success;
+    }
+
+    if (quant.weight_scale <= 0.0f)
+        return false;
     if (xnn_create_fully_connected_nc_qs8(in_features,
                                           out_features,
                                           in_features,

@@ -67,23 +67,22 @@ Compile-time macros (from `include/netkit_config.h`):
 | `NETKIT_DESKTOP` | CPU only — CLI, regression, debug tooling |
 | `NETKIT_ARENA_HEAP` | Heap arena API compiled in (CPU default; MCU/MPU when opted in) |
 | `NETKIT_GLOBAL_ARENA` | CPU only — force global/static arena instead of heap default |
-| `NETKIT_WEIGHTS_IN_RAM` | `1` — copy weight/bias payload into arena at buffer/AOT load (default **CPU/MPU**); `0` — coefs stay in `.nk` flash blob (default **MCU**) |
 | `NETKIT_USE_CMSIS_NN` | CMSIS-NN backends enabled (see CMSIS section) |
 | `NETKIT_USE_CMSIS_DSP` | CMSIS-DSP backends enabled (see CMSIS section) |
 | `NETKIT_IM2COL` | float Conv2D strategy (single tri-state knob): `0` = direct loops only, `1` = partial im2col, `2` = full im2col + GEMM. Default **`0` (direct) on all targets** (cpu/mcu/mpu) — direct convolution with the multi-accumulator dot is fastest for the small models we target. Leave unset for the default, or opt into `1`/`2` per workload. Int8 quantized inference uses CMSIS-NN, not float im2col. |
 | `NETKIT_LOOP_UNROLL` | `1` — **experimental** 4× manual loop unroll in **netkit reference kernels** only (default **0**). Increases `.text` size; can exceed flash on small MCUs. Most likely worth considering on **MPU** targets with flash headroom — avoid on tight MCUs. Does not affect CMSIS (`ARM_MATH_LOOPUNROLL` is separate). |
 | `NETKIT_DW_ROW_ACCUM` | Depthwise conv cross-row accumulator strategy (default **1**). `1` = round-robin kernel rows across 4 independent accumulators (breaks the cross-row serial dependency; +~144 B). `0` = single serial cross-row accumulator. Both keep the 4-accumulator inner tap reduction (`dot_strided`). Benchmarks show no measurable difference on out-of-order hosts; the break can help in-order MCUs with tall (5×5) kernels. Defined in `src/conv_depthwise_kernel.cpp`. |
 | `NETKIT_HOST_SMOKE` | Host MCU/MPU smoke only — adds `__GNUC_PYTHON__` for CMSIS without CMSIS-Core |
+| `NETKIT_USE_MMAP` | POSIX mmap for path-based `.nk` load (`NETKIT_MMAP=0\|1`). Default **1** on cpu, **0** on mcu/mpu |
 
 Default arena constant (`NK_ARENA_DEFAULT_CAPACITY` / `Arena::kDefaultCapacity`):
 
 | Target | Default |
 |--------|---------|
-| **CPU** | **4 MiB** (MNIST CNN-capable; examples and C API smoke tests) |
 | **MCU** | **64 KiB** |
-| **MPU** | **128 KiB** |
+| **CPU / MPU** | **64 MiB** |
 
-CLI/regression on CPU still use **model-sized heap** via `ArenaUtil::CapacityForInputElements` (64 KiB hand / 2 MiB MNIST MLP / 4 MiB MNIST CNN).
+Weights always stay in the `.nk` blob. **Preferred on MCU and RTOS/bare-metal MPU:** flash/XIP or `Load*FromBuffer`. **Optional POSIX mmap** (`NETKIT_MMAP` / `NETKIT_USE_MMAP`): default **on** for CPU (macOS/Linux), **off** for MCU and MPU — opt in on embedded Linux with `NETKIT_MMAP=1`. When mmap is off, file load uses `fread` into the arena. The bump arena holds activations and structs. CLI override: `./netkit --arena <size> run|inspect …`.
 
 ## Quick commands (Make)
 
@@ -107,10 +106,6 @@ make NETKIT_ARCH=M33 NETKIT_TARGET=mcu NETKIT_CMSIS_NN=1 NETKIT_CMSIS_DSP=1 lib
 # MCU/MPU with optional heap arena API
 make NETKIT_TARGET=mcu NETKIT_HEAP_ARENA=1 lib
 make NETKIT_TARGET=mpu NETKIT_HEAP_ARENA=1 lib
-
-# Override weight load policy (buffer/AOT path; file load always copies)
-make NETKIT_TARGET=mcu NETKIT_WEIGHTS_IN_RAM=1 lib   # copy coefs to SRAM when RAM fits (faster inference)
-make NETKIT_TARGET=cpu NETKIT_WEIGHTS_IN_RAM=0 lib     # test flash-backed load on desktop
 
 # Convenience aliases
 make cpu              # NETKIT_TARGET=cpu (heap default)
@@ -139,7 +134,7 @@ cmake --build build-firmware
 cmake -B build-m55 -DCMAKE_TOOLCHAIN_FILE=... -DNETKIT_TARGET=mcu -DNETKIT_ARCH=M55 -DNETKIT_CMSIS_NN=ON
 ```
 
-CMake cache options mirror Make: `NETKIT_TARGET`, `NETKIT_ARCH`, `NETKIT_CMSIS_NN`, `NETKIT_CMSIS_DSP`, `NETKIT_GLOBAL_ARENA`, `NETKIT_HEAP_ARENA`, `NETKIT_WEIGHTS_IN_RAM`.
+CMake cache options mirror Make: `NETKIT_TARGET`, `NETKIT_ARCH`, `NETKIT_CMSIS_NN`, `NETKIT_CMSIS_DSP`, `NETKIT_GLOBAL_ARENA`, `NETKIT_HEAP_ARENA`.
 
 ## CPU (desktop)
 
@@ -157,7 +152,7 @@ Use for local development and the **`netkit` CLI**.
 - `run_all_tests` / `nk_run_all_tests`
 - Future tensor analysis / debug tooling
 
-**Arena:** CLI and regression use **heap** with model-sized buffers (64 KiB hand / 2 MiB MNIST MLP / 4 MiB MNIST CNN). Examples and C API smoke tests use **`NK_ARENA_DEFAULT_CAPACITY` (4 MiB)**. Build with `NETKIT_GLOBAL_ARENA=1` to use a static buffer instead of heap.
+**Arena:** CLI and regression use **heap** with **`NK_ARENA_DEFAULT_CAPACITY` (64 MiB)** on CPU. Override with `./netkit --arena <size>`. Build with `NETKIT_GLOBAL_ARENA=1` to use a static buffer instead of heap.
 
 See [CLI.md](CLI.md).
 
@@ -185,7 +180,16 @@ nk_arena_init_heap(&arena, capacity);
 
 ## MPU (lean runtime)
 
-Same lean runtime as MCU. Default static arena constant is **`NK_ARENA_DEFAULT_CAPACITY` (128 KiB)** — use a caller-owned buffer of at least that size for small models, or size up with `nk_inspect_model()` for larger graphs.
+Same lean runtime as MCU. Default static arena constant is **`NK_ARENA_DEFAULT_CAPACITY` (64 MiB)** — MPU firmware typically uses a caller-owned buffer sized with `nk_inspect_model()` rather than the full default.
+
+**OS is orthogonal to the MPU target.** Many Cortex-A boards run FreeRTOS, Zephyr, or bare metal (no `mmap`). Defaults match that:
+
+| MPU deployment | Weight load |
+|----------------|-------------|
+| RTOS / bare metal | Flash/XIP or `nk_*_load_memory` / `Load*FromBuffer` (same as MCU). `NETKIT_MMAP=0` (default). |
+| Embedded Linux | Opt in: `make NETKIT_TARGET=mpu NETKIT_MMAP=1 lib` for POSIX `mmap` file load. |
+
+Do not assume every MPU build has a virtual-memory OS.
 
 ## Source split
 

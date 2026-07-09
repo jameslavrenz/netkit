@@ -13,7 +13,7 @@ Runs the **same MNIST CNN benchmark** as `benchmark/netkit/` and `benchmark/tflm
 | Target | `NETKIT_TARGET_MCU` |
 | Arch | `NETKIT_ARCH=CM4` (Cortex-M4F) |
 | CMSIS | **CMSIS-NN** + **CMSIS-DSP** (q7 copy/max utils; layer kernels are CMSIS-NN) |
-| Weights | **Flash** — embedded `.nk` blob in `.rodata` (`NETKIT_WEIGHTS_IN_RAM=0`) |
+| Weights | **Flash** — embedded `.nk` blob in `.rodata` |
 | Deployment | **Interpreter embed** — `NkLoader` + `NkOpsResolver` (same class as TFLM blob + interpreter) |
 | Dtype | int8 weights / activations; prequantized int8 test inputs; output = logits (Softmax omitted) |
 
@@ -33,7 +33,7 @@ Compare with TFLM int8 on the same board: [nucleo-f446re-tflm-cnn-int8](../nucle
 
 ## Memory budget (STM32F446RE, interpreter embed)
 
-The board has **512 KiB flash** and **128 KiB SRAM**. Default firmware uses **interpreter embed** with flash-backed weights (`NETKIT_WEIGHTS_IN_RAM=0`).
+The board has **512 KiB flash** and **128 KiB SRAM**. Default firmware uses **interpreter embed** with flash-backed weights.
 
 | Region | Approx. size | Notes |
 |--------|--------------|-------|

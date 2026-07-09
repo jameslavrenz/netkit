@@ -70,7 +70,7 @@ Full reference: [CLI.md](CLI.md).
 | `netkit run <model.nk> --input <values>` | One forward pass |
 | `netkit inspect <model.nk> [--full]` | Network summary; `--full` reports arena usage |
 
-The CLI is **CPU-only** (`NETKIT_TARGET=cpu`). It uses **heap-backed arenas** sized per model (64 KiB hand / 2 MiB MNIST MLP / 4 MiB MNIST CNN) so MNIST works without manual buffer sizing.
+The CLI is **CPU-only** (`NETKIT_TARGET=cpu`). It uses a **heap-backed arena** (`NK_ARENA_DEFAULT_CAPACITY` = **64 MiB** by default). Override with `./netkit --arena <size>`.
 
 ---
 
@@ -88,15 +88,15 @@ Select target with **`NETKIT_TARGET`**:
 
 | Target | `NK_ARENA_DEFAULT_CAPACITY` | Arena backing |
 |--------|------------------------------|---------------|
-| CPU | **4 MiB** | **Heap** (default); `NETKIT_GLOBAL_ARENA=1` for static buffer |
+| CPU | **64 MiB** | **Heap** (default); `NETKIT_GLOBAL_ARENA=1` for static buffer |
 | MCU | **64 KiB** | Your static/global buffer; `NETKIT_HEAP_ARENA=1` for optional heap API |
-| MPU | **128 KiB** | Same as MCU |
+| MPU | **64 MiB** | Same as MCU (caller-owned buffer; size with inspect) |
 
 ```bash
 make                                    # CPU, heap default
 make NETKIT_TARGET=cpu NETKIT_GLOBAL_ARENA=1 all   # CPU, static arena
 make NETKIT_TARGET=mcu lib              # firmware, 64 KiB constant
-make NETKIT_TARGET=mpu lib              # firmware, 128 KiB constant
+make NETKIT_TARGET=mpu lib              # firmware, 64 MiB constant
 make NETKIT_TARGET=mpu NETKIT_HEAP_ARENA=1 lib     # MPU + heap helpers
 ```
 
@@ -219,11 +219,8 @@ python -m netkit aot models/test_mlp.nk -o build/aot --no-lower
 # C23 (.h + .c) — interpreter path only (no lowered emitter)
 python -m netkit aot models/test_mlp.nk -o build/aot --language c
 
-# MCU: flash-backed coefs (default for --target mcu), size arena without weight copy
-python -m netkit aot models/mlp_hand.nk -o build/aot --target mcu --no-weights-in-ram --arena-headroom 15
-
-# Copy coefs into arena at load (when SRAM fits weights + activations)
-python -m netkit aot models/mlp_hand.nk -o build/aot --weights-in-ram
+# MCU: flash-backed coefs (always), size arena without weight copy
+python -m netkit aot models/mlp_hand.nk -o build/aot --target mcu --arena-headroom 15
 
 # Optional smoke main (compile with -DNETKIT_AOT_MAIN)
 python -m netkit aot models/test_mlp.nk -o build/aot --main
@@ -261,7 +258,7 @@ model.onnx  →  convert  →  model.nk  →  aot  →  model_aot.{hpp,cpp}
 
 At runtime:
 
-- **Lowered C++ AOT** — static `Kernels::` chain; coefs in `.rodata` unless `--weights-in-ram`
+- **Lowered C++ AOT** — static `Kernels::` chain; coefs in `.rodata`
 - **Interpreter AOT** — `NkLoader::LoadMLPFromBuffer` / `LoadCNNFromBuffer` (C++) or `nk_model_load_memory` (C) on the embedded `.nk` blob
 
 With `--optimize`, the packager applies stable graph passes before embedding (conv+BN fusion, BN folded into the following dense head, consecutive linear dense merge, identity BN removal). Each pass is checked against the original model numerically before the optimized `.nk` is emitted.

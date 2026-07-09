@@ -35,16 +35,28 @@ namespace TensorFactory
         }
         else
         {
-            const float* p = static_cast<const float*>(t.data);
-            std::cout << std::fixed << std::setprecision(4);
-
             const uint32_t print_count =
                 max_values == 0 ? t.num_elements : std::min(t.num_elements, max_values);
-            for (uint32_t i = 0; i < print_count; i++)
+            if (t.type == DataType::Int8)
             {
-                if (i > 0)
-                    std::cout << ", ";
-                std::cout << p[i];
+                const int8_t* p = static_cast<const int8_t*>(t.data);
+                for (uint32_t i = 0; i < print_count; i++)
+                {
+                    if (i > 0)
+                        std::cout << ", ";
+                    std::cout << static_cast<int>(p[i]);
+                }
+            }
+            else
+            {
+                const float* p = static_cast<const float*>(t.data);
+                std::cout << std::fixed << std::setprecision(4);
+                for (uint32_t i = 0; i < print_count; i++)
+                {
+                    if (i > 0)
+                        std::cout << ", ";
+                    std::cout << p[i];
+                }
             }
             if (print_count < t.num_elements)
                 std::cout << ", ... (" << t.num_elements << " total)";

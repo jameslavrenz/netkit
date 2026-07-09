@@ -96,7 +96,7 @@ Sizing is included in `./netkit inspect --full` arena high-water. The CLI also p
 
 ### Arena sizing for composite models
 
-Fused blocks increase per-layer scratch (ConvNeXt V2 GRN norms, UIB ping-pong paths) but **ping-pong activation buffers** still dominate peak memory. Size firmware arenas from **`./netkit inspect models/your_model.nk --full`** or `nk_inspect_model()`: use **arena bytes after forward** plus 1.5–2× headroom. On MCU with `NETKIT_WEIGHTS_IN_RAM=0`, subtract weight bytes from arena totals — use `flash_payload_bytes` from inspect. Composite backbones (`resnet18.nk`, `mobilenetv4_small.nk`, `convnextv2_atto.nk`) typically need **multi‑MiB** CPU heap arenas; see [ARENA.md](ARENA.md#choosing-arena-size).
+Fused blocks increase per-layer scratch (ConvNeXt V2 GRN norms, UIB ping-pong paths) but **ping-pong activation buffers** still dominate peak memory. Size firmware arenas from **`./netkit inspect models/your_model.nk --full`** or `nk_inspect_model()`: use **arena bytes after forward** plus 1.5–2× headroom. Weights stay flash/blob-backed — use `flash_payload_bytes` from inspect for flash budget, not SRAM. Composite backbones (`resnet18.nk`, `mobilenetv4_small.nk`, `convnextv2_atto.nk`) typically need **multi‑MiB** CPU heap arenas; see [ARENA.md](ARENA.md#choosing-arena-size).
 
 ## Dispatch pattern
 

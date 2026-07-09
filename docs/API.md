@@ -42,15 +42,15 @@ Core inference, loading, tensor/ops, MLP/CNN construction, regression, and CLI e
 
 | Target | Command | CLI | `NK_ARENA_DEFAULT_CAPACITY` |
 |--------|---------|-----|----------------------------|
-| CPU | `make` | Yes | **4 MiB** |
+| CPU | `make` | Yes | **64 MiB** |
 | MCU | `make NETKIT_TARGET=mcu lib` | No | **64 KiB** |
-| MPU | `make NETKIT_TARGET=mpu lib` | No | **128 KiB** |
+| MPU | `make NETKIT_TARGET=mpu lib` | No | **64 MiB** |
 
 **Arena backing flags** (see [BUILD_TARGETS.md](BUILD_TARGETS.md)):
 
 | Flag | Effect |
 |------|--------|
-| *(CPU default)* | Heap arena — `nk_arena_init_heap` / CLI model-sized buffers |
+| *(CPU default)* | Heap arena — `nk_arena_init_heap` / CLI default 64 MiB |
 | `NETKIT_GLOBAL_ARENA=1` (CPU) | Static/global arena only |
 | `NETKIT_HEAP_ARENA=1` (MCU/MPU) | Compile in optional heap arena API |
 
@@ -124,7 +124,7 @@ Full guide: [ARENA.md](ARENA.md). Data types: [DATATYPES.md](DATATYPES.md).
 
 Both APIs use a **caller-provided arena buffer** (or heap backing when `NETKIT_ARENA_HEAP` is enabled). Size is **not** in the model file — it depends on weights plus ping-pong activation buffers at load.
 
-**Defaults:** CPU **4 MiB** constant; MCU **64 KiB**; MPU **128 KiB**. CLI/regression on CPU use model-sized heap (64 KiB / 2 MiB / 4 MiB).
+**Defaults:** MCU **64 KiB**; CPU and MPU **64 MiB**. CLI override: `./netkit --arena <size>`.
 
 **Sizing:** `./netkit inspect <model.nk> --full` or `nk_inspect_model()` → `arena_bytes_after_forward` → add headroom.
 

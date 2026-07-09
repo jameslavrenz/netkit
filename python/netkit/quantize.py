@@ -13,6 +13,8 @@ from .cnn_layers import conv2d_input_channels, depthwise_kernel_hw
 from .reference_forward import (
     _activate,
     _avg_pool_nhwc,
+    _conv_nhwc,
+    _depthwise_conv_nhwc,
     _max_pool_nhwc,
     _out_dim,
     _uib_dw_stride,
@@ -51,12 +53,63 @@ def _symmetric_scale(values: np.ndarray) -> tuple[float, int]:
     return scale, 0
 
 
+def _activation_scale(values: np.ndarray, *, non_negative: bool = False) -> tuple[float, int]:
+    """Per-tensor activation scale.
+
+    ReLU / non-negative tensors use asymmetric int8 (zp=-128) so the full
+    [-128, 127] code space maps to [0, amax] — roughly 2x resolution vs
+    symmetric zp=0, which is critical for deep MobileNet graphs.
+    """
+    flat = np.asarray(values, dtype=np.float32).reshape(-1)
+    if flat.size == 0:
+        return 1.0, 0
+    if non_negative or float(np.min(flat)) >= 0.0:
+        amax = float(np.max(flat))
+        if amax <= 0.0:
+            return 1.0, -128
+        return amax / 255.0, -128
+    return _symmetric_scale(flat)
+
+
 def quantize_symmetric_int8(values: np.ndarray) -> tuple[np.ndarray, float, int]:
     scale, zero_point = _symmetric_scale(values)
     if scale <= 0.0:
         return np.zeros_like(values, dtype=np.int8), 1.0, 0
     q = np.clip(np.round(values / scale), -128, 127).astype(np.int8)
     return q, scale, zero_point
+
+
+def quantize_per_channel_symmetric_int8(
+    values: np.ndarray, *, axis: int = 0
+) -> tuple[np.ndarray, np.ndarray]:
+    """TFLite-style per-axis symmetric int8 weights (zp=0).
+
+    Returns (int8_weights, float32 scales[axis_size]).
+    """
+    arr = np.asarray(values, dtype=np.float32)
+    if arr.ndim == 0:
+        q, scale, _ = quantize_symmetric_int8(arr)
+        return q, np.asarray([scale], dtype=np.float32)
+    moved = np.moveaxis(arr, axis, 0)
+    channels = moved.shape[0]
+    scales = np.empty(channels, dtype=np.float32)
+    q_moved = np.empty_like(moved, dtype=np.int8)
+    flat_rest = int(np.prod(moved.shape[1:])) if moved.ndim > 1 else 1
+    for c in range(channels):
+        slice_c = moved[c].reshape(-1) if flat_rest > 1 else moved[c : c + 1]
+        amax = float(np.max(np.abs(slice_c)))
+        scale = amax / 127.0 if amax > 0.0 else 1.0
+        scales[c] = scale
+        q_moved[c] = np.clip(np.round(moved[c] / scale), -128, 127).astype(np.int8)
+    q = np.moveaxis(q_moved, 0, axis)
+    return q, scales
+
+
+def _weight_scales_or_scalar(quant: QuantLayerParams) -> np.ndarray:
+    scales = getattr(quant, "weight_scales", None)
+    if scales is not None and len(scales) > 0:
+        return np.asarray(scales, dtype=np.float32).reshape(-1)
+    return np.asarray([quant.weight_scale], dtype=np.float32)
 
 
 def quantize_float_input(values: np.ndarray, scale: float, zero_point: int) -> np.ndarray:
@@ -94,12 +147,73 @@ def _fc_quant_int8(
 ) -> np.ndarray:
     in_q = input_q.astype(np.int32) - quant.input_zero_point
     wt_q = weight_q.astype(np.int32) - quant.weight_zero_point
-    effective_scale = quant.input_scale * quant.weight_scale
     acc = in_q @ wt_q.T + bias_q.astype(np.int32)
-    out_real = acc.astype(np.float32) * effective_scale
+    w_scales = _weight_scales_or_scalar(quant)
+    out_features = weight_q.shape[0]
+    if w_scales.size == 1:
+        out_real = acc.astype(np.float32) * (quant.input_scale * float(w_scales[0]))
+    else:
+        if w_scales.size != out_features:
+            raise ValueError(f"fc weight_scales len {w_scales.size} != out {out_features}")
+        out_real = acc.astype(np.float32) * (quant.input_scale * w_scales.astype(np.float32))
     if apply_relu:
         out_real = np.maximum(0.0, out_real)
     return out_real
+
+
+def _quantize_weights_and_bias(
+    w_float: np.ndarray,
+    b_float: np.ndarray,
+    input_scale: float,
+    *,
+    per_channel_axis: int | None,
+) -> tuple[np.ndarray, np.ndarray, float, np.ndarray, float]:
+    """Quantize weights (optional per-channel) and bias.
+
+    Returns (weight_q, bias_q, weight_scale_scalar, weight_scales, bias_scale_scalar).
+    bias_q[c] = round(b[c] / (input_scale * weight_scales[c])).
+    """
+    if per_channel_axis is None:
+        weight_q, weight_scale, _ = quantize_symmetric_int8(w_float)
+        scales = np.asarray([weight_scale], dtype=np.float32)
+    else:
+        weight_q, scales = quantize_per_channel_symmetric_int8(w_float, axis=per_channel_axis)
+        weight_scale = float(np.max(scales)) if scales.size else 1.0
+    if scales.size == 1:
+        effective = input_scale * float(scales[0])
+        if effective <= 0.0:
+            effective = 1.0
+        bias_q = np.round(b_float / effective).astype(np.int32)
+        bias_scale = effective
+    else:
+        eff = input_scale * scales.astype(np.float32)
+        eff = np.where(eff <= 0.0, 1.0, eff)
+        bias_q = np.round(np.asarray(b_float, dtype=np.float32) / eff).astype(np.int32)
+        bias_scale = float(eff[0])
+    return weight_q, bias_q, weight_scale, scales, bias_scale
+
+
+def _make_quant_params(
+    *,
+    input_scale: float,
+    input_zp: int,
+    weight_scale: float,
+    weight_scales: np.ndarray,
+    bias_scale: float,
+    output_scale: float,
+    output_zp: int,
+) -> QuantLayerParams:
+    return QuantLayerParams(
+        input_scale=input_scale,
+        input_zero_point=input_zp,
+        weight_scale=weight_scale,
+        weight_zero_point=0,
+        bias_scale=bias_scale,
+        bias_zero_point=0,
+        output_scale=output_scale,
+        output_zero_point=output_zp,
+        weight_scales=weight_scales if weight_scales.size > 1 else None,
+    )
 
 
 SOFTMAX_OUTPUT_SCALE = 1.0 / 256.0
@@ -404,13 +518,20 @@ def _conv2d_quant_nhwc(
     pad_h_end: int,
     pad_w_end: int,
     apply_relu: bool,
+    return_float: bool = False,
 ) -> np.ndarray:
+    """Int8 conv. With return_float=True (calibration), return unclipped float acts."""
     in_h, in_w, in_c = input_q.shape
     out_c = weight_q.shape[0]
     out_h = _out_dim(in_h, kernel_size, stride, pad_h, pad_h_end)
     out_w = _out_dim(in_w, kernel_size, stride, pad_w, pad_w_end)
-    out = np.zeros((out_h, out_w, out_c), dtype=np.int8)
-    effective_scale = quant.input_scale * quant.weight_scale
+    out_dtype = np.float32 if return_float else np.int8
+    out = np.zeros((out_h, out_w, out_c), dtype=out_dtype)
+    w_scales = _weight_scales_or_scalar(quant)
+    if w_scales.size == 1:
+        w_scales = np.full(out_c, float(w_scales[0]), dtype=np.float32)
+    elif w_scales.size != out_c:
+        raise ValueError(f"conv weight_scales len {w_scales.size} != out_c {out_c}")
 
     for oh in range(out_h):
         for ow in range(out_w):
@@ -427,12 +548,17 @@ def _conv2d_quant_nhwc(
                         in_row = input_q[ih, iw].astype(np.int32) - quant.input_zero_point
                         wt_row = weight_q[oc, kh, kw].astype(np.int32) - quant.weight_zero_point
                         acc += int(np.dot(in_row, wt_row))
-                out_real = float(acc) * effective_scale
+                out_real = float(acc) * (quant.input_scale * float(w_scales[oc]))
                 if apply_relu:
                     out_real = max(0.0, out_real)
-                out[oh, ow, oc] = np.clip(
-                    int(round(out_real / quant.output_scale)) + quant.output_zero_point, -128, 127
-                )
+                if return_float:
+                    out[oh, ow, oc] = out_real
+                else:
+                    out[oh, ow, oc] = np.clip(
+                        int(round(out_real / quant.output_scale)) + quant.output_zero_point,
+                        -128,
+                        127,
+                    )
     return out
 
 
@@ -450,12 +576,19 @@ def _depthwise_conv2d_quant_nhwc(
     pad_h_end: int,
     pad_w_end: int,
     apply_relu: bool,
+    return_float: bool = False,
 ) -> np.ndarray:
+    """Int8 depthwise conv. With return_float=True (calibration), return unclipped float acts."""
     in_h, in_w, channels = input_q.shape
     out_h = _out_dim(in_h, kernel_h, stride, pad_h, pad_h_end)
     out_w = _out_dim(in_w, kernel_w, stride, pad_w, pad_w_end)
-    out = np.zeros((out_h, out_w, channels), dtype=np.int8)
-    effective_scale = quant.input_scale * quant.weight_scale
+    out_dtype = np.float32 if return_float else np.int8
+    out = np.zeros((out_h, out_w, channels), dtype=out_dtype)
+    w_scales = _weight_scales_or_scalar(quant)
+    if w_scales.size == 1:
+        w_scales = np.full(channels, float(w_scales[0]), dtype=np.float32)
+    elif w_scales.size != channels:
+        raise ValueError(f"dw weight_scales len {w_scales.size} != channels {channels}")
 
     for oh in range(out_h):
         for ow in range(out_w):
@@ -472,12 +605,17 @@ def _depthwise_conv2d_quant_nhwc(
                         in_val = int(input_q[ih, iw, c]) - quant.input_zero_point
                         wt_val = int(weight_q[c, kh, kw]) - quant.weight_zero_point
                         acc += in_val * wt_val
-                out_real = float(acc) * effective_scale
+                out_real = float(acc) * (quant.input_scale * float(w_scales[c]))
                 if apply_relu:
                     out_real = max(0.0, out_real)
-                out[oh, ow, c] = np.clip(
-                    int(round(out_real / quant.output_scale)) + quant.output_zero_point, -128, 127
-                )
+                if return_float:
+                    out[oh, ow, c] = out_real
+                else:
+                    out[oh, ow, c] = np.clip(
+                        int(round(out_real / quant.output_scale)) + quant.output_zero_point,
+                        -128,
+                        127,
+                    )
     return out
 
 
@@ -803,71 +941,76 @@ def _quantize_uib_layer(
         )
     )
 
+    # Static PTQ: collect activation scales from float forward (not quantized chain).
     cur_scale = input_scale
     cur_zp = input_zp
-    next_samples = hidden_samples
+    next_samples = [np.asarray(s, dtype=np.float32) for s in hidden_samples]
+    has_residual = stride == 1 and in_c == out_c
+    residual_inputs = [sample.copy() for sample in next_samples] if has_residual else None
 
     for kind, w_float, b_float, apply_relu, meta in subops:
-        weight_q, weight_scale, weight_zp = quantize_symmetric_int8(w_float)
-        effective_scale = cur_scale * weight_scale
-        if effective_scale <= 0.0:
-            effective_scale = 1.0
-        bias_q = np.round(b_float / effective_scale).astype(np.int32)
-        quant = QuantLayerParams(
-            input_scale=cur_scale,
-            input_zero_point=cur_zp,
-            weight_scale=weight_scale,
-            weight_zero_point=weight_zp,
-            bias_scale=effective_scale,
-            bias_zero_point=0,
-            output_scale=1.0,
-            output_zero_point=0,
-        )
-
         layer_outputs: list[np.ndarray] = []
         for sample in next_samples:
-            input_q = quantize_float_input(sample.reshape(-1), cur_scale, cur_zp).reshape(sample.shape)
             if kind == "dw":
-                out = _depthwise_conv2d_quant_nhwc(
-                    input_q,
-                    weight_q.reshape(-1, meta["kernel_h"], meta["kernel_w"])
-                    if weight_q.ndim == 1
-                    else weight_q,
-                    bias_q,
-                    quant,
-                    kernel_h=meta["kernel_h"],
-                    kernel_w=meta["kernel_w"],
+                out = _depthwise_conv_nhwc(
+                    sample,
+                    w_float if w_float.ndim == 3 else w_float.reshape(-1, meta["kernel_h"], meta["kernel_w"]),
+                    b_float,
                     stride=meta["stride"],
                     pad_h=meta["pad_h"],
                     pad_w=meta["pad_w"],
                     pad_h_end=meta["pad_h"],
                     pad_w_end=meta["pad_w"],
-                    apply_relu=apply_relu,
                 )
             else:
-                out = _conv2d_quant_nhwc(
-                    input_q,
-                    weight_q.reshape(meta["filters"], meta["kernel_size"], meta["kernel_size"], -1),
-                    bias_q,
-                    quant,
-                    kernel_size=meta["kernel_size"],
+                out = _conv_nhwc(
+                    sample,
+                    w_float.reshape(meta["filters"], meta["kernel_size"], meta["kernel_size"], -1),
+                    b_float,
                     stride=meta["stride"],
                     pad_h=meta["pad_h"],
                     pad_w=meta["pad_w"],
                     pad_h_end=meta["pad_h"],
                     pad_w_end=meta["pad_w"],
-                    apply_relu=apply_relu,
                 )
-            layer_outputs.append(out)
+            if apply_relu:
+                out = np.maximum(out, 0.0)
+            layer_outputs.append(out.astype(np.float32))
 
         stacked = np.stack(layer_outputs, axis=0)
-        output_scale, output_zp = _symmetric_scale(stacked.reshape(-1))
-        quant.output_scale = output_scale
-        quant.output_zero_point = output_zp
+        output_scale, output_zp = _activation_scale(stacked, non_negative=apply_relu)
+        # Per-channel along out-channel axis: dw [C,Kh,Kw] axis0; pw [O,1,1,I] axis0.
+        weight_q, bias_q, weight_scale, w_scales, bias_scale = _quantize_weights_and_bias(
+            w_float, b_float, cur_scale, per_channel_axis=0
+        )
+        quant_layers.append(
+            _make_quant_params(
+                input_scale=cur_scale,
+                input_zp=cur_zp,
+                weight_scale=weight_scale,
+                weight_scales=w_scales,
+                bias_scale=bias_scale,
+                output_scale=output_scale,
+                output_zp=output_zp,
+            )
+        )
         weight_tensors.append(weight_q)
         bias_tensors.append(bias_q)
-        quant_layers.append(quant)
         next_samples = layer_outputs
+        cur_scale = output_scale
+        cur_zp = output_zp
+
+    # Runtime residual add requantizes into project output_scale — calibrate on post-add range.
+    if residual_inputs is not None:
+        combined_f = [
+            proj.astype(np.float32) + resid.astype(np.float32)
+            for proj, resid in zip(next_samples, residual_inputs)
+        ]
+        stacked = np.stack(combined_f, axis=0)
+        output_scale, output_zp = _activation_scale(stacked, non_negative=False)
+        quant_layers[-1].output_scale = output_scale
+        quant_layers[-1].output_zero_point = output_zp
+        next_samples = combined_f
         cur_scale = output_scale
         cur_zp = output_zp
 
@@ -1125,6 +1268,8 @@ def quantize_cnn(
                     for sample in hidden_samples
                 ]
             elif layer_type == "avg_pool2d":
+                # Calibration samples are unclipped float acts; float avg-pool matches
+                # the float-domain chain (runtime still uses int8 avg-pool).
                 pool_h = layer["pool_size"]
                 pool_w = layer.get("pool_w", pool_h)
                 hidden_samples = [
@@ -1146,107 +1291,78 @@ def quantize_cnn(
 
         w_float = float_weights[tensor_idx]
         b_float = float_biases[tensor_idx]
-        if aligned_quants is not None:
-            prescribed = aligned_quants[tensor_idx]
-            if tensor_idx == 0:
-                input_scale = prescribed.input_scale
-                input_zp = prescribed.input_zero_point
-            # Later layers keep input_scale/input_zp chained from calibrated outputs.
-            # TFLite weight/output scales target TFLite's own weights — not netkit's.
-            weight_q, weight_scale, weight_zp = quantize_symmetric_int8(w_float)
-            effective_scale = input_scale * weight_scale
-            if effective_scale <= 0.0:
-                effective_scale = 1.0
-            bias_q = np.round(b_float / effective_scale).astype(np.int32)
-            quant = QuantLayerParams(
-                input_scale=input_scale,
-                input_zero_point=input_zp,
-                weight_scale=weight_scale,
-                weight_zero_point=weight_zp,
-                bias_scale=effective_scale,
-                bias_zero_point=0,
-                output_scale=1.0,
-                output_zero_point=0,
-            )
-        else:
-            weight_q, weight_scale, weight_zp = quantize_symmetric_int8(w_float)
-            effective_scale = input_scale * weight_scale
-            if effective_scale <= 0.0:
-                effective_scale = 1.0
-            bias_q = np.round(b_float / effective_scale).astype(np.int32)
+        if aligned_quants is not None and tensor_idx == 0:
+            prescribed = aligned_quants[0]
+            input_scale = prescribed.input_scale
+            input_zp = prescribed.input_zero_point
 
-            quant = QuantLayerParams(
-                input_scale=input_scale,
-                input_zero_point=input_zp,
-                weight_scale=weight_scale,
-                weight_zero_point=weight_zp,
-                bias_scale=effective_scale,
-                bias_zero_point=0,
-                output_scale=1.0,
-                output_zero_point=0,
-            )
-
+        # Static PTQ: float forward for activation ranges, then quantize weights/biases.
         next_samples: list[np.ndarray] = []
         if layer_type == "conv2d":
             k = layer["kernel_size"]
-            w_q = weight_q.reshape(layer["filters"], k, k, -1)
+            w_float_shaped = w_float.reshape(layer["filters"], k, k, -1)
             for sample in hidden_samples:
-                input_q = quantize_float_input(sample.reshape(-1), input_scale, input_zp).reshape(
-                    sample.shape
-                )
-                out = _conv2d_quant_nhwc(
-                    input_q,
-                    w_q,
-                    bias_q,
-                    quant,
-                    kernel_size=k,
+                out = _conv_nhwc(
+                    np.asarray(sample, dtype=np.float32),
+                    w_float_shaped,
+                    b_float,
                     stride=layer.get("stride", 1),
                     pad_h=layer.get("pad_h", 0),
                     pad_w=layer.get("pad_w", 0),
                     pad_h_end=layer.get("pad_h_end", layer.get("pad_h", 0)),
                     pad_w_end=layer.get("pad_w_end", layer.get("pad_w", 0)),
-                    apply_relu=layer.get("activation") == "relu",
                 )
-                next_samples.append(out)
+                if layer.get("activation") == "relu":
+                    out = np.maximum(out, 0.0)
+                next_samples.append(out.astype(np.float32))
         elif layer_type == "depthwise_conv2d":
             kh, kw = depthwise_kernel_hw(layer)
-            w_q = weight_q.reshape(layer["filters"], kh, kw)
+            w_float_shaped = w_float.reshape(layer["filters"], kh, kw)
             for sample in hidden_samples:
-                input_q = quantize_float_input(sample.reshape(-1), input_scale, input_zp).reshape(
-                    sample.shape
-                )
-                out = _depthwise_conv2d_quant_nhwc(
-                    input_q,
-                    w_q,
-                    bias_q,
-                    quant,
-                    kernel_h=kh,
-                    kernel_w=kw,
+                out = _depthwise_conv_nhwc(
+                    np.asarray(sample, dtype=np.float32),
+                    w_float_shaped,
+                    b_float,
                     stride=layer.get("stride", 1),
                     pad_h=layer.get("pad_h", 0),
                     pad_w=layer.get("pad_w", 0),
                     pad_h_end=layer.get("pad_h_end", layer.get("pad_h", 0)),
                     pad_w_end=layer.get("pad_w_end", layer.get("pad_w", 0)),
-                    apply_relu=layer.get("activation") == "relu",
                 )
-                next_samples.append(out)
+                if layer.get("activation") == "relu":
+                    out = np.maximum(out, 0.0)
+                next_samples.append(out.astype(np.float32))
         else:
-            w_q = weight_q.reshape(layer["units"], -1)
+            w_float_shaped = w_float.reshape(layer["units"], -1)
             for sample in hidden_samples:
-                input_q = quantize_float_input(sample.reshape(-1), input_scale, input_zp)
-                out = _fc_quant_int8(
-                    input_q, w_q, bias_q, quant, apply_relu=layer.get("activation") == "relu"
-                )
-                next_samples.append(out)
+                flat = np.asarray(sample, dtype=np.float32).reshape(-1)
+                out = w_float_shaped @ flat + b_float
+                if layer.get("activation") == "relu":
+                    out = np.maximum(out, 0.0)
+                next_samples.append(out.astype(np.float32))
 
         if layer.get("activation") == "softmax":
             output_scale, output_zp = 1.0, 0
         else:
             stacked = np.stack(next_samples, axis=0)
-            output_scale, output_zp = _symmetric_scale(stacked.reshape(-1))
+            output_scale, output_zp = _activation_scale(
+                stacked, non_negative=layer.get("activation") == "relu"
+            )
 
-        quant.output_scale = output_scale
-        quant.output_zero_point = output_zp
+        # Per-channel along out-channel / units axis (TFLite-style).
+        weight_q, bias_q, weight_scale, w_scales, bias_scale = _quantize_weights_and_bias(
+            w_float, b_float, input_scale, per_channel_axis=0
+        )
+
+        quant = _make_quant_params(
+            input_scale=input_scale,
+            input_zp=input_zp,
+            weight_scale=weight_scale,
+            weight_scales=w_scales,
+            bias_scale=bias_scale,
+            output_scale=output_scale,
+            output_zp=output_zp,
+        )
         weight_tensors.append(weight_q)
         bias_tensors.append(bias_q)
         quant_layers.append(quant)

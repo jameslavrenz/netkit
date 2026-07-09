@@ -68,8 +68,12 @@ int RunBenchmark(const char* model_path)
         return 1;
     }
 
+#if defined(NETKIT_ARENA_HEAP)
+    ArenaUtil::Scoped arena_scope(Arena::kDefaultCapacity);
+#else
     alignas(std::max_align_t) static unsigned char arena_memory[Arena::kDefaultCapacity];
     ArenaUtil::Scoped arena_scope(Arena::kDefaultCapacity, arena_memory);
+#endif
     if (!arena_scope)
     {
         std::fprintf(stderr, "arena init failed\n");

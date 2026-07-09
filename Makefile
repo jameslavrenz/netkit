@@ -11,8 +11,13 @@
 #   NETKIT_GLOBAL_ARENA=1  — CPU only: use static/global arena instead of heap default
 #   NETKIT_HEAP_ARENA=1    — MCU/MPU: compile heap arena helpers (off by default)
 #
-# Weight load policy (buffer / AOT path only; file load always copies to arena):
-#   NETKIT_WEIGHTS_IN_RAM=1|0 — default 0 (coefs in flash/blob); set 1 to copy payload to SRAM
+# File-load mmap (POSIX macOS/Linux only):
+#   NETKIT_MMAP=1          — enable mmap for LoadMLP/LoadCNN from path (default: cpu=1, mcu/mpu=0)
+#   NETKIT_MMAP=0          — fread into arena instead (or use Load*FromBuffer / flash)
+#   MPU defaults off so RTOS/bare-metal builds match MCU; opt in on embedded Linux.
+#
+# Weights always stay in the .nk blob (flash/XIP, mmap, or buffer); arena holds
+# activations and structs only.
 #
 # Optional backends (profile defaults below; override on command line):
 #   NETKIT_CMSIS_NN=1      — Cortex-M MCU only (NETKIT_TARGET=mcu + NETKIT_ARCH=CM4|M33|...)
@@ -62,7 +67,12 @@
 NETKIT_TARGET ?= cpu
 NETKIT_GLOBAL_ARENA ?= 0
 NETKIT_HEAP_ARENA ?= 0
-NETKIT_WEIGHTS_IN_RAM ?= 0
+# mmap file load: on for cpu, off for mcu/mpu (override with NETKIT_MMAP=0|1)
+ifeq ($(NETKIT_TARGET),cpu)
+  NETKIT_MMAP ?= 1
+else
+  NETKIT_MMAP ?= 0
+endif
 ifeq ($(NETKIT_TARGET),cpu)
   NETKIT_CMSIS_DSP ?= 1
   NETKIT_CMSIS_NN ?= 0
@@ -111,7 +121,7 @@ CXXFLAGS = -fcolor-diagnostics -fansi-escape-codes -g -std=c++26 -Wall -Wextra -
 TARGET = netkit
 LIB = libnetkit.a
 
-RUNTIME_SOURCES = src/arena.cpp src/tensor_factory.cpp src/tensor_access.cpp src/reference_kernel.cpp src/kernel_workspace.cpp src/cmsis_buffer_size.cpp src/ops.cpp \
+RUNTIME_SOURCES = src/arena.cpp src/nk_mmap.cpp src/tensor_factory.cpp src/tensor_access.cpp src/reference_kernel.cpp src/kernel_workspace.cpp src/cmsis_buffer_size.cpp src/ops.cpp \
                     src/conv2d.cpp src/depthwise_conv2d.cpp src/conv2d_layout.cpp src/conv_dispatch.cpp src/conv1x1_kernel.cpp src/conv_depthwise_kernel.cpp \
                     src/conv_direct_kernel.cpp src/im2col_partial.cpp src/im2col_full.cpp \
                     src/convnextv2_block.cpp src/mobilenetv4_uib.cpp src/resnet_basic_block.cpp src/yolox_decoupled_head.cpp src/mlp.cpp src/quant_ops.cpp src/quant_softmax_s8.cpp src/cmsis_dsp_util.cpp src/quant_trace.cpp src/cmsis_nn_quant_backend.cpp src/cmsis_quant_plan.cpp src/cnn_quant.cpp src/cnn.cpp \
@@ -250,9 +260,9 @@ else
   $(error NETKIT_TARGET must be cpu, mcu, or mpu (got '$(NETKIT_TARGET)'))
 endif
 
-TARGET_CPPFLAGS += -DNETKIT_WEIGHTS_IN_RAM=$(NETKIT_WEIGHTS_IN_RAM)
 TARGET_CPPFLAGS += -DNETKIT_IM2COL=$(NETKIT_IM2COL)
 TARGET_CPPFLAGS += -DNETKIT_LOOP_UNROLL=$(NETKIT_LOOP_UNROLL)
+TARGET_CPPFLAGS += -DNETKIT_USE_MMAP=$(NETKIT_MMAP)
 
 CFLAGS += $(TARGET_CPPFLAGS)
 CXXFLAGS += $(TARGET_CPPFLAGS)
@@ -287,7 +297,7 @@ NK_INFER_SRC = tools/nk_infer.c
 NK_INFER_OBJ = tools/nk_infer.o
 
 TRIM_LIB = libnetkit_trim.a
-TRIM_RUNTIME_SOURCES = src/arena.cpp src/tensor_factory.cpp src/tensor_access.cpp src/reference_kernel.cpp src/kernel_workspace.cpp src/cmsis_buffer_size.cpp src/ops.cpp \
+TRIM_RUNTIME_SOURCES = src/arena.cpp src/nk_mmap.cpp src/tensor_factory.cpp src/tensor_access.cpp src/reference_kernel.cpp src/kernel_workspace.cpp src/cmsis_buffer_size.cpp src/ops.cpp \
                        src/conv2d.cpp src/conv2d_layout.cpp src/conv_dispatch.cpp src/conv1x1_kernel.cpp src/conv_depthwise_kernel.cpp \
                        src/conv_direct_kernel.cpp src/im2col_partial.cpp src/im2col_full.cpp src/mlp.cpp src/cnn.cpp $(TRIM_LAYER_OP_SOURCES) src/ops_resolver.cpp \
                        src/nk_format.cpp src/nk_loader.cpp src/netkit_api.cpp
@@ -295,7 +305,7 @@ TRIM_CORE_OBJECTS = $(TRIM_RUNTIME_SOURCES:.cpp=.o)
 
 # Rebuild objects when target/backends change — avoids mixing CPU and MCU .o files in libnetkit.a.
 NETKIT_BUILD_STAMP = .netkit_build_stamp
-NETKIT_BUILD_ID = target=$(NETKIT_TARGET),global_arena=$(NETKIT_GLOBAL_ARENA),heap_arena=$(NETKIT_HEAP_ARENA),weights_in_ram=$(NETKIT_WEIGHTS_IN_RAM),cmsis_nn=$(NETKIT_CMSIS_NN_EFFECTIVE),cmsis_dsp=$(NETKIT_CMSIS_DSP),xnnpack=$(NETKIT_XNNPACK_EFFECTIVE),im2col=$(NETKIT_IM2COL),loop_unroll=$(NETKIT_LOOP_UNROLL),arch=$(NETKIT_ARCH),host_smoke=$(NETKIT_HOST_SMOKE)
+NETKIT_BUILD_ID = target=$(NETKIT_TARGET),global_arena=$(NETKIT_GLOBAL_ARENA),heap_arena=$(NETKIT_HEAP_ARENA),mmap=$(NETKIT_MMAP),cmsis_nn=$(NETKIT_CMSIS_NN_EFFECTIVE),cmsis_dsp=$(NETKIT_CMSIS_DSP),xnnpack=$(NETKIT_XNNPACK_EFFECTIVE),im2col=$(NETKIT_IM2COL),loop_unroll=$(NETKIT_LOOP_UNROLL),arch=$(NETKIT_ARCH),host_smoke=$(NETKIT_HOST_SMOKE)
 
 NETKIT_STALE_BINARIES = $(TARGET) $(LIB) $(TRIM_LIB) $(EXAMPLE_C) $(EXAMPLE_CPP) $(TEST_C) $(EMBEDDED_SMOKE) $(NK_INFER)
 

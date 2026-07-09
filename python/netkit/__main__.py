@@ -105,20 +105,6 @@ def main(argv: list[str] | None = None) -> int:
             "(argmax-equivalent; for classification benches)"
         ),
     )
-    weights_group = aot.add_mutually_exclusive_group()
-    weights_group.add_argument(
-        "--weights-in-ram",
-        dest="weights_in_ram",
-        action="store_true",
-        help="Size arena assuming weight/bias payload is copied into SRAM at load (opt-in)",
-    )
-    weights_group.add_argument(
-        "--no-weights-in-ram",
-        dest="weights_in_ram",
-        action="store_false",
-        help="Size arena for flash-backed coefs (default)",
-    )
-    aot.set_defaults(weights_in_ram=None)
 
     args = parser.parse_args(argv)
 
@@ -215,9 +201,6 @@ def main(argv: list[str] | None = None) -> int:
             optimize=args.optimize,
             arena_headroom_percent=args.arena_headroom,
             flash_section=not args.no_flash_section,
-            weights_in_ram=(
-                args.weights_in_ram if args.weights_in_ram is not None else False
-            ),
             lower=not args.no_lower,
             omit_final_softmax=args.omit_final_softmax,
         )

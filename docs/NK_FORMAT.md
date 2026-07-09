@@ -156,16 +156,7 @@ Python encode/decode: `python/netkit/pad_encoding.py` (`encode_pad_extra`, `enco
 
 ### Weight load policy (runtime)
 
-Same `.nk` bytes on disk or in flash; the loader policy is compile-time (`NETKIT_WEIGHTS_IN_RAM` in `netkit_config.h`). Full tradeoff: [ARENA.md](ARENA.md#weight-storage-tradeoff-netkit_weights_in_ram).
-
-| Build | Default | Buffer / AOT load (`LoadMLPFromBuffer` / `LoadCNNFromBuffer`, `nk_model_load_memory`) | File load (`LoadMLP`, `nk_model_load`) |
-|-------|---------|----------------------------------------------------------------|----------------------------------------|
-| **MCU** | `NETKIT_WEIGHTS_IN_RAM=0` | Coefs in flash blob; arena = structs + activations | Always copies payload into arena |
-| **CPU / MPU** | `NETKIT_WEIGHTS_IN_RAM=1` | Copies weight/bias payload into arena | Copies payload into arena |
-
-**Sizing rule:** if SRAM fits **weights + activations + headroom**, use `NETKIT_WEIGHTS_IN_RAM=1`; otherwise MCU default leaves coefs in flash.
-
-Override: `make NETKIT_WEIGHTS_IN_RAM=0|1` or CMake `-DNETKIT_WEIGHTS_IN_RAM=ON|OFF`. Misaligned payloads fall back to arena copy.
+Same `.nk` bytes on disk or in flash. Weights **always** stay in the blob: buffer/AOT bind views into the payload; optional POSIX **`mmap`** file load when `NETKIT_USE_MMAP=1` (CPU default on macOS/Linux; off for MCU/MPU unless opted in). Arena holds structs + activations only. For buffer load, `data` must outlive the network. Misaligned payloads return a load error. See [ARENA.md](ARENA.md#weight-storage-always-flashblob-backed).
 
 ## Embedded regression tests (optional)
 

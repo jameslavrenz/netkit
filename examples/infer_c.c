@@ -46,7 +46,6 @@ int main(int argc, char** argv)
     for (int i = 0; i < input_arg_count; ++i)
         input[i] = strtof(argv[i + 2], nullptr);
 
-    alignas(max_align_t) static unsigned char arena_memory[NK_ARENA_DEFAULT_CAPACITY];
     nk_arena_t arena;
     int exit_code = 0;
 
@@ -57,6 +56,7 @@ int main(int argc, char** argv)
         return 1;
     }
 #else
+    alignas(max_align_t) static unsigned char arena_memory[NK_ARENA_DEFAULT_CAPACITY];
     nk_arena_init(&arena, arena_memory, sizeof(arena_memory));
 #endif
 

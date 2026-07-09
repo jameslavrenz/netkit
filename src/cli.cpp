@@ -7,6 +7,8 @@
 #include "mlp.hpp"
 #include "cnn.hpp"
 #include "arena_util.hpp"
+#include <cctype>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -20,19 +22,68 @@ namespace Cli
         constexpr uint32_t kMaxInputFloats = NK_MAX_CASE_FLOATS;
 
 #if !defined(NETKIT_ARENA_HEAP)
-        alignas(std::max_align_t) unsigned char g_arena_buffer[ArenaUtil::kMnistCnnCapacity];
+#if defined(NETKIT_TARGET_MCU)
+        alignas(std::max_align_t) unsigned char g_arena_buffer[Arena::kDefaultCapacity];
+#else
+        // CPU GLOBAL_ARENA: avoid a 64 MiB .bss; heap builds use Arena::kDefaultCapacity.
+        constexpr std::size_t kStaticArenaCap = 4u * 1024u * 1024u;
+        alignas(std::max_align_t) unsigned char g_arena_buffer[kStaticArenaCap];
+#endif
 #endif
 
-        std::size_t ArenaCapacityForModel(const NkLoader::ParsedModel& parsed)
+        std::size_t g_arena_override = 0;
+
+        std::size_t EffectiveArenaCapacity()
         {
-            const bool is_cnn = parsed.header.network_kind == NkFormat::NetworkKind::Cnn;
-            return ArenaUtil::CapacityForModel(NkLoader::InputElements(parsed),
-                                               is_cnn,
-                                               parsed.header.weights_bytes,
-                                               parsed.header.biases_bytes);
+            if (g_arena_override != 0)
+                return g_arena_override;
+            return Arena::kDefaultCapacity;
         }
 
-#if !NETKIT_WEIGHTS_IN_RAM
+        bool ParseArenaSize(const char* text, std::size_t& out)
+        {
+            if (!text || !*text)
+                return false;
+
+            char* end = nullptr;
+            const unsigned long long value = std::strtoull(text, &end, 10);
+            if (end == text || value == 0)
+                return false;
+
+            while (*end == ' ')
+                ++end;
+
+            unsigned long long multiplier = 1;
+            if (*end != '\0')
+            {
+                char unit[8] = {};
+                std::size_t n = 0;
+                while (end[n] != '\0' && n + 1 < sizeof(unit))
+                {
+                    unit[n] = static_cast<char>(std::tolower(static_cast<unsigned char>(end[n])));
+                    ++n;
+                }
+                if (end[n] != '\0')
+                    return false;
+
+                if (std::strcmp(unit, "k") == 0 || std::strcmp(unit, "kib") == 0)
+                    multiplier = 1024ull;
+                else if (std::strcmp(unit, "m") == 0 || std::strcmp(unit, "mib") == 0)
+                    multiplier = 1024ull * 1024ull;
+                else if (std::strcmp(unit, "g") == 0 || std::strcmp(unit, "gib") == 0)
+                    multiplier = 1024ull * 1024ull * 1024ull;
+                else
+                    return false;
+            }
+
+            const unsigned long long bytes = value * multiplier;
+            if (bytes == 0 || bytes > static_cast<unsigned long long>(SIZE_MAX))
+                return false;
+
+            out = static_cast<std::size_t>(bytes);
+            return true;
+        }
+
         bool ReadNkFile(const char* path, std::vector<uint8_t>& out)
         {
             std::FILE* file = std::fopen(path, "rb");
@@ -75,21 +126,23 @@ namespace Cli
             return static_cast<std::size_t>(parsed.header.weights_bytes) +
                    static_cast<std::size_t>(parsed.header.biases_bytes);
         }
-#endif
 
         void PrintHelp(const char* program)
         {
             std::cout << "netkit — neural network inference CLI\n\n";
             std::cout << "Usage:\n";
-            std::cout << "  " << program << " test\n";
-            std::cout << "  " << program << " run <model.nk> --input <values>\n";
-            std::cout << "  " << program << " inspect <model.nk> [--full]\n";
+            std::cout << "  " << program << " [--arena <size>] test\n";
+            std::cout << "  " << program << " [--arena <size>] run <model.nk> --input <values>\n";
+            std::cout << "  " << program << " [--arena <size>] inspect <model.nk> [--full]\n";
             std::cout << "  " << program << " help\n";
             std::cout << "  " << program << " -h | --help\n\n";
 
             std::cout << "Global options:\n";
-            std::cout << "  -h, --help    Print this help message and exit\n";
-            std::cout << "  help          Same as -h / --help\n\n";
+            std::cout << "  --arena <size>  Override arena capacity for run/inspect\n";
+            std::cout << "                  (e.g. 65536, 64K, 64KiB, 64M, 64MiB; default "
+                      << Arena::kDefaultCapacity << " bytes)\n";
+            std::cout << "  -h, --help      Print this help message and exit\n";
+            std::cout << "  help            Same as -h / --help\n\n";
 
             std::cout << "Commands:\n";
             std::cout << "  test\n";
@@ -109,7 +162,8 @@ namespace Cli
             std::cout << "  inspect <model.nk> [--full]\n";
             std::cout << "      Print a boxed network summary (architecture at a glance).\n";
             std::cout << "      Options:\n";
-            std::cout << "        --full   Load weights and report arena usage after a zero-input forward pass.\n\n";
+            std::cout << "        --full   Load weights and report arena usage after a zero-input forward pass.\n";
+            std::cout << "      Weights stay flash/blob-backed; inspect --full reports flash payload bytes.\n\n";
 
             std::cout << "Path resolution:\n";
             std::cout << "  If <model.nk> is not found in the current directory, netkit tries\n";
@@ -228,6 +282,44 @@ namespace Cli
             return false;
         }
 
+        /* Consume leading global options; returns index of the command (or argc). */
+        int ParseGlobalOptions(int argc, char** argv)
+        {
+            int i = 1;
+            while (i < argc)
+            {
+                if (std::strcmp(argv[i], "--arena") == 0)
+                {
+                    if (i + 1 >= argc)
+                    {
+                        std::cerr << "Missing value for --arena\n";
+                        return -1;
+                    }
+                    if (!ParseArenaSize(argv[i + 1], g_arena_override))
+                    {
+                        std::cerr << "Invalid --arena size: " << argv[i + 1] << "\n";
+                        return -1;
+                    }
+                    i += 2;
+                    continue;
+                }
+
+                if (std::strncmp(argv[i], "--arena=", 8) == 0)
+                {
+                    if (!ParseArenaSize(argv[i] + 8, g_arena_override))
+                    {
+                        std::cerr << "Invalid --arena size: " << (argv[i] + 8) << "\n";
+                        return -1;
+                    }
+                    ++i;
+                    continue;
+                }
+
+                break;
+            }
+            return i;
+        }
+
         int CmdTest(int argc, char** argv, int start_index)
         {
             if (start_index < argc)
@@ -282,7 +374,16 @@ namespace Cli
             {
                 NkLoader::PrintNetworkSummary(resolved, parsed);
 
-                const std::size_t arena_capacity = ArenaCapacityForModel(parsed);
+                const std::size_t arena_capacity = EffectiveArenaCapacity();
+#if !defined(NETKIT_ARENA_HEAP)
+                if (arena_capacity > sizeof(g_arena_buffer))
+                {
+                    std::cerr << "Arena size " << arena_capacity
+                              << " exceeds static buffer (" << sizeof(g_arena_buffer)
+                              << "); rebuild with heap arena or use a smaller --arena\n";
+                    return 1;
+                }
+#endif
                 ArenaUtil::Scoped arena_scope(arena_capacity,
 #if defined(NETKIT_ARENA_HEAP)
                                               nullptr);
@@ -308,18 +409,15 @@ namespace Cli
                 uint32_t input_rank = 0;
 
                 std::vector<uint8_t> nk_blob;
-#if !NETKIT_WEIGHTS_IN_RAM
                 if (!ReadNkFile(resolved, nk_blob))
                 {
                     std::cerr << "Failed to read " << resolved << " for flash-backed inspect\n";
                     return 1;
                 }
-#endif
 
                 if (parsed.header.network_kind == NkFormat::NetworkKind::Mlp)
                 {
                     MLPNetwork* network = nullptr;
-#if !NETKIT_WEIGHTS_IN_RAM
                     const NkLoader::LoadResult load_result =
                         NkLoader::LoadMLPFromBuffer(nk_blob.data(),
                                                     nk_blob.size(),
@@ -327,10 +425,6 @@ namespace Cli
                                                     network,
                                                     input_shape,
                                                     input_rank);
-#else
-                    const NkLoader::LoadResult load_result =
-                        NkLoader::LoadMLP(resolved, arena, network, input_shape, input_rank);
-#endif
 
                     if (load_result.status != NkLoader::LoadStatus::Ok || !network || !network->IsValid())
                     {
@@ -349,15 +443,12 @@ namespace Cli
                     std::cout << "  after load:           " << bytes_after_load << " bytes\n";
                     std::cout << "  after forward (zero): " << arena.offset << " bytes\n";
                     std::cout << "  remaining:            " << arena.remaining() << " bytes\n";
-#if !NETKIT_WEIGHTS_IN_RAM
                     std::cout << "  flash payload:        " << WeightPayloadBytes(parsed)
                               << " bytes (not in arena)\n";
-#endif
                 }
                 else
                 {
                     CNNNetwork* network = nullptr;
-#if !NETKIT_WEIGHTS_IN_RAM
                     const NkLoader::LoadResult load_result =
                         NkLoader::LoadCNNFromBuffer(nk_blob.data(),
                                                     nk_blob.size(),
@@ -365,10 +456,6 @@ namespace Cli
                                                     network,
                                                     input_shape,
                                                     input_rank);
-#else
-                    const NkLoader::LoadResult load_result =
-                        NkLoader::LoadCNN(resolved, arena, network, input_shape, input_rank);
-#endif
 
                     if (load_result.status != NkLoader::LoadStatus::Ok || !network || !network->IsValid())
                     {
@@ -394,10 +481,8 @@ namespace Cli
                     }
                     std::cout << "  after forward (zero): " << arena.offset << " bytes\n";
                     std::cout << "  remaining:            " << arena.remaining() << " bytes\n";
-#if !NETKIT_WEIGHTS_IN_RAM
                     std::cout << "  flash payload:        " << WeightPayloadBytes(parsed)
                               << " bytes (not in arena)\n";
-#endif
                 }
 
                 return 0;
@@ -438,7 +523,16 @@ namespace Cli
                 return 1;
             }
 
-            const std::size_t arena_capacity = ArenaCapacityForModel(parsed);
+            const std::size_t arena_capacity = EffectiveArenaCapacity();
+#if !defined(NETKIT_ARENA_HEAP)
+            if (arena_capacity > sizeof(g_arena_buffer))
+            {
+                std::cerr << "Arena size " << arena_capacity
+                          << " exceeds static buffer (" << sizeof(g_arena_buffer)
+                          << "); rebuild with heap arena or use a smaller --arena\n";
+                return 1;
+            }
+#endif
             ArenaUtil::Scoped arena_scope(arena_capacity,
 #if defined(NETKIT_ARENA_HEAP)
                                           nullptr);
@@ -469,6 +563,12 @@ namespace Cli
                     std::cerr << "Failed to load MLP\n";
                     return 1;
                 }
+                if (network->IsQuantized())
+                {
+                    std::cerr << "Quantized models require int8 I/O (nk_model_run_int8 / "
+                                 "prequantized fixtures). CLI --input is float32 only.\n";
+                    return 1;
+                }
 
                 Tensor input = TensorFactory::Create2D(arena, input_shape[0], input_shape[1]);
                 float* input_data = static_cast<float*>(input.data);
@@ -491,6 +591,12 @@ namespace Cli
                 if (load_result.status != NkLoader::LoadStatus::Ok || !network || !network->IsValid())
                 {
                     std::cerr << "Failed to load CNN\n";
+                    return 1;
+                }
+                if (network->IsQuantized())
+                {
+                    std::cerr << "Quantized models require int8 I/O (nk_model_run_int8 / "
+                                 "prequantized fixtures). CLI --input is float32 only.\n";
                     return 1;
                 }
 
@@ -518,34 +624,44 @@ namespace Cli
             return 0;
         }
 
-        const char* command = argv[1];
+        const int cmd_index = ParseGlobalOptions(argc, argv);
+        if (cmd_index < 0)
+            return 1;
+        if (cmd_index >= argc)
+        {
+            PrintHelp(argv[0]);
+            return 1;
+        }
+
+        const char* command = argv[cmd_index];
 
         if (std::strcmp(command, "test") == 0)
-            return CmdTest(argc, argv, 2);
+            return CmdTest(argc, argv, cmd_index + 1);
 
         if (std::strcmp(command, "inspect") == 0)
         {
-            if (argc < 3)
+            if (cmd_index + 1 >= argc)
             {
                 std::cerr << "Missing model path\n";
                 PrintHelp(argv[0]);
                 return 1;
             }
 
-            return CmdInspect(argv[2], HasFlag(argc, argv, 3, "--full"));
+            return CmdInspect(argv[cmd_index + 1],
+                              HasFlag(argc, argv, cmd_index + 2, "--full"));
         }
 
         if (std::strcmp(command, "run") == 0)
         {
-            if (argc < 3)
+            if (cmd_index + 1 >= argc)
             {
                 std::cerr << "Missing model path\n";
                 PrintHelp(argv[0]);
                 return 1;
             }
 
-            const char* input_text = FindOptionValue(argc, argv, 3, "--input");
-            return CmdRun(argv[2], input_text);
+            const char* input_text = FindOptionValue(argc, argv, cmd_index + 2, "--input");
+            return CmdRun(argv[cmd_index + 1], input_text);
         }
 
         std::cerr << "Unknown command: " << command << "\n";
