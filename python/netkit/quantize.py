@@ -8,9 +8,16 @@ from typing import Any
 
 import numpy as np
 
-from .arch_writer import _split_cnn_weights
+from .arch_writer import _make_divisible, _split_cnn_weights
 from .cnn_layers import conv2d_input_channels, depthwise_kernel_hw
-from .reference_forward import _activate, _max_pool_nhwc, _out_dim
+from .reference_forward import (
+    _activate,
+    _avg_pool_nhwc,
+    _max_pool_nhwc,
+    _out_dim,
+    _uib_dw_stride,
+    _uib_middle_stride,
+)
 from .format import DType, activation_from_name
 from .writer import LayerSpec, ModelSpec, QuantLayerParams
 
@@ -500,6 +507,363 @@ def _max_pool_quant_nhwc(
     return out
 
 
+def _fold_bn_into_depthwise(
+    weights: np.ndarray, bias: np.ndarray, bn_scale: np.ndarray, bn_bias: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    w = weights.astype(np.float32) * bn_scale.reshape(-1, 1, 1).astype(np.float32)
+    b = bn_scale.astype(np.float32) * bias.astype(np.float32) + bn_bias.astype(np.float32)
+    return w, b
+
+
+def _fold_bn_into_pointwise(
+    weights: np.ndarray, bias: np.ndarray, bn_scale: np.ndarray, bn_bias: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    if weights.ndim == 2:
+        w = weights.astype(np.float32) * bn_scale.reshape(-1, 1).astype(np.float32)
+    else:
+        w = weights.astype(np.float32) * bn_scale.reshape(-1, 1, 1, 1).astype(np.float32)
+    b = bn_scale.astype(np.float32) * bias.astype(np.float32) + bn_bias.astype(np.float32)
+    return w, b
+
+
+def _elementwise_add_quant_s8(
+    lhs: np.ndarray,
+    rhs: np.ndarray,
+    *,
+    lhs_scale: float,
+    lhs_zp: int,
+    rhs_scale: float,
+    rhs_zp: int,
+    output_scale: float,
+    output_zp: int,
+) -> np.ndarray:
+    lhs_f = (lhs.astype(np.float32) - lhs_zp) * lhs_scale
+    rhs_f = (rhs.astype(np.float32) - rhs_zp) * rhs_scale
+    combined = lhs_f + rhs_f
+    q = np.round(combined / output_scale) + output_zp
+    return np.clip(q, -128, 127).astype(np.int8)
+
+
+def _avg_pool_quant_nhwc(
+    input_q: np.ndarray,
+    *,
+    pool_h: int,
+    pool_w: int,
+    stride: int,
+    pad_h: int,
+    pad_w: int,
+    pad_h_end: int,
+    pad_w_end: int,
+    input_scale: float,
+    input_zp: int,
+    output_scale: float,
+    output_zp: int,
+) -> np.ndarray:
+    in_h, in_w, in_c = input_q.shape
+    out_h = _out_dim(in_h, pool_h, stride, pad_h, pad_h_end)
+    out_w = _out_dim(in_w, pool_w, stride, pad_w, pad_w_end)
+    out = np.zeros((out_h, out_w, in_c), dtype=np.int8)
+    for oh in range(out_h):
+        for ow in range(out_w):
+            for c in range(in_c):
+                total = 0.0
+                count = 0
+                for kh in range(pool_h):
+                    ih = oh * stride + kh - pad_h
+                    if ih < 0 or ih >= in_h:
+                        continue
+                    for kw in range(pool_w):
+                        iw = ow * stride + kw - pad_w
+                        if iw < 0 or iw >= in_w:
+                            continue
+                        val = int(input_q[ih, iw, c])
+                        total += (val - input_zp) * input_scale
+                        count += 1
+                avg = total / count if count else 0.0
+                out[oh, ow, c] = np.clip(
+                    int(round(avg / output_scale)) + output_zp, -128, 127
+                )
+    return out
+
+
+def _forward_quant_uib_nhwc(
+    input_q: np.ndarray,
+    layer: dict[str, Any],
+    pack: QuantizedCnnPack,
+    quant_idx: int,
+    *,
+    block_input_scale: float,
+    block_input_zp: int,
+) -> tuple[np.ndarray, int]:
+    in_c = layer["in_channels"]
+    out_c = layer["out_channels"]
+    start_k = int(layer.get("start_dw_kernel", 0))
+    middle_k = int(layer.get("middle_dw_kernel", 0))
+    stride = int(layer.get("stride", 1))
+    middle_dw_downsample = bool(layer.get("middle_dw_downsample", 1))
+    x = input_q
+    residual = x.copy() if stride == 1 and in_c == out_c else None
+    idx = quant_idx
+
+    if start_k:
+        quant = pack.quant_layers[idx]
+        weight_q = pack.weight_tensors[idx].reshape(in_c, start_k, start_k)
+        bias_q = pack.bias_tensors[idx]
+        pad = (start_k - 1) // 2
+        dw_stride = _uib_dw_stride(stride, middle_k, middle_dw_downsample)
+        x = _depthwise_conv2d_quant_nhwc(
+            x,
+            weight_q,
+            bias_q,
+            quant,
+            kernel_h=start_k,
+            kernel_w=start_k,
+            stride=dw_stride,
+            pad_h=pad,
+            pad_w=pad,
+            pad_h_end=pad,
+            pad_w_end=pad,
+            apply_relu=False,
+        )
+        idx += 1
+
+    quant = pack.quant_layers[idx]
+    weight_q = pack.weight_tensors[idx].reshape(-1, 1, 1, in_c)
+    bias_q = pack.bias_tensors[idx]
+    x = _conv2d_quant_nhwc(
+        x,
+        weight_q,
+        bias_q,
+        quant,
+        kernel_size=1,
+        stride=1,
+        pad_h=0,
+        pad_w=0,
+        pad_h_end=0,
+        pad_w_end=0,
+        apply_relu=True,
+    )
+    idx += 1
+
+    if middle_k:
+        expand_c = x.shape[2]
+        quant = pack.quant_layers[idx]
+        weight_q = pack.weight_tensors[idx].reshape(expand_c, middle_k, middle_k)
+        bias_q = pack.bias_tensors[idx]
+        pad = (middle_k - 1) // 2
+        mid_stride = _uib_middle_stride(stride, middle_k, middle_dw_downsample)
+        x = _depthwise_conv2d_quant_nhwc(
+            x,
+            weight_q,
+            bias_q,
+            quant,
+            kernel_h=middle_k,
+            kernel_w=middle_k,
+            stride=mid_stride,
+            pad_h=pad,
+            pad_w=pad,
+            pad_h_end=pad,
+            pad_w_end=pad,
+            apply_relu=True,
+        )
+        idx += 1
+
+    quant = pack.quant_layers[idx]
+    weight_q = pack.weight_tensors[idx].reshape(out_c, 1, 1, -1)
+    bias_q = pack.bias_tensors[idx]
+    x = _conv2d_quant_nhwc(
+        x,
+        weight_q,
+        bias_q,
+        quant,
+        kernel_size=1,
+        stride=1,
+        pad_h=0,
+        pad_w=0,
+        pad_h_end=0,
+        pad_w_end=0,
+        apply_relu=False,
+    )
+    idx += 1
+
+    if residual is not None:
+        x = _elementwise_add_quant_s8(
+            x,
+            residual,
+            lhs_scale=quant.output_scale,
+            lhs_zp=quant.output_zero_point,
+            rhs_scale=block_input_scale,
+            rhs_zp=block_input_zp,
+            output_scale=quant.output_scale,
+            output_zp=quant.output_zero_point,
+        )
+
+    return x, idx
+
+
+def _quantize_uib_layer(
+    layer: dict[str, Any],
+    float_weights: list[np.ndarray],
+    float_biases: list[np.ndarray],
+    tensor_idx: int,
+    hidden_samples: list[np.ndarray],
+    input_scale: float,
+    input_zp: int,
+) -> tuple[list[np.ndarray], list[np.ndarray], list[QuantLayerParams], list[np.ndarray], int, float, int]:
+    in_c = layer["in_channels"]
+    out_c = layer["out_channels"]
+    start_k = int(layer.get("start_dw_kernel", 0))
+    middle_k = int(layer.get("middle_dw_kernel", 0))
+    expand_c = _make_divisible(in_c * float(layer["expand_ratio"]), 8)
+    middle_ds = bool(layer.get("middle_dw_downsample", 1))
+    stride = int(layer.get("stride", 1))
+
+    weight_tensors: list[np.ndarray] = []
+    bias_tensors: list[np.ndarray] = []
+    quant_layers: list[QuantLayerParams] = []
+
+    def take_bn_pair() -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        nonlocal tensor_idx
+        w = float_weights[tensor_idx]
+        b = float_biases[tensor_idx]
+        scale = float_weights[tensor_idx + 1]
+        beta = float_biases[tensor_idx + 1]
+        tensor_idx += 2
+        return w, b, scale, beta
+
+    subops: list[tuple[str, np.ndarray, np.ndarray, bool, dict[str, Any]]] = []
+    if start_k:
+        w, b, s, beta = take_bn_pair()
+        wf, bf = _fold_bn_into_depthwise(w.reshape(in_c, start_k, start_k), b, s, beta)
+        pad = (start_k - 1) // 2
+        subops.append(
+            (
+                "dw",
+                wf,
+                bf,
+                False,
+                {
+                    "kernel_h": start_k,
+                    "kernel_w": start_k,
+                    "stride": _uib_dw_stride(stride, middle_k, middle_ds),
+                    "pad_h": pad,
+                    "pad_w": pad,
+                },
+            )
+        )
+    w, b, s, beta = take_bn_pair()
+    wf, bf = _fold_bn_into_pointwise(w.reshape(expand_c, in_c), b, s, beta)
+    subops.append(
+        (
+            "pw",
+            wf.reshape(expand_c, 1, 1, in_c),
+            bf,
+            True,
+            {"kernel_size": 1, "stride": 1, "pad_h": 0, "pad_w": 0, "filters": expand_c},
+        )
+    )
+    if middle_k:
+        w, b, s, beta = take_bn_pair()
+        wf, bf = _fold_bn_into_depthwise(w.reshape(expand_c, middle_k, middle_k), b, s, beta)
+        pad = (middle_k - 1) // 2
+        subops.append(
+            (
+                "dw",
+                wf,
+                bf,
+                True,
+                {
+                    "kernel_h": middle_k,
+                    "kernel_w": middle_k,
+                    "stride": _uib_middle_stride(stride, middle_k, middle_ds),
+                    "pad_h": pad,
+                    "pad_w": pad,
+                },
+            )
+        )
+    w, b, s, beta = take_bn_pair()
+    wf, bf = _fold_bn_into_pointwise(w.reshape(out_c, expand_c), b, s, beta)
+    subops.append(
+        (
+            "pw",
+            wf.reshape(out_c, 1, 1, expand_c),
+            bf,
+            False,
+            {"kernel_size": 1, "stride": 1, "pad_h": 0, "pad_w": 0, "filters": out_c},
+        )
+    )
+
+    cur_scale = input_scale
+    cur_zp = input_zp
+    next_samples = hidden_samples
+
+    for kind, w_float, b_float, apply_relu, meta in subops:
+        weight_q, weight_scale, weight_zp = quantize_symmetric_int8(w_float)
+        effective_scale = cur_scale * weight_scale
+        if effective_scale <= 0.0:
+            effective_scale = 1.0
+        bias_q = np.round(b_float / effective_scale).astype(np.int32)
+        quant = QuantLayerParams(
+            input_scale=cur_scale,
+            input_zero_point=cur_zp,
+            weight_scale=weight_scale,
+            weight_zero_point=weight_zp,
+            bias_scale=effective_scale,
+            bias_zero_point=0,
+            output_scale=1.0,
+            output_zero_point=0,
+        )
+
+        layer_outputs: list[np.ndarray] = []
+        for sample in next_samples:
+            input_q = quantize_float_input(sample.reshape(-1), cur_scale, cur_zp).reshape(sample.shape)
+            if kind == "dw":
+                out = _depthwise_conv2d_quant_nhwc(
+                    input_q,
+                    weight_q.reshape(-1, meta["kernel_h"], meta["kernel_w"])
+                    if weight_q.ndim == 1
+                    else weight_q,
+                    bias_q,
+                    quant,
+                    kernel_h=meta["kernel_h"],
+                    kernel_w=meta["kernel_w"],
+                    stride=meta["stride"],
+                    pad_h=meta["pad_h"],
+                    pad_w=meta["pad_w"],
+                    pad_h_end=meta["pad_h"],
+                    pad_w_end=meta["pad_w"],
+                    apply_relu=apply_relu,
+                )
+            else:
+                out = _conv2d_quant_nhwc(
+                    input_q,
+                    weight_q.reshape(meta["filters"], meta["kernel_size"], meta["kernel_size"], -1),
+                    bias_q,
+                    quant,
+                    kernel_size=meta["kernel_size"],
+                    stride=meta["stride"],
+                    pad_h=meta["pad_h"],
+                    pad_w=meta["pad_w"],
+                    pad_h_end=meta["pad_h"],
+                    pad_w_end=meta["pad_w"],
+                    apply_relu=apply_relu,
+                )
+            layer_outputs.append(out)
+
+        stacked = np.stack(layer_outputs, axis=0)
+        output_scale, output_zp = _symmetric_scale(stacked.reshape(-1))
+        quant.output_scale = output_scale
+        quant.output_zero_point = output_zp
+        weight_tensors.append(weight_q)
+        bias_tensors.append(bias_q)
+        quant_layers.append(quant)
+        next_samples = layer_outputs
+        cur_scale = output_scale
+        cur_zp = output_zp
+
+    return weight_tensors, bias_tensors, quant_layers, next_samples, tensor_idx, cur_scale, cur_zp
+
+
 def forward_quantized_cnn(
     flat_input: np.ndarray,
     arch: dict[str, Any],
@@ -587,6 +951,45 @@ def forward_quantized_cnn(
                 pad_w_end=layer.get("pad_w_end", layer.get("pad_w", 0)),
             )
             h, w, channels = x_i8.shape
+        elif layer_type == "avg_pool2d":
+            if x_i8 is None:
+                raise ValueError("avg_pool2d expects quantized activations")
+            pool_h = layer["pool_size"]
+            pool_w = layer.get("pool_w", pool_h)
+            prev_quant = pack.quant_layers[quant_idx - 1] if quant_idx > 0 else pack.quant_layers[0]
+            x_i8 = _avg_pool_quant_nhwc(
+                x_i8,
+                pool_h=pool_h,
+                pool_w=pool_w,
+                stride=layer.get("stride", pool_h),
+                pad_h=layer.get("pad_h", 0),
+                pad_w=layer.get("pad_w", 0),
+                pad_h_end=layer.get("pad_h_end", layer.get("pad_h", 0)),
+                pad_w_end=layer.get("pad_w_end", layer.get("pad_w", 0)),
+                input_scale=prev_quant.output_scale,
+                input_zp=prev_quant.output_zero_point,
+                output_scale=prev_quant.output_scale,
+                output_zp=prev_quant.output_zero_point,
+            )
+            h, w, channels = x_i8.shape
+        elif layer_type == "mobilenetv4_uib":
+            if x_i8 is None:
+                first_quant = pack.quant_layers[quant_idx]
+                x_q = quantize_float_input(
+                    x.reshape(-1), first_quant.input_scale, first_quant.input_zero_point
+                )
+                x_i8 = x_q.reshape(h, w, channels)
+            first_quant = pack.quant_layers[quant_idx]
+            x_i8, quant_idx = _forward_quant_uib_nhwc(
+                x_i8,
+                layer,
+                pack,
+                quant_idx,
+                block_input_scale=first_quant.input_scale,
+                block_input_zp=first_quant.input_zero_point,
+            )
+            h, w, channels = x_i8.shape
+            x_2d = None
         elif layer_type == "flatten":
             x_2d = x_i8.reshape(1, -1)
             x_i8 = None
@@ -619,6 +1022,21 @@ def forward_quantized_cnn(
                 return x_2d.reshape(-1).astype(np.int8)
         else:
             raise ValueError(f"unsupported quantized CNN layer: {layer_type}")
+
+    if x_2d is not None:
+        if output_float:
+            last_quant = pack.quant_layers[quant_idx - 1]
+            return (
+                (x_2d.astype(np.float32) - last_quant.output_zero_point) * last_quant.output_scale
+            ).reshape(-1)
+        return x_2d.reshape(-1).astype(np.int8)
+
+    if x_i8 is not None:
+        if output_float:
+            last_quant = pack.quant_layers[quant_idx - 1]
+            flat = x_i8.reshape(-1).astype(np.float32)
+            return (flat - last_quant.output_zero_point) * last_quant.output_scale
+        return x_i8.reshape(-1).astype(np.int8)
 
     return x.reshape(-1).astype(np.float32)
 
@@ -664,6 +1082,21 @@ def quantize_cnn(
 
     for layer in arch["layers"]:
         layer_type = layer["type"]
+        if layer_type == "mobilenetv4_uib":
+            w_out, b_out, q_out, hidden_samples, tensor_idx, input_scale, input_zp = _quantize_uib_layer(
+                layer,
+                float_weights,
+                float_biases,
+                tensor_idx,
+                hidden_samples,
+                input_scale,
+                input_zp,
+            )
+            weight_tensors.extend(w_out)
+            bias_tensors.extend(b_out)
+            quant_layers.extend(q_out)
+            continue
+
         if layer_type not in ("conv2d", "depthwise_conv2d", "dense"):
             if layer_type == "max_pool2d":
                 pool_h = layer["pool_size"]
@@ -671,6 +1104,22 @@ def quantize_cnn(
                 hidden_samples = [
                     _max_pool_nhwc(
                         sample,
+                        pool_h=pool_h,
+                        pool_w=pool_w,
+                        stride=layer.get("stride", pool_h),
+                        pad_h=layer.get("pad_h", 0),
+                        pad_w=layer.get("pad_w", 0),
+                        pad_h_end=layer.get("pad_h_end", layer.get("pad_h", 0)),
+                        pad_w_end=layer.get("pad_w_end", layer.get("pad_w", 0)),
+                    )
+                    for sample in hidden_samples
+                ]
+            elif layer_type == "avg_pool2d":
+                pool_h = layer["pool_size"]
+                pool_w = layer.get("pool_w", pool_h)
+                hidden_samples = [
+                    _avg_pool_nhwc(
+                        sample if sample.ndim == 3 else sample.reshape(-1),
                         pool_h=pool_h,
                         pool_w=pool_w,
                         stride=layer.get("stride", pool_h),
@@ -847,6 +1296,29 @@ def quantized_cnn_to_spec(arch: dict[str, Any], pack: QuantizedCnnPack) -> Model
                     stride=layer.get("stride", layer["pool_size"]),
                     pad_h=layer.get("pad_h", 0),
                     pad_w=layer.get("pad_w", 0),
+                )
+            )
+        elif layer_type == "avg_pool2d":
+            layers.append(
+                LayerSpec(
+                    kind="avg_pool2d",
+                    pool_size=layer["pool_size"],
+                    stride=layer.get("stride", layer["pool_size"]),
+                    pad_h=layer.get("pad_h", 0),
+                    pad_w=layer.get("pad_w", 0),
+                )
+            )
+        elif layer_type == "mobilenetv4_uib":
+            layers.append(
+                LayerSpec(
+                    kind="mobilenetv4_uib",
+                    in_channels=layer["in_channels"],
+                    out_channels=layer["out_channels"],
+                    start_dw_kernel=int(layer.get("start_dw_kernel", 0)),
+                    middle_dw_kernel=int(layer.get("middle_dw_kernel", 0)),
+                    stride=int(layer.get("stride", 1)),
+                    expand_ratio=float(layer["expand_ratio"]),
+                    middle_dw_downsample=int(layer.get("middle_dw_downsample", 1)),
                 )
             )
         elif layer_type == "flatten":

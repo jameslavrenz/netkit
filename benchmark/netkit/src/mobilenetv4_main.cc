@@ -12,6 +12,7 @@
 #include "cnn.hpp"
 #include "mnist_cnn_test_images.h"
 #include "nk_loader.hpp"
+#include "quant_output.hpp"
 #include "tensor_factory.hpp"
 
 #include <algorithm>
@@ -38,6 +39,14 @@ constexpr uint32_t kInH = 56;
 constexpr uint32_t kInW = 56;
 constexpr uint32_t kInC = 3;
 constexpr size_t kArenaCapacity = 64 * 1024 * 1024;
+
+std::size_t ArenaBytesForModel(const NkLoader::ParsedModel& parsed)
+{
+    return ArenaUtil::CapacityForModel(NkLoader::InputElements(parsed),
+                                      parsed.header.network_kind == NkFormat::NetworkKind::Cnn,
+                                      parsed.header.weights_bytes,
+                                      parsed.header.biases_bytes);
+}
 
 int ArgMax(const float* values, int count)
 {
@@ -95,8 +104,13 @@ int RunBenchmark(const char* model_path)
         return 1;
     }
 
+    const std::size_t arena_capacity = ArenaBytesForModel(parsed);
+#if defined(NETKIT_ARENA_HEAP)
+    ArenaUtil::Scoped arena_scope(arena_capacity, nullptr);
+#else
     static unsigned char* arena_memory = new unsigned char[kArenaCapacity];
-    ArenaUtil::Scoped arena_scope(kArenaCapacity, arena_memory);
+    ArenaUtil::Scoped arena_scope(arena_capacity, arena_memory);
+#endif
     if (!arena_scope)
     {
         std::fprintf(stderr, "arena init failed\n");
@@ -125,7 +139,11 @@ int RunBenchmark(const char* model_path)
         return 1;
     }
 
+    if (network->IsQuantized())
+        network->SetQuantOutputFormat(QuantOutputFormat::Float32);
+
     const uint32_t output_cols = NkLoader::OutputElements(parsed);
+    const char* dtype = network->IsQuantized() ? "int8" : "float32";
 
     // Build 10 MNIST-derived inputs (one per class).
     const int num_images = kMnistCnnBenchmarkImageCount;
@@ -141,6 +159,7 @@ int RunBenchmark(const char* model_path)
     std::printf("netkit MobileNetV4-small benchmark\n");
     std::printf("  backend:     %s\n", NETKIT_BENCH_BACKEND);
     std::printf("  depthwise:   %s\n", dw_mode);
+    std::printf("  dtype:       %s\n", dtype);
     std::printf("  model:       %s\n", model_path);
     std::printf("  input:       %ux%ux%u  outputs: %u\n", kInH, kInW, kInC, output_cols);
     std::printf("  method:      %d images x %d loops = %d invokes (all timed)\n", num_images,
@@ -209,9 +228,9 @@ int RunBenchmark(const char* model_path)
                 warm_mean / 1000.0, warm_n);
     std::printf("  warm max:         %9.3f us\n", warm_max);
     std::printf("  warm stddev:      %9.3f us\n", warm_std);
-    std::printf("BENCHMARK_SUMMARY runtime=netkit model=mobilenetv4_small backend=%s depthwise=%s "
+    std::printf("BENCHMARK_SUMMARY runtime=netkit model=mobilenetv4_small dtype=%s backend=%s depthwise=%s "
                 "warm_median_us=%.3f warm_min_us=%.3f warm_mean_us=%.3f cold_us=%.3f invokes=%zu\n",
-                NETKIT_BENCH_BACKEND, dw_mode, warm_median, warm_min, warm_mean, cold_us,
+                dtype, NETKIT_BENCH_BACKEND, dw_mode, warm_median, warm_min, warm_mean, cold_us,
                 samples.size());
 
     return 0;

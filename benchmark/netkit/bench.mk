@@ -196,6 +196,9 @@ run-cnn: $(CNN_BENCH)
 run-mobilenetv4: $(MNV4_BENCH)
 	@cd $(ROOT) && ./benchmark/netkit/$(MNV4_BENCH) models/mobilenetv4_small.nk
 
+run-mobilenetv4-int8: $(MNV4_BENCH)
+	@cd $(ROOT) && ./benchmark/netkit/$(MNV4_BENCH) models/mobilenetv4_small_int8.nk
+
 run-cnn-profile: $(CNN_PROFILE_BENCH)
 	@cd $(ROOT) && ./benchmark/netkit/$(CNN_PROFILE_BENCH) models/mnist_cnn.nk
 

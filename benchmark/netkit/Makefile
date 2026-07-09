@@ -5,7 +5,7 @@
 ROOT := $(abspath ../..)
 
 .PHONY: all run run-mlp run-cnn run-mlp-cmsis run-cnn-cmsis run-cmsis run-cnn-profile run-mlp-profile \
-  run-mobilenetv4 run-mobilenetv4-cmsis \
+  run-mobilenetv4 run-mobilenetv4-int8 run-mobilenetv4-cmsis \
   run-aot run-aot-mlp run-aot-cnn run-aot-cmsis run-aot-mlp-cmsis run-aot-cnn-cmsis run-all clean clean-all
 
 all: run
@@ -92,6 +92,14 @@ run-mobilenetv4-cmsis:
 	  MNV4_BENCH=mobilenetv4_bench_cmsis \
 	  MNV4_MAIN_OBJ=src/mobilenetv4_main_cmsis.o \
 	  run-mobilenetv4
+
+run-mobilenetv4-int8:
+	$(MAKE) -f bench.mk BACKEND=reference CMSIS_DSP=0 NETKIT_LOOP_UNROLL=0 \
+	  BENCH_OBJDIR=bench_obj \
+	  BENCH_LIB=libnetkit_bench.a \
+	  MNV4_BENCH=mobilenetv4_bench \
+	  MNV4_MAIN_OBJ=src/mobilenetv4_main.o \
+	  run-mobilenetv4-int8
 
 run-cnn-profile:
 	$(MAKE) -f bench.mk BACKEND=reference CMSIS_DSP=0 NETKIT_LOOP_UNROLL=0 \

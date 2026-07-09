@@ -176,7 +176,7 @@ TfLiteStatus RunBenchmark() {
   std::printf("  warm max:         %9.3f us\n", warm_max);
   std::printf("  warm stddev:      %9.3f us\n", warm_std);
   std::printf(
-      "BENCHMARK_SUMMARY runtime=tflm model=mobilenetv4_small backend=reference "
+      "BENCHMARK_SUMMARY runtime=tflm model=mobilenetv4_small dtype=float32 backend=reference "
       "warm_median_us=%.3f warm_min_us=%.3f warm_mean_us=%.3f cold_us=%.3f "
       "invokes=%zu\n",
       warm_median, warm_min, warm_mean, cold_us, samples.size());

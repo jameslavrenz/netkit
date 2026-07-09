@@ -3,6 +3,7 @@
 #include "active_kernel.hpp"
 #include "fused_kernel_ops.hpp"
 #include "nk_op_detail.hpp"
+#include "quant_ops.hpp"
 #include "tensor_access.hpp"
 
 #include <algorithm>
@@ -281,5 +282,151 @@ void MobileNetV4Uib::forward(const Tensor& input, Tensor& output)
     {
         Tensor residual = fused_ops::NhwcView(residual_buf, in_h, in_w, in_c);
         fused_ops::MatAddInPlace(output, residual);
+    }
+}
+
+void MobileNetV4Uib::forward_quant(const int8_t* input, int8_t* output, uint32_t in_h, uint32_t in_w) const
+{
+    if (!quant_enabled || !input || !output || !scratch_i8)
+        return;
+
+    const uint32_t in_c = static_cast<uint32_t>(in_channels);
+    const uint32_t expand_c = expanded_channels();
+
+    uint32_t out_h = 0;
+    uint32_t out_w = 0;
+    output_spatial(in_h, in_w, out_h, out_w);
+
+    const uint32_t max_spatial = in_h * in_w;
+    int8_t* work_a = scratch_i8;
+    int8_t* work_b = scratch_i8 + static_cast<std::size_t>(max_spatial) * expand_c;
+    int8_t* residual_buf = work_b + static_cast<std::size_t>(max_spatial) * expand_c;
+
+    if (has_residual())
+        std::memcpy(residual_buf, input, static_cast<std::size_t>(in_h) * in_w * in_c);
+
+    uint32_t cur_h = in_h;
+    uint32_t cur_w = in_w;
+    uint32_t cur_c = in_c;
+    const int8_t* cur_data = input;
+    int8_t* next_data = work_a;
+    bool cur_in_work = false;
+
+    if (start_dw_kernel > 0 && start_dw_weights_q && start_dw_bias_q)
+    {
+        const int pad = (start_dw_kernel - 1) / 2;
+        const uint32_t next_h =
+            CalcOutputDim(cur_h, start_dw_kernel, static_cast<int>(start_dw_stride()), pad);
+        const uint32_t next_w =
+            CalcOutputDim(cur_w, start_dw_kernel, static_cast<int>(start_dw_stride()), pad);
+
+        QuantOps::DepthwiseConv2dNhwcQuant(cur_data,
+                                           cur_h,
+                                           cur_w,
+                                           cur_c,
+                                           start_dw_weights_q,
+                                           start_dw_bias_q,
+                                           start_dw_kernel,
+                                           start_dw_kernel,
+                                           static_cast<int>(start_dw_stride()),
+                                           pad,
+                                           pad,
+                                           pad,
+                                           pad,
+                                           start_dw_quant,
+                                           false,
+                                           next_data);
+
+        cur_h = next_h;
+        cur_w = next_w;
+        cur_data = next_data;
+        cur_in_work = true;
+    }
+
+    {
+        int8_t* expand_out = cur_in_work ? work_b : work_a;
+        QuantOps::Conv2dNhwcQuant(cur_data,
+                                  cur_h,
+                                  cur_w,
+                                  cur_c,
+                                  expand_weights_q,
+                                  expand_bias_q,
+                                  1,
+                                  1,
+                                  0,
+                                  0,
+                                  0,
+                                  0,
+                                  static_cast<int>(expand_c),
+                                  expand_quant,
+                                  true,
+                                  expand_out);
+
+        cur_c = expand_c;
+        cur_data = expand_out;
+        cur_in_work = expand_out == work_a;
+    }
+
+    if (middle_dw_kernel > 0 && middle_dw_weights_q && middle_dw_bias_q)
+    {
+        const int pad = (middle_dw_kernel - 1) / 2;
+        const uint32_t next_h =
+            CalcOutputDim(cur_h, middle_dw_kernel, static_cast<int>(middle_dw_stride()), pad);
+        const uint32_t next_w =
+            CalcOutputDim(cur_w, middle_dw_kernel, static_cast<int>(middle_dw_stride()), pad);
+
+        int8_t* middle_out = cur_in_work ? work_b : work_a;
+        QuantOps::DepthwiseConv2dNhwcQuant(cur_data,
+                                           cur_h,
+                                           cur_w,
+                                           cur_c,
+                                           middle_dw_weights_q,
+                                           middle_dw_bias_q,
+                                           middle_dw_kernel,
+                                           middle_dw_kernel,
+                                           static_cast<int>(middle_dw_stride()),
+                                           pad,
+                                           pad,
+                                           pad,
+                                           pad,
+                                           middle_dw_quant,
+                                           true,
+                                           middle_out);
+
+        cur_h = next_h;
+        cur_w = next_w;
+        cur_data = middle_out;
+    }
+
+    QuantOps::Conv2dNhwcQuant(cur_data,
+                              cur_h,
+                              cur_w,
+                              cur_c,
+                              proj_weights_q,
+                              proj_bias_q,
+                              1,
+                              1,
+                              0,
+                              0,
+                              0,
+                              0,
+                              out_channels,
+                              proj_quant,
+                              false,
+                              output);
+
+    if (has_residual())
+    {
+        const uint32_t count = in_h * in_w * static_cast<uint32_t>(out_channels);
+        QuantOps::ElementwiseAddS8(output,
+                                   residual_buf,
+                                   count,
+                                   proj_quant.output_scale,
+                                   proj_quant.output_zero_point,
+                                   block_input_scale,
+                                   block_input_zero_point,
+                                   proj_quant.output_scale,
+                                   proj_quant.output_zero_point,
+                                   output);
     }
 }

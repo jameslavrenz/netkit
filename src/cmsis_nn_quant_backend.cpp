@@ -922,6 +922,56 @@ bool TryFullyConnectedQuantToFloat(const int8_t* input,
     return true;
 }
 
+bool TryElementwiseAddS8(const int8_t* input1,
+                         const int8_t* input2,
+                         uint32_t count,
+                         float input1_scale,
+                         int32_t input1_zero_point,
+                         float input2_scale,
+                         int32_t input2_zero_point,
+                         float output_scale,
+                         int32_t output_zero_point,
+                         int8_t* output)
+{
+    if (!input1 || !input2 || !output || count == 0 || output_scale <= 0.0f)
+        return false;
+
+    const double max_input_scale = std::max(static_cast<double>(input1_scale),
+                                            static_cast<double>(input2_scale));
+    if (max_input_scale <= 0.0)
+        return false;
+
+    int32_t input1_mult = 0;
+    int32_t input1_shift = 0;
+    int32_t input2_mult = 0;
+    int32_t input2_shift = 0;
+    int32_t output_mult = 0;
+    int32_t output_shift = 0;
+    QuantizeMultiplier(static_cast<double>(input1_scale) / max_input_scale, &input1_mult, &input1_shift);
+    QuantizeMultiplier(static_cast<double>(input2_scale) / max_input_scale, &input2_mult, &input2_shift);
+    QuantizeMultiplier(max_input_scale / static_cast<double>(output_scale), &output_mult, &output_shift);
+
+    constexpr int32_t kLeftShift = 20;
+    const arm_cmsis_nn_status status = arm_elementwise_add_s8(
+        input1,
+        input2,
+        -input1_zero_point,
+        input1_mult,
+        input1_shift,
+        -input2_zero_point,
+        input2_mult,
+        input2_shift,
+        kLeftShift,
+        output,
+        -output_zero_point,
+        output_mult,
+        output_shift,
+        -128,
+        127,
+        static_cast<int32_t>(count));
+    return cmsis_status_ok(status);
+}
+
 }  // namespace CmsisNnQuant
 
 #else
@@ -1042,6 +1092,20 @@ bool TryFullyConnectedQuantToFloat(const int8_t* /*input*/,
                                    bool /*apply_relu*/,
                                    int8_t* /*logits_i8*/,
                                    float* /*output_float*/)
+{
+    return false;
+}
+
+bool TryElementwiseAddS8(const int8_t* /*input1*/,
+                         const int8_t* /*input2*/,
+                         uint32_t /*count*/,
+                         float /*input1_scale*/,
+                         int32_t /*input1_zero_point*/,
+                         float /*input2_scale*/,
+                         int32_t /*input2_zero_point*/,
+                         float /*output_scale*/,
+                         int32_t /*output_zero_point*/,
+                         int8_t* /*output*/)
 {
     return false;
 }

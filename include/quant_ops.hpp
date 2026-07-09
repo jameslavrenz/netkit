@@ -80,6 +80,35 @@ namespace QuantOps
                                   bool apply_relu,
                                   int8_t* output);
 
+    // Requantizing int8 elementwise add (per-tensor scales). Used by UIB residual.
+    void ElementwiseAddS8(const int8_t* input1,
+                          const int8_t* input2,
+                          uint32_t count,
+                          float input1_scale,
+                          int32_t input1_zero_point,
+                          float input2_scale,
+                          int32_t input2_zero_point,
+                          float output_scale,
+                          int32_t output_zero_point,
+                          int8_t* output);
+
+    void AvgPool2dNhwcQuant(const int8_t* input,
+                            uint32_t in_h,
+                            uint32_t in_w,
+                            uint32_t in_c,
+                            int pool_h,
+                            int pool_w,
+                            int stride,
+                            int pad_h,
+                            int pad_w,
+                            int pad_h_end,
+                            int pad_w_end,
+                            float input_scale,
+                            int32_t input_zero_point,
+                            float output_scale,
+                            int32_t output_zero_point,
+                            int8_t* output);
+
     void MaxPool2dNhwcQuant(const int8_t* input,
                             uint32_t in_h,
                             uint32_t in_w,

@@ -32,6 +32,10 @@ namespace ArenaUtil
             return kXLargeCnnCapacity;
         if (is_cnn && payload > kMnistCnnCapacity)
             return kLargeCnnCapacity;
+        // Quantized UIB backbones (e.g. MobileNetV4 56×56×3) need large scratch even when
+        // int8 weights are smaller than the float payload threshold above.
+        if (is_cnn && input_elements >= 56u * 56u * 3u)
+            return kXLargeCnnCapacity;
         return CapacityForInputElements(input_elements, is_cnn);
     }
 

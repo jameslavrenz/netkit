@@ -54,6 +54,7 @@ NkRegression::RunSummary run_all_tests()
     std::cout << " MOBILENETV4 CONV-SMALL TESTS\n";
     std::cout << "============================\n";
     merge(NkRegression::RunModelTests("models/mobilenetv4_small.nk"));
+    merge(NkRegression::RunModelTests("models/mobilenetv4_small_int8.nk"));
     merge(NkRegression::RunModelTests("models/yolox_mnv4_small.nk"));
     merge(NkRegression::RunModelTests("models/yolox_head_only.nk"));
 

@@ -1,0 +1,102 @@
+=== netkit float32 ===
+/Applications/Xcode.app/Contents/Developer/usr/bin/make -f bench.mk BACKEND=reference CMSIS_DSP=0 NETKIT_LOOP_UNROLL=0 \
+	  BENCH_OBJDIR=bench_obj \
+	  BENCH_LIB=libnetkit_bench.a \
+	  MNV4_BENCH=mobilenetv4_bench \
+	  MNV4_MAIN_OBJ=src/mobilenetv4_main.o \
+	  run-mobilenetv4
+netkit MobileNetV4-small benchmark
+  backend:     reference
+  depthwise:   row-accum(4)
+  dtype:       float32
+  model:       models/mobilenetv4_small.nk
+  input:       56x56x3  outputs: 10
+  method:      10 images x 30 loops = 300 invokes (all timed)
+  last pred:   class 2 (fixture weights; accuracy not meaningful)
+
+netkit MobileNetV4-small benchmark summary (reference, depthwise=row-accum(4))
+  cold invoke:       2668.500 us (  2.668 ms)
+  warm median:       2454.250 us (  2.454 ms)  <- primary metric
+  warm min:          2385.500 us (  2.385 ms)
+  warm mean:         2506.349 us (  2.506 ms)  over 299 invokes
+  warm max:          3134.583 us
+  warm stddev:        130.938 us
+BENCHMARK_SUMMARY runtime=netkit model=mobilenetv4_small dtype=float32 backend=reference depthwise=row-accum(4) warm_median_us=2454.250 warm_min_us=2385.500 warm_mean_us=2506.349 cold_us=2668.500 invokes=300
+
+=== netkit int8 ===
+/Applications/Xcode.app/Contents/Developer/usr/bin/make -f bench.mk BACKEND=reference CMSIS_DSP=0 NETKIT_LOOP_UNROLL=0 \
+	  BENCH_OBJDIR=bench_obj \
+	  BENCH_LIB=libnetkit_bench.a \
+	  MNV4_BENCH=mobilenetv4_bench \
+	  MNV4_MAIN_OBJ=src/mobilenetv4_main.o \
+	  run-mobilenetv4-int8
+netkit MobileNetV4-small benchmark
+  backend:     reference
+  depthwise:   row-accum(4)
+  dtype:       int8
+  model:       models/mobilenetv4_small_int8.nk
+  input:       56x56x3  outputs: 10
+  method:      10 images x 30 loops = 300 invokes (all timed)
+  last pred:   class 2 (fixture weights; accuracy not meaningful)
+
+netkit MobileNetV4-small benchmark summary (reference, depthwise=row-accum(4))
+  cold invoke:       2300.000 us (  2.300 ms)
+  warm median:       2308.500 us (  2.308 ms)  <- primary metric
+  warm min:          2107.667 us (  2.108 ms)
+  warm mean:         2323.826 us (  2.324 ms)  over 299 invokes
+  warm max:          2935.500 us
+  warm stddev:        126.621 us
+BENCHMARK_SUMMARY runtime=netkit model=mobilenetv4_small dtype=int8 backend=reference depthwise=row-accum(4) warm_median_us=2308.500 warm_min_us=2107.667 warm_mean_us=2323.826 cold_us=2300.000 invokes=300
+
+=== TFLM float32 ===
+TFLM already present at /Users/jimlavrenz/workspace/netkit/benchmark/tflm/third_party/tflite-micro
+gmake[1]: Entering directory '/Users/jimlavrenz/workspace/netkit/benchmark/tflm/third_party/tflite-micro'
+tensorflow/lite/micro/tools/make/downloads/pigweed already exists, skipping the download.
+gmake[1]: Leaving directory '/Users/jimlavrenz/workspace/netkit/benchmark/tflm/third_party/tflite-micro'
+gmake[1]: Entering directory '/Users/jimlavrenz/workspace/netkit/benchmark/tflm/third_party/tflite-micro'
+tensorflow/lite/micro/tools/make/downloads/pigweed already exists, skipping the download.
+gen/osx_arm64_default_gcc/bin/mobilenetv4_benchmark non_test_binary osx
+TFLM MobileNetV4-small benchmark
+  backend:     reference (TFLM builtin float kernels)
+  model bytes: 9958812
+  input:       56x56x3  outputs: 10
+  method:      10 images x 30 loops = 300 invokes (all timed)
+  arena bytes: 4194304
+  last pred:   class 8 (fixture weights; accuracy not meaningful)
+
+TFLM MobileNetV4-small benchmark summary (reference)
+  cold invoke:      25315.583 us ( 25.316 ms)
+  warm median:      14936.625 us ( 14.937 ms)  <- primary metric
+  warm min:         13623.792 us ( 13.624 ms)
+  warm mean:        14764.916 us ( 14.765 ms)  over 299 invokes
+  warm max:         17511.334 us
+  warm stddev:        717.389 us
+BENCHMARK_SUMMARY runtime=tflm model=mobilenetv4_small dtype=float32 backend=reference warm_median_us=14936.625 warm_min_us=13623.792 warm_mean_us=14764.916 cold_us=25315.583 invokes=300
+gmake[1]: Leaving directory '/Users/jimlavrenz/workspace/netkit/benchmark/tflm/third_party/tflite-micro'
+
+=== TFLM int8 ===
+TFLM already present at /Users/jimlavrenz/workspace/netkit/benchmark/tflm/third_party/tflite-micro
+gmake[1]: Entering directory '/Users/jimlavrenz/workspace/netkit/benchmark/tflm/third_party/tflite-micro'
+tensorflow/lite/micro/tools/make/downloads/pigweed already exists, skipping the download.
+gmake[1]: Leaving directory '/Users/jimlavrenz/workspace/netkit/benchmark/tflm/third_party/tflite-micro'
+gmake[1]: Entering directory '/Users/jimlavrenz/workspace/netkit/benchmark/tflm/third_party/tflite-micro'
+tensorflow/lite/micro/tools/make/downloads/pigweed already exists, skipping the download.
+gen/osx_arm64_default_gcc/bin/mobilenetv4_int8_benchmark non_test_binary osx
+TFLM MobileNetV4-small int8 benchmark
+  backend:     reference (TFLM builtin int8 kernels)
+  model bytes: 2821984
+  input:       56x56x3  outputs: 10
+  method:      10 images x 30 loops = 300 invokes (all timed)
+  arena bytes: 16777216
+  last pred:   class 0 (fixture weights; accuracy not meaningful)
+
+TFLM MobileNetV4-small int8 benchmark summary (reference)
+  cold invoke:      19773.292 us ( 19.773 ms)
+  warm median:      19196.208 us ( 19.196 ms)  <- primary metric
+  warm min:         17699.458 us ( 17.699 ms)
+  warm mean:        19080.961 us ( 19.081 ms)  over 299 invokes
+  warm max:         25744.792 us
+  warm stddev:        934.204 us
+BENCHMARK_SUMMARY runtime=tflm model=mobilenetv4_small dtype=int8 backend=reference warm_median_us=19196.208 warm_min_us=17699.458 warm_mean_us=19080.961 cold_us=19773.292 invokes=300
+gmake[1]: Leaving directory '/Users/jimlavrenz/workspace/netkit/benchmark/tflm/third_party/tflite-micro'
+

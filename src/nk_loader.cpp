@@ -1920,6 +1920,9 @@ namespace NkLoader
             uint32_t h = input_shape[0];
             uint32_t w = input_shape[1];
             uint32_t dense_in = 0;
+            float activation_scale = 1.0f;
+            int32_t activation_zero_point = 0;
+            bool have_activation_quant = false;
 
             for (uint32_t i = 0; i < parsed.header.num_layers; ++i)
             {
@@ -1966,6 +1969,15 @@ namespace NkLoader
 
                         weight_offset += w_desc.num_elements;
                         bias_offset += b_desc.num_elements;
+
+                        if (!have_activation_quant)
+                        {
+                            activation_scale = parsed.layer_quant[quant_index - 1].input_scale;
+                            activation_zero_point = parsed.layer_quant[quant_index - 1].input_zero_point;
+                            have_activation_quant = true;
+                        }
+                        activation_scale = parsed.layer_quant[quant_index - 1].output_scale;
+                        activation_zero_point = parsed.layer_quant[quant_index - 1].output_zero_point;
 
                         h = nk_op_detail::CalcOutputDimAsymmetric(
                             h, static_cast<int>(layer.kernel_size), static_cast<int>(layer.stride),
@@ -2025,12 +2037,142 @@ namespace NkLoader
 
                         weight_offset += weight_elems;
                         bias_offset += layer.filters;
+                        if (!have_activation_quant)
+                        {
+                            activation_scale = parsed.layer_quant[quant_index - 1].input_scale;
+                            activation_zero_point = parsed.layer_quant[quant_index - 1].input_zero_point;
+                            have_activation_quant = true;
+                        }
+                        activation_scale = parsed.layer_quant[quant_index - 1].output_scale;
+                        activation_zero_point = parsed.layer_quant[quant_index - 1].output_zero_point;
                         h = nk_op_detail::CalcOutputDimAsymmetric(
                             h, static_cast<int>(kernel_h), static_cast<int>(layer.stride),
                             static_cast<int>(layer.pad_h), dw_meta.pad_h_end);
                         w = nk_op_detail::CalcOutputDimAsymmetric(
                             w, static_cast<int>(kernel_w), static_cast<int>(layer.stride),
                             static_cast<int>(layer.pad_w), dw_meta.pad_w_end);
+                        break;
+                    }
+                    case NkFormat::LayerKind::MobilenetV4Uib:
+                    {
+                        const NkFormat::MobilenetV4UibLayerDesc& layer = parsed.layers[i].mobilenetv4_uib;
+                        const uint32_t in_c = layer.in_channels;
+                        const uint32_t out_c = layer.out_channels;
+                        const uint32_t start_k = layer.start_dw_kernel;
+                        const uint32_t middle_k = layer.middle_dw_kernel;
+                        const uint32_t expand_c =
+                            MobileNetV4Uib::MakeDivisible(static_cast<float>(in_c) * layer.expand_ratio, 8);
+
+                        if (in_c != in_channels)
+                            return Fail(LoadStatus::SizeMismatch,
+                                          "MobileNetV4 UIB in_channels must match input channels in .nk");
+
+                        const float block_input_scale = activation_scale;
+                        const int32_t block_input_zp = activation_zero_point;
+
+                        auto take_quant_pair = [&](std::size_t expected_w,
+                                                   std::size_t expected_b)
+                            -> std::tuple<int8_t*, int32_t*, NkFormat::MlpLayerQuantDesc>
+                        {
+                            const NkFormat::TensorDesc& w_desc = parsed.weight_tensors[weight_index++];
+                            const NkFormat::TensorDesc& b_desc = parsed.bias_tensors[bias_index++];
+                            if (w_desc.dtype != NkFormat::DType::Int8 ||
+                                b_desc.dtype != NkFormat::DType::Int32 ||
+                                w_desc.num_elements != expected_w || b_desc.num_elements != expected_b)
+                                return {nullptr, nullptr, {}};
+                            int8_t* w_ptr = weights + weight_offset;
+                            int32_t* b_ptr = biases + bias_offset;
+                            weight_offset += expected_w;
+                            bias_offset += expected_b;
+                            const NkFormat::MlpLayerQuantDesc quant = parsed.layer_quant[quant_index++];
+                            return {w_ptr, b_ptr, quant};
+                        };
+
+                        int8_t* start_dw_w = nullptr;
+                        int32_t* start_dw_b = nullptr;
+                        NkFormat::MlpLayerQuantDesc start_dw_quant{};
+                        if (start_k > 0)
+                        {
+                            const std::size_t dw_elems =
+                                static_cast<std::size_t>(start_k) * start_k * in_c;
+                            const auto [dw_w, dw_b, dw_q] = take_quant_pair(dw_elems, in_c);
+                            if (!dw_w)
+                                return Fail(LoadStatus::SizeMismatch,
+                                              "Quantized MobileNetV4 UIB start depthwise tensor mismatch");
+                            start_dw_w = dw_w;
+                            start_dw_b = dw_b;
+                            start_dw_quant = dw_q;
+                        }
+
+                        const auto [expand_w, expand_b, expand_quant] =
+                            take_quant_pair(static_cast<std::size_t>(expand_c) * in_c, expand_c);
+                        int8_t* middle_dw_w = nullptr;
+                        int32_t* middle_dw_b = nullptr;
+                        NkFormat::MlpLayerQuantDesc middle_dw_quant{};
+                        if (middle_k > 0)
+                        {
+                            const std::size_t dw_elems =
+                                static_cast<std::size_t>(middle_k) * middle_k * expand_c;
+                            const auto [dw_w, dw_b, dw_q] = take_quant_pair(dw_elems, expand_c);
+                            if (!dw_w)
+                                return Fail(LoadStatus::SizeMismatch,
+                                              "Quantized MobileNetV4 UIB middle depthwise tensor mismatch");
+                            middle_dw_w = dw_w;
+                            middle_dw_b = dw_b;
+                            middle_dw_quant = dw_q;
+                        }
+
+                        const auto [proj_w, proj_b, proj_quant] =
+                            take_quant_pair(static_cast<std::size_t>(out_c) * expand_c, out_c);
+                        if (!expand_w || !proj_w)
+                            return Fail(LoadStatus::SizeMismatch,
+                                          "Quantized MobileNetV4 UIB tensor shape mismatch in .nk catalog");
+
+                        if (!have_activation_quant)
+                        {
+                            activation_scale = expand_quant.input_scale;
+                            activation_zero_point = expand_quant.input_zero_point;
+                            have_activation_quant = true;
+                        }
+
+                        network->InitQuantizedMobilenetV4UibLayer(i,
+                                                                  arena,
+                                                                  h,
+                                                                  w,
+                                                                  static_cast<int>(in_c),
+                                                                  static_cast<int>(out_c),
+                                                                  static_cast<int>(start_k),
+                                                                  static_cast<int>(middle_k),
+                                                                  static_cast<int>(layer.stride),
+                                                                  layer.middle_dw_downsample != 0,
+                                                                  layer.expand_ratio,
+                                                                  block_input_scale,
+                                                                  block_input_zp,
+                                                                  start_dw_w,
+                                                                  start_dw_b,
+                                                                  start_dw_quant,
+                                                                  expand_w,
+                                                                  expand_b,
+                                                                  expand_quant,
+                                                                  middle_dw_w,
+                                                                  middle_dw_b,
+                                                                  middle_dw_quant,
+                                                                  proj_w,
+                                                                  proj_b,
+                                                                  proj_quant);
+
+                        MobileNetV4Uib shape_probe{};
+                        shape_probe.in_channels = static_cast<int>(in_c);
+                        shape_probe.out_channels = static_cast<int>(out_c);
+                        shape_probe.start_dw_kernel = static_cast<int>(start_k);
+                        shape_probe.middle_dw_kernel = static_cast<int>(middle_k);
+                        shape_probe.stride = static_cast<int>(layer.stride);
+                        shape_probe.middle_dw_downsample = layer.middle_dw_downsample != 0;
+                        shape_probe.expand_ratio = layer.expand_ratio;
+                        shape_probe.output_spatial(h, w, h, w);
+                        in_channels = out_c;
+                        activation_scale = proj_quant.output_scale;
+                        activation_zero_point = proj_quant.output_zero_point;
                         break;
                     }
                     case NkFormat::LayerKind::MaxPool2D:
@@ -2045,6 +2187,26 @@ namespace NkLoader
                                                pool_meta.pad_w,
                                                pool_meta.pad_h_end,
                                                pool_meta.pad_w_end);
+                        h = nk_op_detail::CalcOutputDimAsymmetric(
+                            h, pool_meta.pool_h, static_cast<int>(layer.stride), pool_meta.pad_h,
+                            pool_meta.pad_h_end);
+                        w = nk_op_detail::CalcOutputDimAsymmetric(
+                            w, pool_meta.pool_w, static_cast<int>(layer.stride), pool_meta.pad_w,
+                            pool_meta.pad_w_end);
+                        break;
+                    }
+                    case NkFormat::LayerKind::AvgPool2D:
+                    {
+                        const NkFormat::PoolLayerDesc& layer = parsed.layers[i].pool;
+                        const nk_op_detail::PoolMeta pool_meta = nk_op_detail::DecodePoolMeta(layer);
+                        network->InitAvgPoolLayer(i,
+                                                  pool_meta.pool_h,
+                                                  pool_meta.pool_w,
+                                                  static_cast<int>(layer.stride),
+                                                  pool_meta.pad_h,
+                                                  pool_meta.pad_w,
+                                                  pool_meta.pad_h_end,
+                                                  pool_meta.pad_w_end);
                         h = nk_op_detail::CalcOutputDimAsymmetric(
                             h, pool_meta.pool_h, static_cast<int>(layer.stride), pool_meta.pad_h,
                             pool_meta.pad_h_end);

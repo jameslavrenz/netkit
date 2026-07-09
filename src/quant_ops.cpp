@@ -450,6 +450,100 @@ namespace QuantOps
         }
     }
 
+    void ElementwiseAddS8(const int8_t* input1,
+                          const int8_t* input2,
+                          uint32_t count,
+                          float input1_scale,
+                          int32_t input1_zero_point,
+                          float input2_scale,
+                          int32_t input2_zero_point,
+                          float output_scale,
+                          int32_t output_zero_point,
+                          int8_t* output)
+    {
+#if defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN && NETKIT_CMSIS_NN_ALLOWED
+        if (CmsisNnQuant::TryElementwiseAddS8(input1,
+                                              input2,
+                                              count,
+                                              input1_scale,
+                                              input1_zero_point,
+                                              input2_scale,
+                                              input2_zero_point,
+                                              output_scale,
+                                              output_zero_point,
+                                              output))
+        {
+            return;
+        }
+#endif
+        for (uint32_t i = 0; i < count; ++i)
+        {
+            const float v1 = DequantizeInt8(input1[i], input1_scale, input1_zero_point);
+            const float v2 = DequantizeInt8(input2[i], input2_scale, input2_zero_point);
+            output[i] = QuantizeFloat(v1 + v2, output_scale, output_zero_point);
+        }
+    }
+
+    void AvgPool2dNhwcQuant(const int8_t* input,
+                            uint32_t in_h,
+                            uint32_t in_w,
+                            uint32_t in_c,
+                            int pool_h,
+                            int pool_w,
+                            int stride,
+                            int pad_h,
+                            int pad_w,
+                            int pad_h_end,
+                            int pad_w_end,
+                            float input_scale,
+                            int32_t input_zero_point,
+                            float output_scale,
+                            int32_t output_zero_point,
+                            int8_t* output)
+    {
+        const uint32_t out_h = nk_op_detail::CalcOutputDimAsymmetric(
+            in_h, pool_h, stride, pad_h, pad_h_end);
+        const uint32_t out_w = nk_op_detail::CalcOutputDimAsymmetric(
+            in_w, pool_w, stride, pad_w, pad_w_end);
+
+        for (uint32_t oh = 0; oh < out_h; ++oh)
+        {
+            for (uint32_t ow = 0; ow < out_w; ++ow)
+            {
+                for (uint32_t c = 0; c < in_c; ++c)
+                {
+                    float sum = 0.0f;
+                    uint32_t count = 0;
+
+                    for (int kh = 0; kh < pool_h; ++kh)
+                    {
+                        const int32_t ih = static_cast<int32_t>(oh) * stride + kh - pad_h;
+                        if (ih < 0 || ih >= static_cast<int32_t>(in_h))
+                            continue;
+
+                        for (int kw = 0; kw < pool_w; ++kw)
+                        {
+                            const int32_t iw = static_cast<int32_t>(ow) * stride + kw - pad_w;
+                            if (iw < 0 || iw >= static_cast<int32_t>(in_w))
+                                continue;
+
+                            const int8_t value = input[(static_cast<uint32_t>(ih) * in_w +
+                                                        static_cast<uint32_t>(iw)) *
+                                                           in_c +
+                                                       c];
+                            sum += DequantizeInt8(value, input_scale, input_zero_point);
+                            ++count;
+                        }
+                    }
+
+                    const float avg = count > 0 ? sum / static_cast<float>(count) : 0.0f;
+                    output[(oh * out_w + ow) * in_c + c] =
+                        QuantizeFloat(avg, output_scale, output_zero_point);
+                }
+            }
+        }
+    }
+
     void FlattenNhwcInt8(const int8_t* input, uint32_t num_elements, int8_t* output)
     {
         CmsisQuantUtil::CopyInt8(input, output, num_elements);

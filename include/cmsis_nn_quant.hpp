@@ -107,4 +107,15 @@ bool TrySoftmaxS8(const int8_t* input,
                   float logit_scale,
                   int8_t* output);
 
+bool TryElementwiseAddS8(const int8_t* input1,
+                         const int8_t* input2,
+                         uint32_t count,
+                         float input1_scale,
+                         int32_t input1_zero_point,
+                         float input2_scale,
+                         int32_t input2_zero_point,
+                         float output_scale,
+                         int32_t output_zero_point,
+                         int8_t* output);
+
 }  // namespace CmsisNnQuant

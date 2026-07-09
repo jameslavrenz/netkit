@@ -85,6 +85,22 @@ namespace
                     w, pool.pool_w, pool.stride, pool.pad_w, pool.pad_w_end);
                 break;
             }
+            case CnnBlockType::AvgPool2D:
+            {
+                const AvgPool2DLayer& pool = block.avg_pool;
+                h = nk_op_detail::CalcOutputDimAsymmetric(
+                    h, pool.pool_h, pool.stride, pool.pad_h, pool.pad_h_end);
+                w = nk_op_detail::CalcOutputDimAsymmetric(
+                    w, pool.pool_w, pool.stride, pool.pad_w, pool.pad_w_end);
+                break;
+            }
+            case CnnBlockType::MobilenetV4Uib:
+            {
+                const MobileNetV4Uib& uib = block.mobilenetv4_uib.block;
+                uib.output_spatial(h, w, h, w);
+                c = static_cast<uint32_t>(uib.out_channels);
+                break;
+            }
             case CnnBlockType::Flatten:
             {
                 const uint32_t features = h * w * c;
@@ -312,6 +328,37 @@ namespace
         return true;
     }
 
+    bool BuildAvgPoolPlan(CmsisQuantPlan::Pool2DPlan& plan,
+                          const AvgPool2DLayer& pool,
+                          uint32_t in_h,
+                          uint32_t in_w,
+                          uint32_t in_c,
+                          float input_scale,
+                          int32_t input_zero_point)
+    {
+        if (pool.pad_h != pool.pad_h_end || pool.pad_w != pool.pad_w_end)
+            return false;
+
+        plan.stride = pool.stride;
+        plan.pad_h = pool.pad_h;
+        plan.pad_w = pool.pad_w;
+        plan.pool_h = pool.pool_h;
+        plan.pool_w = pool.pool_w;
+        plan.in_h = static_cast<int32_t>(in_h);
+        plan.in_w = static_cast<int32_t>(in_w);
+        plan.in_c = static_cast<int32_t>(in_c);
+        plan.out_h = static_cast<int32_t>(nk_op_detail::CalcOutputDimAsymmetric(
+            in_h, pool.pool_h, pool.stride, pool.pad_h, pool.pad_h_end));
+        plan.out_w = static_cast<int32_t>(nk_op_detail::CalcOutputDimAsymmetric(
+            in_w, pool.pool_w, pool.stride, pool.pad_w, pool.pad_w_end));
+        plan.input_scale = input_scale;
+        plan.input_zero_point = input_zero_point;
+        plan.output_scale = input_scale;
+        plan.output_zero_point = input_zero_point;
+        plan.ready = true;
+        return true;
+    }
+
     bool BuildFcPlan(CmsisQuantPlan::FcPlan& plan,
                      const NkFormat::MlpLayerQuantDesc& quant,
                      bool apply_relu,
@@ -375,21 +422,36 @@ bool BuildRuntime(CNNNetwork& network, Arena& arena, uint32_t in_h, uint32_t in_
     uint32_t h = in_h;
     uint32_t w = in_w;
     uint32_t c = in_c;
+    const uint32_t input_quant_elements = in_h * in_w * in_c;
     uint32_t even_max = 0;
     uint32_t odd_max = 0;
     std::size_t workspace_bytes = 0;
     uint32_t logits_elements = 0;
+    float activation_scale = 1.0f;
+    int32_t activation_zero_point = 0;
 
     const CnnBlock& first = network.GetBlock(0);
     if (first.type == CnnBlockType::Conv2D && first.conv.quant.enabled)
     {
         runtime->input_scale = first.conv.quant.params.input_scale;
         runtime->input_zero_point = first.conv.quant.params.input_zero_point;
+        activation_scale = runtime->input_scale;
+        activation_zero_point = runtime->input_zero_point;
     }
     else if (first.type == CnnBlockType::DepthwiseConv2D && first.depthwise_conv.quant.enabled)
     {
         runtime->input_scale = first.depthwise_conv.quant.params.input_scale;
         runtime->input_zero_point = first.depthwise_conv.quant.params.input_zero_point;
+        activation_scale = runtime->input_scale;
+        activation_zero_point = runtime->input_zero_point;
+    }
+    else if (first.type == CnnBlockType::MobilenetV4Uib &&
+             first.mobilenetv4_uib.block.quant_enabled)
+    {
+        runtime->input_scale = first.mobilenetv4_uib.block.block_input_scale;
+        runtime->input_zero_point = first.mobilenetv4_uib.block.block_input_zero_point;
+        activation_scale = runtime->input_scale;
+        activation_zero_point = runtime->input_zero_point;
     }
 
     for (uint32_t i = 0; i < n; ++i)
@@ -426,6 +488,8 @@ bool BuildRuntime(CNNNetwork& network, Arena& arena, uint32_t in_h, uint32_t in_
                     return false;
                 workspace_bytes = std::max(workspace_bytes,
                                            static_cast<std::size_t>(lp.conv.workspace_bytes));
+                activation_scale = block.conv.quant.params.output_scale;
+                activation_zero_point = block.conv.quant.params.output_zero_point;
                 break;
             }
             case CnnBlockType::DepthwiseConv2D:
@@ -444,6 +508,8 @@ bool BuildRuntime(CNNNetwork& network, Arena& arena, uint32_t in_h, uint32_t in_
                     return false;
                 workspace_bytes = std::max(workspace_bytes,
                                            static_cast<std::size_t>(lp.depthwise.workspace_bytes));
+                activation_scale = block.depthwise_conv.quant.params.output_scale;
+                activation_zero_point = block.depthwise_conv.quant.params.output_zero_point;
                 break;
             }
             case CnnBlockType::MaxPool2D:
@@ -451,6 +517,44 @@ bool BuildRuntime(CNNNetwork& network, Arena& arena, uint32_t in_h, uint32_t in_
                 lp.kind = LayerKind::MaxPool2D;
                 if (!BuildPoolPlan(lp.pool, block.pool, in_h_layer, in_w_layer, in_c_layer))
                     return false;
+                break;
+            }
+            case CnnBlockType::AvgPool2D:
+            {
+                lp.kind = LayerKind::AvgPool2D;
+                if (!BuildAvgPoolPlan(lp.pool,
+                                      block.avg_pool,
+                                      in_h_layer,
+                                      in_w_layer,
+                                      in_c_layer,
+                                      activation_scale,
+                                      activation_zero_point))
+                    return false;
+                activation_scale = lp.pool.output_scale;
+                activation_zero_point = lp.pool.output_zero_point;
+                break;
+            }
+            case CnnBlockType::MobilenetV4Uib:
+            {
+                lp.kind = LayerKind::MobilenetV4Uib;
+                MobileNetV4Uib& uib = block.mobilenetv4_uib.block;
+                if (!uib.quant_enabled)
+                    return false;
+                MobilenetV4UibPlan& up = lp.uib;
+                up.in_h = static_cast<int32_t>(in_h_layer);
+                up.in_w = static_cast<int32_t>(in_w_layer);
+                up.in_c = static_cast<int32_t>(in_c_layer);
+                up.out_h = static_cast<int32_t>(h);
+                up.out_w = static_cast<int32_t>(w);
+                up.out_c = static_cast<int32_t>(c);
+                up.has_start_dw = uib.start_dw_kernel > 0;
+                up.has_middle_dw = uib.middle_dw_kernel > 0;
+                up.has_residual = uib.has_residual();
+                up.scratch = uib.scratch_i8;
+                up.scratch_bytes = static_cast<int32_t>(uib.scratch_i8_bytes);
+                up.ready = true;
+                activation_scale = uib.proj_quant.output_scale;
+                activation_zero_point = uib.proj_quant.output_zero_point;
                 break;
             }
             case CnnBlockType::Flatten:
@@ -512,7 +616,7 @@ bool BuildRuntime(CNNNetwork& network, Arena& arena, uint32_t in_h, uint32_t in_
         }
     }
 
-    runtime->input_quant_elements = in_h * in_w * in_c;
+    runtime->input_quant_elements = input_quant_elements;
     runtime->staging_arena = &arena;
 
     runtime->act_a_bytes = even_max;
@@ -688,6 +792,36 @@ namespace
                                                    out);
                     break;
 #endif
+                }
+                case LayerKind::AvgPool2D:
+                {
+                    const AvgPool2DLayer& pool = block.avg_pool;
+                    QuantOps::AvgPool2dNhwcQuant(current,
+                                                  static_cast<uint32_t>(lp.pool.in_h),
+                                                  static_cast<uint32_t>(lp.pool.in_w),
+                                                  static_cast<uint32_t>(lp.pool.in_c),
+                                                  pool.pool_h,
+                                                  pool.pool_w,
+                                                  pool.stride,
+                                                  pool.pad_h,
+                                                  pool.pad_w,
+                                                  pool.pad_h_end,
+                                                  pool.pad_w_end,
+                                                  lp.pool.input_scale,
+                                                  lp.pool.input_zero_point,
+                                                  lp.pool.output_scale,
+                                                  lp.pool.output_zero_point,
+                                                  out);
+                    break;
+                }
+                case LayerKind::MobilenetV4Uib:
+                {
+                    MobileNetV4Uib& uib = block.mobilenetv4_uib.block;
+                    uib.forward_quant(current,
+                                      out,
+                                      static_cast<uint32_t>(lp.uib.in_h),
+                                      static_cast<uint32_t>(lp.uib.in_w));
+                    break;
                 }
                 case LayerKind::Dense:
                 {

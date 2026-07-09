@@ -134,6 +134,71 @@ void CNNNetwork::InitQuantizedDenseLayer(uint32_t layer_idx,
     blocks[layer_idx].dense.quant.enabled = true;
 }
 
+void CNNNetwork::InitQuantizedMobilenetV4UibLayer(uint32_t layer_idx,
+                                                  Arena& arena,
+                                                  uint32_t spatial_h,
+                                                  uint32_t spatial_w,
+                                                  int in_channels,
+                                                  int out_channels,
+                                                  int start_dw_kernel,
+                                                  int middle_dw_kernel,
+                                                  int stride,
+                                                  bool middle_dw_downsample,
+                                                  float expand_ratio,
+                                                  float block_input_scale,
+                                                  int32_t block_input_zero_point,
+                                                  int8_t* start_dw_weights,
+                                                  int32_t* start_dw_bias,
+                                                  const NkFormat::MlpLayerQuantDesc& start_dw_quant,
+                                                  int8_t* expand_weights,
+                                                  int32_t* expand_bias,
+                                                  const NkFormat::MlpLayerQuantDesc& expand_quant,
+                                                  int8_t* middle_dw_weights,
+                                                  int32_t* middle_dw_bias,
+                                                  const NkFormat::MlpLayerQuantDesc& middle_dw_quant,
+                                                  int8_t* proj_weights,
+                                                  int32_t* proj_bias,
+                                                  const NkFormat::MlpLayerQuantDesc& proj_quant)
+{
+    if (!blocks || layer_idx >= num_layers)
+        return;
+
+    blocks[layer_idx].type = CnnBlockType::MobilenetV4Uib;
+    MobileNetV4Uib& block = blocks[layer_idx].mobilenetv4_uib.block;
+    block.in_channels = in_channels;
+    block.out_channels = out_channels;
+    block.start_dw_kernel = start_dw_kernel;
+    block.middle_dw_kernel = middle_dw_kernel;
+    block.stride = stride;
+    block.middle_dw_downsample = middle_dw_downsample;
+    block.expand_ratio = expand_ratio;
+    block.quant_enabled = true;
+    block.block_input_scale = block_input_scale;
+    block.block_input_zero_point = block_input_zero_point;
+    block.start_dw_weights_q = start_dw_weights;
+    block.start_dw_bias_q = start_dw_bias;
+    block.start_dw_quant = start_dw_quant;
+    block.expand_weights_q = expand_weights;
+    block.expand_bias_q = expand_bias;
+    block.expand_quant = expand_quant;
+    block.middle_dw_weights_q = middle_dw_weights;
+    block.middle_dw_bias_q = middle_dw_bias;
+    block.middle_dw_quant = middle_dw_quant;
+    block.proj_weights_q = proj_weights;
+    block.proj_bias_q = proj_bias;
+    block.proj_quant = proj_quant;
+
+    const uint32_t spatial = spatial_h * spatial_w;
+    const uint32_t expand_c = block.expanded_channels();
+    const uint32_t residual =
+        (stride == 1 && in_channels == out_channels) ? static_cast<uint32_t>(in_channels) : 0u;
+    const uint32_t scratch_bytes =
+        (2u * spatial * expand_c + spatial * residual) * static_cast<uint32_t>(sizeof(int8_t));
+    block.scratch_i8 =
+        static_cast<int8_t*>(arena.alloc(static_cast<std::size_t>(scratch_bytes), alignof(int8_t)));
+    block.scratch_i8_bytes = block.scratch_i8 ? scratch_bytes : 0;
+}
+
 Tensor& CNNNetwork::forward_quantized(const Tensor& input)
 {
     static Tensor empty{};

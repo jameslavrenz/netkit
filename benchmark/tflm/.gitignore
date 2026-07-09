@@ -1,6 +1,7 @@
 .venv/
 generated/saved_model/
 generated/cnn_saved_model/
+generated/mobilenetv4_saved_model/
 generated/mnist_test_images.o
 generated/mnist_cnn_test_images.o
 third_party/tflite-micro/

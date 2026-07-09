@@ -98,11 +98,17 @@ make -C benchmark/tflm run-cnn
 `models/mobilenetv4_small.nk` (CNN, input **56×56×3**, 10 classes, 12 UIB blocks) is a larger, **depthwise-heavy** float32 model used to exercise `ConvDepthwiseForward`. It is host/CPU only (the model + activations are too large for the target MCU). It reuses the 10 embedded MNIST images (one per class), upsampled 28×28×1 → 56×56×3, and times **every** invoke over 10 images × 30 loops (300 invokes), reporting the cold first invoke plus warm median/min/mean/stddev.
 
 ```bash
-make -C benchmark/netkit run-mobilenetv4         # netkit reference kernels
-make -C benchmark/netkit run-mobilenetv4-cmsis   # netkit CMSIS-DSP
+make -C benchmark/netkit run-mobilenetv4         # netkit float32 reference kernels
+make -C benchmark/netkit run-mobilenetv4-int8     # netkit int8 reference kernels
+make -C benchmark/netkit run-mobilenetv4-cmsis   # netkit float32 CMSIS-DSP
+make -C benchmark/tflm run-mobilenetv4           # TFLM float32 (after export-mobilenetv4)
+make -C benchmark/tflm run-mobilenetv4-int8        # TFLM int8 (after export-mobilenetv4-int8)
+./tools/run_mobilenetv4_4way_benchmark.sh        # all four, writes benchmark/mobilenetv4_4way_results.txt
 ```
 
-This benchmark is **not** part of `compare.sh` / `run-all` (no TFLM counterpart) and accuracy is not meaningful (fixture weights) — it measures invoke latency only.
+Int8 netkit loads `models/mobilenetv4_small_int8.nk` (UIB composite quant op, per-tensor symmetric int8). Int8 TFLM uses `generated/mobilenetv4_small_int8.tflite` with prequantized `mobilenetv4_int8_test_images.{h,cc}`.
+
+This benchmark is **not** part of `compare.sh` / `run-all` (separate MobileNetV4 harness) and accuracy is not meaningful (fixture weights) — it measures invoke latency only.
 
 ## Models
 

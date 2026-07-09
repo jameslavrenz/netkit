@@ -1,5 +1,6 @@
 #pragma once
 
+#include "nk_format.hpp"
 #include "tensor.hpp"
 #include <cstdint>
 
@@ -37,6 +38,25 @@ struct MobileNetV4Uib
     float* scratch = nullptr;
     uint32_t scratch_elems = 0;
 
+    // Quantized UIB path (BN pre-folded at export; int8 weights + per-sub-op quant).
+    bool quant_enabled = false;
+    int8_t* start_dw_weights_q = nullptr;
+    int32_t* start_dw_bias_q = nullptr;
+    int8_t* expand_weights_q = nullptr;
+    int32_t* expand_bias_q = nullptr;
+    int8_t* middle_dw_weights_q = nullptr;
+    int32_t* middle_dw_bias_q = nullptr;
+    int8_t* proj_weights_q = nullptr;
+    int32_t* proj_bias_q = nullptr;
+    NkFormat::MlpLayerQuantDesc start_dw_quant{};
+    NkFormat::MlpLayerQuantDesc expand_quant{};
+    NkFormat::MlpLayerQuantDesc middle_dw_quant{};
+    NkFormat::MlpLayerQuantDesc proj_quant{};
+    float block_input_scale = 1.0f;
+    int32_t block_input_zero_point = 0;
+    int8_t* scratch_i8 = nullptr;
+    uint32_t scratch_i8_bytes = 0;
+
     // Set once forward() has folded each BatchNorm into its preceding conv's
     // weights/bias (see FoldBatchNorm). Guards against re-folding on later calls.
     bool bn_folded = false;
@@ -55,4 +75,6 @@ struct MobileNetV4Uib
     void FoldBatchNorm();
 
     void forward(const Tensor& input, Tensor& output);
+
+    void forward_quant(const int8_t* input, int8_t* output, uint32_t in_h, uint32_t in_w) const;
 };
