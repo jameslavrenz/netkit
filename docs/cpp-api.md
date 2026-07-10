@@ -436,8 +436,8 @@ void PrintNetworkSummary(const char* nk_path, const ParsedModel& model);
 
 LoadResult LoadMLP(const char* nk_path, Arena& arena, MLPNetwork*& network,
                    std::array<uint32_t, kMaxTensorRank>& input_shape, uint32_t& input_rank);
-// When NETKIT_USE_MMAP=1 (CPU default on macOS/Linux; opt-in on Linux MPU):
-//   mmap MAP_PRIVATE; arena owns mapping until reset/destroy.
+// When NETKIT_USE_MMAP=1 (cpu + MPU default on macOS/Linux/Windows; forbidden on MCU):
+//   private file mmap; arena owns mapping until reset/destroy.
 // Otherwise: fread into arena. Prefer Load*FromBuffer / flash on MCU and RTOS MPU.
 
 LoadResult LoadMLPFromBuffer(const uint8_t* data, std::size_t size, Arena& arena, MLPNetwork*& network,

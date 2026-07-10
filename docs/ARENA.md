@@ -118,10 +118,10 @@ Weights never copy into a separate RAM weight buffer. At load time, netkit **bin
 
 | Target | File load (`LoadMLP` / `LoadCNN` / `nk_model_load`) | Buffer / AOT |
 |--------|------------------------------------------------------|--------------|
-| **CPU** (macOS, Linux; `NETKIT_MMAP=1` default) | POSIX **`mmap` (`MAP_PRIVATE`)**; arena owns mapping until `reset()` / `destroy_heap()`. Pages stay file-backed until a write (e.g. BN fold) copy-on-writes that page | Bind into caller-owned blob; `data` must outlive the network |
-| **MPU** (default `NETKIT_MMAP=0`) | Same as MCU: `fread` into arena if you use a path API; prefer buffer/flash | Flash/XIP or embedded `.rodata`; bind views |
-| **MPU** + embedded Linux (`NETKIT_MMAP=1`) | Same mmap path as CPU | Same as above |
-| **MCU** | Copies the file into the arena (no mmap). Prefer buffer/AOT | Flash/XIP or embedded `.rodata`; bind views |
+| **CPU** (macOS, Linux, Windows; `NETKIT_MMAP=1` default) | **File mmap** — POSIX `MAP_PRIVATE` on macOS/Linux; Win32 `FILE_MAP_COPY` on Windows. Arena owns mapping until `reset()` / `destroy_heap()`. Pages stay file-backed until a write (e.g. BN fold) copy-on-writes that page | Bind into caller-owned blob; `data` must outlive the network |
+| **MPU** (`NETKIT_MMAP=1` default) | Same mmap path as CPU when a VM-capable OS is present (POSIX or Windows) | Same as above |
+| **MPU** + RTOS / bare metal (`NETKIT_MMAP=0`) | `fread` into arena if you use a path API; prefer buffer/flash | Flash/XIP or embedded `.rodata`; bind views |
+| **MCU** | mmap **forbidden**; path load copies into the arena. Prefer buffer/AOT | Flash/XIP or embedded `.rodata`; bind views |
 
 **Sizing firmware:** use `./netkit inspect --full` (or AOT constants). Arena peaks exclude weight/bias bytes when the blob is mmap'd or flash-backed; `flash_payload_bytes` reports the payload kept outside the bump arena. Size SRAM for **activations + structs + headroom** only.
 

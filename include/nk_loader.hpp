@@ -102,8 +102,9 @@ namespace NkLoader
 
     void PrintNetworkSummary(const char* nk_path, const ParsedModel& model);
 
-    /* File load: when NETKIT_USE_MMAP=1 (CPU default on macOS/Linux; opt-in on
-       embedded Linux MPU), mmap MAP_PRIVATE and arena owns the mapping until
+    /* File load: when NETKIT_USE_MMAP=1 (cpu + MPU default on macOS/Linux/Windows;
+       forbidden on MCU; opt out with NETKIT_MMAP=0 on RTOS MPU), private file mmap
+       and arena owns the mapping until
        reset()/destroy. Otherwise fread into the arena. Prefer Load*FromBuffer
        / flash for MCU and RTOS/bare-metal MPU. */
     LoadResult LoadMLP(const char* nk_path,

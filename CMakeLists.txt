@@ -55,13 +55,20 @@ option(NETKIT_HEAP_ARENA "Compile heap arena helpers on MCU/MPU class builds" OF
 # (MCU 64 KiB; CPU/MPU 64 MiB). Alternate: NETKIT_ARENA_KB (KiB).
 set(NETKIT_ARENA_CAPACITY "0" CACHE STRING "Override NK_ARENA_DEFAULT_CAPACITY in bytes (0 = class default)")
 set(NETKIT_ARENA_KB "0" CACHE STRING "Override NK_ARENA_DEFAULT_CAPACITY in KiB (0 = class default; ignored if CAPACITY set)")
-# mmap: default ON for cpu, OFF for firmware class. Opt in on embedded Linux MPU_ARM.
-if(NETKIT_TARGET STREQUAL "cpu")
-    set(_netkit_mmap_default ON)
-else()
+# mmap: default ON for cpu + any MPU; forbidden on MCU. Opt out with -DNETKIT_MMAP=OFF
+# on RTOS / bare-metal MPU (no virtual-memory OS).
+if(NETKIT_TARGET STREQUAL "mcu_arm" OR NETKIT_TARGET STREQUAL "mcu_risc")
     set(_netkit_mmap_default OFF)
+else()
+    set(_netkit_mmap_default ON)
 endif()
-option(NETKIT_MMAP "POSIX mmap for .nk file loads (macOS/Linux; off by default on MCU/MPU class)" ${_netkit_mmap_default})
+option(NETKIT_MMAP "mmap for .nk file loads (cpu + MPU default; forbidden on MCU; macOS/Linux/Windows)" ${_netkit_mmap_default})
+if(NETKIT_TARGET STREQUAL "mcu_arm" OR NETKIT_TARGET STREQUAL "mcu_risc")
+    if(NETKIT_MMAP)
+        message(WARNING "NETKIT_MMAP=ON forced off — mmap is forbidden on MCU")
+    endif()
+    set(NETKIT_MMAP OFF CACHE BOOL "mmap for .nk file loads (cpu + MPU default; forbidden on MCU; macOS/Linux/Windows)" FORCE)
+endif()
 set(NETKIT_IM2COL "0" CACHE STRING "Conv2D strategy (float + int8 QuantOps): 0 direct (default), 1 partial, 2 full im2col+GEMM")
 option(NETKIT_LOOP_UNROLL "EXPERIMENTAL: 4x loop unroll in netkit reference kernels (increases .text)" OFF)
 

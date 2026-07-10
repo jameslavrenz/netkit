@@ -4,8 +4,9 @@
 #include <cstddef>
 #include <cstdint>
 
-/* POSIX mmap helpers when NETKIT_USE_MMAP=1 (macOS/Linux). MCU and RTOS/bare-metal
- * MPU builds leave NETKIT_USE_MMAP=0 and use flash buffer or fread fallback. */
+/* mmap helpers when NETKIT_USE_MMAP=1 (POSIX on macOS/Linux; Win32 on Windows).
+ * Default on for cpu + any MPU; forbidden on MCU. Opt out with NETKIT_MMAP=0 on
+ * RTOS/bare-metal MPU. */
 
 namespace NkMmap
 {
@@ -16,10 +17,11 @@ namespace NkMmap
         bool valid() const { return data != nullptr; }
     };
 
-    /* Map an entire .nk file with MAP_PRIVATE. Pages stay file-backed until a
-     * write (e.g. in-place BN fold) copy-on-writes that page into anonymous RAM.
-     * The on-disk file is never modified. Returns false when mmap is disabled
-     * or unavailable. Caller must eventually Unmap (Arena does this). */
+    /* Map an entire .nk file privately (POSIX MAP_PRIVATE / Win32 FILE_MAP_COPY).
+     * Pages stay file-backed until a write (e.g. in-place BN fold) copy-on-writes
+     * that page into anonymous RAM. The on-disk file is never modified. Returns
+     * false when mmap is disabled or unavailable. Caller must eventually Unmap
+     * (Arena does this). */
     bool MapFile(const char* path, Mapping& out);
     void Unmap(Mapping& mapping);
     void Unmap(const void* data, std::size_t size);

@@ -192,8 +192,8 @@ High-level combined handle (C convenience):
 | Path | Behavior |
 |------|----------|
 | Buffer / AOT load | Binds views into the `.nk` blob; `data` must outlive the network |
-| File load + `NETKIT_USE_MMAP=1` (CPU default; opt-in MPU Linux) | POSIX `mmap`; arena owns mapping until `reset()` / destroy |
-| File load without mmap (MCU, RTOS MPU default) | Copies `.nk` into arena (prefer buffer/flash instead) |
+| File load + `NETKIT_USE_MMAP=1` (cpu + MPU default; forbidden on MCU) | File mmap (POSIX / Win32); arena owns mapping until `reset()` / destroy |
+| File load without mmap (MCU; or MPU with `NETKIT_MMAP=0`) | Copies `.nk` into arena (prefer buffer/flash instead) |
 | Arena peaks | Exclude weight/bias payload (`flash_payload_bytes` reports flash budget) |
 
 ### AOT deployment

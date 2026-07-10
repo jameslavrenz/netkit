@@ -86,7 +86,7 @@ Compile-time macros (from `include/netkit_config.h`):
 | `NETKIT_LOOP_UNROLL` | `1` — **experimental** 4× manual loop unroll in **netkit reference kernels** only (default **0**). Increases `.text` size; can exceed flash on small MCUs. Does not affect CMSIS (`ARM_MATH_LOOPUNROLL` is separate). |
 | `NETKIT_DW_ROW_ACCUM` | Depthwise conv cross-row accumulator strategy (default **1**). See `src/conv_depthwise_kernel.cpp`. |
 | `NETKIT_HOST_SMOKE` | Host MCU/MPU smoke only — adds `__GNUC_PYTHON__` for CMSIS without CMSIS-Core |
-| `NETKIT_USE_MMAP` | POSIX mmap for path-based `.nk` load (`NETKIT_MMAP=0\|1`). Default **1** on cpu, **0** on MCU/MPU class |
+| `NETKIT_USE_MMAP` | File mmap for path-based `.nk` load (`NETKIT_MMAP=0\|1`). POSIX on macOS/Linux; Win32 on Windows. Default **1** on cpu + any MPU; **forbidden** on MCU |
 
 Default arena constant (`NK_ARENA_DEFAULT_CAPACITY` / `Arena::kDefaultCapacity`):
 
@@ -101,7 +101,7 @@ make NETKIT_ARENA_CAPACITY=134217728 lib   # 128 MiB on CPU
 c++ ... -DNK_ARENA_DEFAULT_CAPACITY=131072 ...
 ```
 
-Weights always stay in the `.nk` blob. **Preferred on MCU and RTOS/bare-metal MPU:** flash/XIP or `Load*FromBuffer`. **Optional POSIX mmap** (`NETKIT_MMAP` / `NETKIT_USE_MMAP`): default **on** for CPU (macOS/Linux), **off** for MCU and MPU — opt in on embedded Linux with `NETKIT_MMAP=1`. When mmap is off, file load uses `fread` into the arena. The bump arena holds activations and structs. CLI override: `./netkit --arena <size> run|inspect …`.
+Weights always stay in the `.nk` blob. **Preferred on MCU and RTOS/bare-metal MPU:** flash/XIP or `Load*FromBuffer`. **File mmap** (`NETKIT_MMAP` / `NETKIT_USE_MMAP`): default **on** for cpu and any MPU (POSIX on macOS/Linux; Win32 `CreateFileMapping` / `MapViewOfFile` on Windows); **forbidden** on MCU. Opt out on no-OS MPU with `NETKIT_MMAP=0` (falls back to `fread` into the arena, or prefer buffer/flash). The bump arena holds activations and structs. CLI override: `./netkit --arena <size> run|inspect …`.
 
 ## Quick commands (Make)
 
@@ -203,14 +203,14 @@ nk_arena_init_heap(&arena, capacity);
 
 Same lean runtime as MCU. Default static arena constant is **`NK_ARENA_DEFAULT_CAPACITY` (64 MiB)** — MPU firmware typically uses a caller-owned buffer sized with `nk_inspect_model()` rather than the full default.
 
-**OS is orthogonal to the MPU target.** Many Cortex-A boards run FreeRTOS, Zephyr, or bare metal (no `mmap`). Defaults match that:
+**OS is orthogonal to the MPU target.** Many Cortex-A boards run FreeRTOS, Zephyr, or bare metal (no `mmap`). Defaults assume a VM-capable OS; opt out when you do not have one:
 
 | MPU deployment | Weight load |
 |----------------|-------------|
-| RTOS / bare metal | Flash/XIP or `nk_*_load_memory` / `Load*FromBuffer` (same as MCU). `NETKIT_MMAP=0` (default). |
-| Embedded Linux | Opt in: `make NETKIT_TARGET=mpu_arm NETKIT_MMAP=1 lib` for POSIX `mmap` file load. |
+| Embedded Linux / POSIX OS / Windows | Default `NETKIT_MMAP=1` — file mmap (POSIX or Win32; same as cpu). |
+| RTOS / bare metal | `make NETKIT_TARGET=mpu_arm NETKIT_MMAP=0 lib` (or buffer/flash / `Load*FromBuffer`). |
 
-Do not assume every MPU build has a virtual-memory OS.
+MCU builds **cannot** enable mmap (`NETKIT_MMAP=1` is forced off / compile error). Do not assume every MPU build has a virtual-memory OS.
 
 ## Source split
 

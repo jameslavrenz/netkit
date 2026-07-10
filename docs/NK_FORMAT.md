@@ -156,7 +156,7 @@ Python encode/decode: `python/netkit/pad_encoding.py` (`encode_pad_extra`, `enco
 
 ### Weight load policy (runtime)
 
-Same `.nk` bytes on disk or in flash. Weights **always** stay in the blob: buffer/AOT bind views into the payload; optional POSIX **`mmap`** file load when `NETKIT_USE_MMAP=1` (CPU default on macOS/Linux; off for MCU/MPU unless opted in). Arena holds structs + activations only. For buffer load, `data` must outlive the network. Misaligned payloads return a load error. See [ARENA.md](ARENA.md#weight-storage-always-flashblob-backed).
+Same `.nk` bytes on disk or in flash. Weights **always** stay in the blob: buffer/AOT bind views into the payload; optional **file mmap** when `NETKIT_USE_MMAP=1` (default on cpu + any MPU on macOS/Linux/Windows; **forbidden** on MCU; opt out with `NETKIT_MMAP=0` on RTOS MPU). Arena holds structs + activations only. For buffer load, `data` must outlive the network. Misaligned payloads return a load error. See [ARENA.md](ARENA.md#weight-storage-always-flashblob-backed).
 
 ## Embedded regression tests (optional)
 

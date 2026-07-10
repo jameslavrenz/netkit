@@ -37,9 +37,9 @@
  *   MCU / MPU default — caller-owned static/global buffer via nk_arena_init().
  *                       NETKIT_HEAP_ARENA=1 allows one init_heap() at startup.
  *
- * Optional POSIX mmap (NETKIT_USE_MMAP / Makefile NETKIT_MMAP):
- *   Default ON for CPU (macOS/Linux), OFF for MCU/MPU class. Opt in on embedded
- *   Linux MPU_ARM with NETKIT_MMAP=1.
+ * Optional file mmap (NETKIT_USE_MMAP / Makefile NETKIT_MMAP):
+ *   Default ON for cpu + any MPU (macOS/Linux POSIX; Windows Win32). Forbidden on MCU.
+ *   Opt out on RTOS / bare-metal MPU with NETKIT_MMAP=0 (no virtual-memory OS).
  *
  * See docs/BUILD_TARGETS.md.
  */
@@ -193,11 +193,19 @@
 #endif
 
 /*
- * POSIX mmap for .nk file loads (macOS/Linux only at compile time).
- * Default: CPU on, MCU/MPU class off.
+ * mmap for .nk file loads (POSIX on macOS/Linux; Win32 on Windows).
+ * Allowed on cpu + any MPU; forbidden on MCU (override not allowed).
+ * Default ON when allowed on Apple/Linux/Windows; opt out with NETKIT_USE_MMAP=0
+ * on RTOS / bare-metal MPU (no virtual-memory OS).
  */
+#if defined(NETKIT_CLASS_MCU)
+#define NETKIT_MMAP_ALLOWED 0
+#else
+#define NETKIT_MMAP_ALLOWED 1
+#endif
+
 #ifndef NETKIT_USE_MMAP
-#if defined(NETKIT_TARGET_CPU) && (defined(__APPLE__) || defined(__linux__))
+#if NETKIT_MMAP_ALLOWED && (defined(__APPLE__) || defined(__linux__) || defined(_WIN32))
 #define NETKIT_USE_MMAP 1
 #else
 #define NETKIT_USE_MMAP 0
@@ -206,6 +214,10 @@
 
 #if NETKIT_USE_MMAP != 0 && NETKIT_USE_MMAP != 1
 #error "NETKIT_USE_MMAP must be 0 or 1"
+#endif
+
+#if NETKIT_USE_MMAP && !NETKIT_MMAP_ALLOWED
+#error "NETKIT_USE_MMAP is forbidden on MCU targets (cpu and MPU only; use Load*FromBuffer / flash)"
 #endif
 
 #endif /* NETKIT_CONFIG_H */

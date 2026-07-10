@@ -22,6 +22,16 @@ Snapshot of what works today, what was measured, and what is still open. Compani
 
 **Policy reminder:** XNNPACK is default on cpu and all MPUs, never on MCU. CMSIS-NN is Arm MCU only. CMSIS-DSP is Arm ISA (and optional host cpu), never on RISC.
 
+## Host file mmap
+
+| Host OS | Status | Implementation |
+|---------|--------|----------------|
+| **macOS / Linux** | **Complete** | POSIX `mmap` (`MAP_PRIVATE`) |
+| **Windows** | **Complete** | Win32 `CreateFileMapping` / `MapViewOfFile` (`FILE_MAP_COPY`) |
+| **MCU** | **Forbidden** | Use `Load*FromBuffer` / flash; `NETKIT_MMAP=1` is forced off |
+
+Default **on** for cpu + any MPU; opt out with `NETKIT_MMAP=0` on RTOS / bare-metal MPU. See [ARENA.md](ARENA.md) and [BUILD_TARGETS.md](BUILD_TARGETS.md).
+
 ## Recent peer benches (CPU host)
 
 Methodology: LiteRT-matched `-O3` flags for fair TF Lite peers; order swaps (netkit↔TF Lite) to reduce cold-start bias. Primary ImageNet metric: `warm_mean_us`.

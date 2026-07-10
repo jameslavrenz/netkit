@@ -17,9 +17,10 @@
 #   NETKIT_ARENA_CAPACITY=<bytes> — override NK_ARENA_DEFAULT_CAPACITY (MCU default 64 KiB;
 #                                   CPU/MPU default 64 MiB). Alternate: NETKIT_ARENA_KB=<KiB>.
 #
-# File-load mmap (POSIX macOS/Linux only):
-#   NETKIT_MMAP=1          — enable mmap for LoadMLP/LoadCNN from path (default: cpu=1, else 0)
-#   NETKIT_MMAP=0          — fread into arena instead (or use Load*FromBuffer / flash)
+# File-load mmap (POSIX macOS/Linux; Win32 on Windows):
+#   NETKIT_MMAP=1          — enable mmap for LoadMLP/LoadCNN from path
+#                            (default: cpu + any MPU = 1; MCU = forbidden)
+#   NETKIT_MMAP=0          — fread into arena instead (use on RTOS/bare-metal MPU)
 #
 # Optional backends (profile defaults below; override on command line):
 #   NETKIT_CMSIS_NN=1      — Arm MCU only (NETKIT_TARGET=mcu_arm + NETKIT_ARCH=CM4|M33|...)
@@ -54,11 +55,18 @@ NETKIT_HEAP_ARENA ?= 0
 # NETKIT_ARENA_CAPACITY ?=
 # NETKIT_ARENA_KB ?=
 NETKIT_CMSIS_DSP_DOT ?= 0
-# mmap file load: on for cpu, off for firmware class (override with NETKIT_MMAP=0|1)
-ifeq ($(NETKIT_TARGET),cpu)
-  NETKIT_MMAP ?= 1
-else
+# mmap file load: default on for cpu + any MPU; forbidden on MCU (override with NETKIT_MMAP=0 on MPU/cpu).
+ifneq ($(filter $(NETKIT_TARGET),mcu_arm mcu_risc),)
   NETKIT_MMAP ?= 0
+else
+  NETKIT_MMAP ?= 1
+endif
+# MCU: never allow mmap even if the caller forces NETKIT_MMAP=1.
+ifneq ($(filter $(NETKIT_TARGET),mcu_arm mcu_risc),)
+  ifeq ($(NETKIT_MMAP),1)
+    $(warning NETKIT_MMAP=1 forced off on NETKIT_TARGET=$(NETKIT_TARGET) — mmap is forbidden on MCU)
+  endif
+  override NETKIT_MMAP := 0
 endif
 ifeq ($(NETKIT_TARGET),cpu)
   NETKIT_CMSIS_DSP ?= 0

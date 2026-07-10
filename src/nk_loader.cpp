@@ -1043,9 +1043,10 @@ namespace NkLoader
             return LoadResult{LoadStatus::Ok, FromNkNetwork(parsed.header.network_kind), nullptr};
         }
 
-        /* Optional POSIX mmap (NETKIT_USE_MMAP): arena owns the mapping.
-         * Otherwise (MCU, RTOS MPU, or mmap unavailable): fread into the arena.
-         * Prefer Load*FromBuffer / flash for firmware without a filesystem. */
+        /* Optional file mmap (NETKIT_USE_MMAP): arena owns the mapping.
+         * MCU forbids mmap. MPU/cpu may opt out (NETKIT_MMAP=0) for RTOS /
+         * bare metal — then fread into the arena. Prefer Load*FromBuffer /
+         * flash when there is no filesystem. */
         LoadResult ReadNkFile(const char* nk_path,
                               Arena& arena,
                               const uint8_t*& out_data,
