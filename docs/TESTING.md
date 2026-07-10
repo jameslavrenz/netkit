@@ -215,7 +215,7 @@ The **`build-and-test`** job on `ubuntu-latest` uses **host Clang**. The checkou
 1. `make` — initial build (cpu profile: XNNPACK preferred, DSP off; CI forces XNNPACK off)
 2. `make NETKIT_CMSIS_DSP=1 rebuild test` — C++ embedded + C API + fast Python suite with portable CMSIS-DSP helpers
 3. Example and CLI smoke tests
-4. CMake configure + build smoke test (`./cmake-build/netkit test`, Release, `-DNETKIT_CMSIS_DSP=OFF`) — cross-checks the **reference-kernel** path in the same run
+4. CMake configure + build smoke test (`./cmake-build/netkit test`, Release, `-DNETKIT_CMSIS_DSP=OFF -DNETKIT_XNNPACK=OFF`) — cross-checks the **reference-kernel** path in the same run
 
 The **`Test full`** workflow uses the same setup (`submodules: recursive`, `make NETKIT_CMSIS_DSP=1 rebuild test-full`). CMSIS-NN and on-device paths are still validated **locally only** (`make NETKIT_TARGET=mcu_arm NETKIT_ARCH=CM4 NETKIT_CMSIS_NN=1 ...`, `make test-embedded-smoke-matrix`, NUCLEO CNN int8 flash + UART capture) — not in CI.
 

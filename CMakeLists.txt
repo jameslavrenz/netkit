@@ -43,6 +43,12 @@ option(NETKIT_CMSIS_NN "Use ARM CMSIS-NN float32 backends (mcu_arm + Cortex-M)" 
 option(NETKIT_XNNPACK "Use Google XNNPACK LayerFast backends (cpu + any MPU; forbidden on MCU)" ${_netkit_xnnpack_default})
 option(NETKIT_CMSIS_DSP_DOT "Route hot float dots through arm_dot_prod_f32 (off = helpers-only)" OFF)
 
+# Match Makefile: CI forces XNNPACK off so embedded TCAS stays on reference kernels.
+if(DEFINED ENV{GITHUB_ACTIONS} AND "$ENV{GITHUB_ACTIONS}" STREQUAL "true" AND NETKIT_XNNPACK)
+    message(STATUS "GITHUB_ACTIONS=true — forcing NETKIT_XNNPACK=OFF for reference-kernel CI")
+    set(NETKIT_XNNPACK OFF CACHE BOOL "Use Google XNNPACK LayerFast backends (cpu + any MPU; forbidden on MCU)" FORCE)
+endif()
+
 option(NETKIT_GLOBAL_ARENA "Use static/global arena on CPU builds" OFF)
 option(NETKIT_HEAP_ARENA "Compile heap arena helpers on MCU/MPU class builds" OFF)
 # Optional override of NK_ARENA_DEFAULT_CAPACITY (bytes). 0 = use class default
@@ -192,7 +198,7 @@ if(NETKIT_ARENA_CAPACITY AND NOT NETKIT_ARENA_CAPACITY STREQUAL "0")
 elseif(NETKIT_ARENA_KB AND NOT NETKIT_ARENA_KB STREQUAL "0")
     math(EXPR _netkit_arena_bytes "${NETKIT_ARENA_KB} * 1024")
     target_compile_definitions(netkit PUBLIC NK_ARENA_DEFAULT_CAPACITY=${_netkit_arena_bytes})
-endif
+endif()
 
 if(NETKIT_CMSIS_DSP_DOT)
     target_compile_definitions(netkit PUBLIC NETKIT_CMSIS_DSP_DOT=1)

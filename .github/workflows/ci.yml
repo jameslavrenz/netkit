@@ -46,7 +46,7 @@ jobs:
       - name: CMake configure and build
         run: |
           cmake -B cmake-build -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \
-            -DNETKIT_CMSIS_DSP=OFF -DNETKIT_CMSIS_NN=OFF
+            -DNETKIT_CMSIS_DSP=OFF -DNETKIT_CMSIS_NN=OFF -DNETKIT_XNNPACK=OFF
           cmake --build cmake-build
           ./cmake-build/netkit test
 
