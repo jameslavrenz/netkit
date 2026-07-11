@@ -374,11 +374,12 @@ def assign_targets(
             continue
         cell_cx = (gx + 0.5) * stride
         cell_cy = (gy + 0.5) * stride
-        # l,t,r,b in stride units (matches decode_yolox_output)
-        reg[0, gy, gx] = (cell_cx - x1) / stride
-        reg[1, gy, gx] = (cell_cy - y1) / stride
-        reg[2, gy, gx] = (x2 - cell_cx) / stride
-        reg[3, gy, gx] = (y2 - cell_cy) / stride
+        # Positive LTRB in stride units; head predicts log-distances (exp at decode).
+        eps = 1e-4
+        reg[0, gy, gx] = max(eps, (cell_cx - x1) / stride)
+        reg[1, gy, gx] = max(eps, (cell_cy - y1) / stride)
+        reg[2, gy, gx] = max(eps, (x2 - cell_cx) / stride)
+        reg[3, gy, gx] = max(eps, (y2 - cell_cy) / stride)
         obj[0, gy, gx] = 1.0
         if 0 <= cls_id < NUM_CLASSES:
             cls[cls_id, gy, gx] = 1.0
@@ -386,16 +387,65 @@ def assign_targets(
     return [(reg.to(device), obj.to(device), cls.to(device)) for reg, obj, cls, *_ in targets]
 
 
+def _ltrb_to_xyxy(
+    ltrb: torch.Tensor, *, stride: int
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """ltrb [B,4,H,W] in stride units → pixel xyxy grids."""
+    _, _, h, w = ltrb.shape
+    device = ltrb.device
+    ys = torch.arange(h, device=device, dtype=ltrb.dtype).view(1, 1, h, 1)
+    xs = torch.arange(w, device=device, dtype=ltrb.dtype).view(1, 1, 1, w)
+    cx = (xs + 0.5) * float(stride)
+    cy = (ys + 0.5) * float(stride)
+    x1 = cx - ltrb[:, 0:1] * float(stride)
+    y1 = cy - ltrb[:, 1:2] * float(stride)
+    x2 = cx + ltrb[:, 2:3] * float(stride)
+    y2 = cy + ltrb[:, 3:4] * float(stride)
+    return x1, y1, x2, y2
+
+
+def _giou_loss(
+    x1: torch.Tensor,
+    y1: torch.Tensor,
+    x2: torch.Tensor,
+    y2: torch.Tensor,
+    tx1: torch.Tensor,
+    ty1: torch.Tensor,
+    tx2: torch.Tensor,
+    ty2: torch.Tensor,
+) -> torch.Tensor:
+    """Mean 1−GIoU over flattened positive boxes [N]."""
+    inter_x1 = torch.maximum(x1, tx1)
+    inter_y1 = torch.maximum(y1, ty1)
+    inter_x2 = torch.minimum(x2, tx2)
+    inter_y2 = torch.minimum(y2, ty2)
+    inter = (inter_x2 - inter_x1).clamp(min=0) * (inter_y2 - inter_y1).clamp(min=0)
+    area_p = (x2 - x1).clamp(min=0) * (y2 - y1).clamp(min=0)
+    area_t = (tx2 - tx1).clamp(min=0) * (ty2 - ty1).clamp(min=0)
+    union = area_p + area_t - inter + 1e-7
+    iou = inter / union
+    enc_x1 = torch.minimum(x1, tx1)
+    enc_y1 = torch.minimum(y1, ty1)
+    enc_x2 = torch.maximum(x2, tx2)
+    enc_y2 = torch.maximum(y2, ty2)
+    enc = (enc_x2 - enc_x1).clamp(min=0) * (enc_y2 - enc_y1).clamp(min=0) + 1e-7
+    giou = iou - (enc - union) / enc
+    return (1.0 - giou).mean()
+
+
 def detection_loss(
     preds: list[torch.Tensor],
     targets: list[list[tuple[torch.Tensor, torch.Tensor, torch.Tensor]]],
 ) -> torch.Tensor:
-    """preds: list of 3 tensors [B, 5+80, H, W]; targets: per-batch list of 3 (reg,obj,cls)."""
+    """preds: list of 3 tensors [B, 5+80, H, W]; targets: per-batch list of 3 (reg,obj,cls).
+
+    Box branch: exp(pred) vs positive LTRB targets + GIoU on decoded xyxy.
+    """
     device = preds[0].device
     loss = torch.zeros((), device=device)
     bsz = preds[0].shape[0]
     for level, pred in enumerate(preds):
-        # pred: B,C,H,W with C = 4+1+80
+        stride = STRIDES[level]
         reg_p = pred[:, 0:4]
         obj_p = pred[:, 4:5]
         cls_p = pred[:, 5:]
@@ -405,11 +455,27 @@ def detection_loss(
         pos = obj_t > 0.5
         loss = loss + F.binary_cross_entropy_with_logits(obj_p, obj_t)
         if pos.any():
-            # Broadcast pos [B,1,H,W] over channels
             pos4 = pos.expand_as(reg_t)
             pos_cls = pos.expand_as(cls_t)
-            loss = loss + F.l1_loss(reg_p[pos4], reg_t[pos4])
+            # Clamp before exp for MPS/AMP stability (covers ~e^8 ≈ 3000 stride units).
+            ltrb_p = torch.exp(reg_p.clamp(min=-4.0, max=8.0))
+            loss = loss + F.l1_loss(ltrb_p[pos4], reg_t[pos4])
             loss = loss + F.binary_cross_entropy_with_logits(cls_p[pos_cls], cls_t[pos_cls])
+
+            px1, py1, px2, py2 = _ltrb_to_xyxy(ltrb_p, stride=stride)
+            tx1, ty1, tx2, ty2 = _ltrb_to_xyxy(reg_t, stride=stride)
+            # Flatten positives: pos is [B,1,H,W]
+            mask = pos[:, 0]
+            loss = loss + _giou_loss(
+                px1[:, 0][mask],
+                py1[:, 0][mask],
+                px2[:, 0][mask],
+                py2[:, 0][mask],
+                tx1[:, 0][mask],
+                ty1[:, 0][mask],
+                tx2[:, 0][mask],
+                ty2[:, 0][mask],
+            )
     return loss
 
 
@@ -609,10 +675,12 @@ def main() -> None:
     decreased = losses[0] > 0 and losses[-1] < losses[0] * 0.5
     print(f"loss start={losses[0]:.4f} end={losses[-1]:.4f} decreased={decreased}")
 
-    # Hold-out scoreboard (generalization check)
+    # Hold-out scoreboard (scores + non-degenerate decoded boxes)
     model.eval()
     hold_max: list[float] = []
     hold_hits = 0
+    hold_box_ok = 0
+    min_box_side = 4.0
     demo_thr = 0.05
     for img_path, _lab in holdout:
         rgb = np.asarray(Image.open(img_path).convert("RGB"), dtype=np.uint8)
@@ -631,11 +699,25 @@ def main() -> None:
         hold_max.append(score_max)
         if score_max >= 0.1:
             hold_hits += 1
+        flat = preds_to_flat(preds)
+        dets = decode_yolox_output(
+            flat,
+            num_classes=NUM_CLASSES,
+            score_threshold=0.1,
+            input_height=args.size,
+            input_width=args.size,
+        )
+        if any(
+            (d.x2 - d.x1) >= min_box_side and (d.y2 - d.y1) >= min_box_side for d in dets
+        ):
+            hold_box_ok += 1
     hold_mean = float(np.mean(hold_max)) if hold_max else 0.0
     hold_frac = hold_hits / max(1, len(holdout))
+    hold_box_frac = hold_box_ok / max(1, len(holdout))
     print(
         f"holdout mean_max_score={hold_mean:.3f} "
-        f"frac_ge_0.1={hold_frac:.2f} ({hold_hits}/{len(holdout)})"
+        f"frac_ge_0.1={hold_frac:.2f} ({hold_hits}/{len(holdout)}) "
+        f"frac_box_side>={min_box_side:.0f}={hold_box_frac:.2f} ({hold_box_ok}/{len(holdout)})"
     )
 
     # Demo on best holdout image
@@ -661,7 +743,8 @@ def main() -> None:
     for d in dets[:8]:
         print(
             f"  cls={d.class_id} score={d.score:.3f} "
-            f"box=({d.x1:.0f},{d.y1:.0f})-({d.x2:.0f},{d.y2:.0f})"
+            f"box=({d.x1:.0f},{d.y1:.0f})-({d.x2:.0f},{d.y2:.0f}) "
+            f"wh=({d.x2 - d.x1:.0f}x{d.y2 - d.y1:.0f})"
         )
     draw_dets(canvas, dets, args.demo_out)
     print(f"wrote {args.demo_out}")
@@ -677,22 +760,37 @@ def main() -> None:
     )
     print(f"holdout GT boxes={len(gt)}")
     strong = sum(1 for d in dets if d.score >= 0.1)
-    print(f"strong_dets(score>=0.1)={strong}")
+    strong_box = sum(
+        1
+        for d in dets
+        if d.score >= 0.1
+        and (d.x2 - d.x1) >= min_box_side
+        and (d.y2 - d.y1) >= min_box_side
+    )
+    print(f"strong_dets(score>=0.1)={strong} strong_boxes(side>={min_box_side:.0f})={strong_box}")
 
-    sane = decreased and hold_frac >= 0.30 and strong > 0
+    sane = (
+        decreased
+        and hold_frac >= 0.30
+        and hold_box_frac >= 0.30
+        and strong_box > 0
+    )
     meta_disk = json.loads(args.out.with_suffix(".json").read_text())
     meta_disk.update(
         {
             "holdout_mean_max_score": hold_mean,
             "holdout_frac_ge_0.1": hold_frac,
+            "holdout_frac_box_ok": hold_box_frac,
             "holdout_sane": sane,
+            "box_decode": "exp_ltrb",
+            "box_loss": "l1_exp+giou",
         }
     )
     args.out.with_suffix(".json").write_text(json.dumps(meta_disk, indent=2) + "\n")
 
     if sane:
         print("SUCCESS: hold-out looks sane (ready to pack)")
-    elif decreased and hold_frac >= 0.15:
+    elif decreased and hold_frac >= 0.15 and hold_box_frac >= 0.15:
         print("PARTIAL: some hold-out signal but below pack threshold")
     elif decreased:
         print("PARTIAL: loss down but hold-out still weak")

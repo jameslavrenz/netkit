@@ -110,7 +110,8 @@ class YoloxPafpnReferenceTests(unittest.TestCase):
         out_c = 4 + 1 + nc
         # Build fake flat concat with one high-score cell on P3
         p3 = np.zeros((8, 8, out_c), dtype=np.float32)
-        p3[2, 3, 0:4] = [0.5, 0.5, 0.5, 0.5]
+        # log(0.5) so exp-decoded LTRB stays modest on the P3 stride-8 grid
+        p3[2, 3, 0:4] = np.log([0.5, 0.5, 0.5, 0.5]).astype(np.float32)
         p3[2, 3, 4] = 10.0
         p3[2, 3, 5] = 10.0
         flat = np.concatenate(

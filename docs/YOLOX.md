@@ -109,7 +109,9 @@ python tools/pack_yolox_mnv4_pafpn_checkpoint.py \
   --out models/yolox_mnv4_pafpn_trained.nk
 ```
 
-Downloads Ultralytics **coco128** or official **COCO val2017** into `data/`, freezes the ImageNet backbone then optionally unfreezes, and scores hold-out max detection confidence. Pack writes a separate trained `.nk` (does not replace the random-weight CI fixture `yolox_mnv4_small.nk`).
+Downloads Ultralytics **coco128** or official **COCO val2017** into `data/`, freezes the ImageNet backbone then optionally unfreezes, and scores hold-out max detection confidence **plus non-degenerate decoded boxes** (exp-LTRB + GIoU box loss). Pack writes a separate trained `.nk` (does not replace the random-weight CI fixture `yolox_mnv4_small.nk`).
+
+Host decode (`yolox_decode.py`) treats the 4 box channels as **log-distances** and applies `exp` before LTRB→xyxy (YOLOX-style positive distances).
 
 ## C++ runtime
 

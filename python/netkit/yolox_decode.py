@@ -49,8 +49,8 @@ def _decode_grid(
 
             cx = (float(x) + 0.5) * stride
             cy = (float(y) + 0.5) * stride
-            # Distances must be non-negative (raw head can emit negatives under L1).
-            l, t, r, b = (max(0.0, float(v)) for v in reg[y, x])
+            # YOLOX-style: head emits log-distances; decode with exp → positive LTRB.
+            l, t, r, b = (float(np.exp(float(v))) for v in reg[y, x])
             x1 = cx - l * stride
             y1 = cy - t * stride
             x2 = cx + r * stride

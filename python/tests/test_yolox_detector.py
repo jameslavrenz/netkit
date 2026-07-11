@@ -128,7 +128,8 @@ class YoloxDecodeTests(unittest.TestCase):
         num_classes = 2
         out_c = yolox_head_output_channels(num_classes)
         raw = np.zeros((1, 1, out_c), dtype=np.float32)
-        raw[0, 0, 0:4] = [1.0, 2.0, 3.0, 4.0]
+        # Head emits log-distances; decode uses exp → LTRB = (1,2,3,4).
+        raw[0, 0, 0:4] = np.log([1.0, 2.0, 3.0, 4.0]).astype(np.float32)
         raw[0, 0, 4] = 10.0
         raw[0, 0, 5] = -10.0
         raw[0, 0, 6] = 10.0
