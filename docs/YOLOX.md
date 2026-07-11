@@ -92,13 +92,24 @@ python tools/train_yolox_mnv4_pafpn_smoke.py --steps 30
 
 Uses timm `mobilenetv4_conv_small` (ImageNet pretrained, features_only), freezes or lightly trains the backbone, trains neck+heads on synthetic random boxes for ~30 Adam steps, and saves a checkpoint under `models/checkpoints/`.
 
-## Mini real-data dry run (coco128)
+## Mini real-data dry run (coco128 / COCO val)
 
 ```bash
-python tools/train_yolox_mnv4_pafpn_mini.py --steps 1000 --batch 4 --size 320
+# tiny set
+python tools/train_yolox_mnv4_pafpn_mini.py --source coco128 --steps 1000 --batch 4 --size 320
+
+# bigger-but-cheap: COCO val2017 (~5k images), freeze then unfreeze
+python tools/train_yolox_mnv4_pafpn_mini.py --source coco_val --max-images 5000 --holdout 200 \
+  --steps 10000 --unfreeze-after 5000 --batch 4 --size 320 \
+  --out models/checkpoints/yolox_mnv4_pafpn_coco_val.pt
+
+# pack only if holdout reports SUCCESS
+python tools/pack_yolox_mnv4_pafpn_checkpoint.py \
+  --ckpt models/checkpoints/yolox_mnv4_pafpn_coco_val.pt \
+  --out models/yolox_mnv4_pafpn_trained.nk
 ```
 
-Downloads Ultralytics **coco128** (~128 boxed images) into `data/coco_mini/`, freezes the ImageNet backbone, trains neck+heads for ~1000 steps at 320² on MPS/CPU, then writes a demo image with decoded boxes under `models/checkpoints/`. Meant to validate the loop on real labels without a full COCO train (expect low scores / rough boxes; mAP is not the goal).
+Downloads Ultralytics **coco128** or official **COCO val2017** into `data/`, freezes the ImageNet backbone then optionally unfreezes, and scores hold-out max detection confidence. Pack writes a separate trained `.nk` (does not replace the random-weight CI fixture `yolox_mnv4_small.nk`).
 
 ## C++ runtime
 

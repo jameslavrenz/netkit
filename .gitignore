@@ -31,6 +31,10 @@ models/checkpoints/
 
 # Mini COCO dry-run download
 data/coco_mini/
+data/coco_val2017/
+data/annotations_trainval2017.zip
+data/val2017.zip
+data/coco128.zip
 
 # VS Code
 .vscode/

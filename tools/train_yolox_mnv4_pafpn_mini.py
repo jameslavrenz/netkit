@@ -36,6 +36,10 @@ from netkit.yolox_decode import decode_yolox_output
 COCO128_URL = (
     "https://github.com/ultralytics/assets/releases/download/v0.0.0/coco128.zip"
 )
+COCO_VAL_IMAGES_URL = "http://images.cocodataset.org/zips/val2017.zip"
+COCO_ANNOTATIONS_URL = (
+    "http://images.cocodataset.org/annotations/annotations_trainval2017.zip"
+)
 STRIDES = (8, 16, 32)
 NUM_CLASSES = 80
 
@@ -123,6 +127,7 @@ class MiniDetector(nn.Module):
             features_only=True,
             out_indices=(2, 3, 4),
         )
+        self._backbone_frozen = freeze_backbone
         if freeze_backbone:
             for p in self.backbone.parameters():
                 p.requires_grad = False
@@ -130,6 +135,11 @@ class MiniDetector(nn.Module):
             feats = self.backbone(torch.zeros(1, 3, 64, 64))
         c3, c4, c5 = (f.shape[1] for f in feats)
         self.neck = NanoPafpn(c3, c4, c5, hidden, NUM_CLASSES)
+
+    def set_backbone_frozen(self, frozen: bool) -> None:
+        self._backbone_frozen = frozen
+        for p in self.backbone.parameters():
+            p.requires_grad = not frozen
 
     def forward(self, x: torch.Tensor) -> list[torch.Tensor]:
         c3, c4, c5 = self.backbone(x)
@@ -177,6 +187,104 @@ def list_samples(coco128: Path, max_images: int) -> list[tuple[Path, Path]]:
     pairs = []
     for img in images:
         lab = coco128 / "labels" / "train2017" / f"{img.stem}.txt"
+        pairs.append((img, lab))
+        if len(pairs) >= max_images:
+            break
+    return pairs
+
+
+def ensure_coco_val(data_root: Path) -> Path:
+    """Download COCO val2017 images + annotations; emit YOLO-format labels."""
+    root = data_root / "coco_val2017"
+    img_dir = root / "images"
+    lab_dir = root / "labels"
+    ann_file = root / "annotations" / "instances_val2017.json"
+    if (
+        img_dir.is_dir()
+        and lab_dir.is_dir()
+        and ann_file.is_file()
+        and len(list(img_dir.glob("*.jpg"))) > 1000
+        and len(list(lab_dir.glob("*.txt"))) > 1000
+    ):
+        print(f"using existing {root}")
+        return root
+
+    root.mkdir(parents=True, exist_ok=True)
+    ann_zip = data_root / "annotations_trainval2017.zip"
+    img_zip = data_root / "val2017.zip"
+    if not ann_zip.is_file():
+        print(f"downloading {COCO_ANNOTATIONS_URL} ...")
+        urllib.request.urlretrieve(COCO_ANNOTATIONS_URL, ann_zip)
+    if not img_zip.is_file():
+        print(f"downloading {COCO_VAL_IMAGES_URL} (~1GB) ...")
+        urllib.request.urlretrieve(COCO_VAL_IMAGES_URL, img_zip)
+
+    print("extracting annotations ...")
+    with zipfile.ZipFile(ann_zip, "r") as zf:
+        zf.extract("annotations/instances_val2017.json", root)
+    print("extracting val2017 images ...")
+    with zipfile.ZipFile(img_zip, "r") as zf:
+        zf.extractall(root)
+    # zip contains val2017/*.jpg
+    src_imgs = root / "val2017"
+    img_dir.mkdir(parents=True, exist_ok=True)
+    if src_imgs.is_dir():
+        for p in src_imgs.glob("*.jpg"):
+            dest = img_dir / p.name
+            if not dest.exists():
+                p.replace(dest)
+        # leave empty dir if any remain
+        try:
+            src_imgs.rmdir()
+        except OSError:
+            pass
+
+    ann_path = root / "annotations" / "instances_val2017.json"
+    print(f"writing YOLO labels from {ann_path} ...")
+    data = json.loads(ann_path.read_text())
+    cats = sorted(c["id"] for c in data["categories"])
+    cat_to_idx = {c: i for i, c in enumerate(cats)}
+    if len(cat_to_idx) != NUM_CLASSES:
+        print(f"warning: expected {NUM_CLASSES} cats, got {len(cat_to_idx)}")
+
+    images = {im["id"]: im for im in data["images"]}
+    by_img: dict[int, list[str]] = {i: [] for i in images}
+    for ann in data["annotations"]:
+        if ann.get("iscrowd", 0):
+            continue
+        im = images.get(ann["image_id"])
+        if im is None:
+            continue
+        cls = cat_to_idx.get(ann["category_id"])
+        if cls is None:
+            continue
+        x, y, w, h = ann["bbox"]
+        if w <= 1 or h <= 1:
+            continue
+        cx = (x + w / 2.0) / im["width"]
+        cy = (y + h / 2.0) / im["height"]
+        bw = w / im["width"]
+        bh = h / im["height"]
+        by_img[ann["image_id"]].append(f"{cls} {cx:.6f} {cy:.6f} {bw:.6f} {bh:.6f}")
+
+    lab_dir.mkdir(parents=True, exist_ok=True)
+    for im_id, im in images.items():
+        stem = Path(im["file_name"]).stem
+        (lab_dir / f"{stem}.txt").write_text("\n".join(by_img[im_id]) + ("\n" if by_img[im_id] else ""))
+    print(f"coco val ready: images={len(list(img_dir.glob('*.jpg')))} labels={len(list(lab_dir.glob('*.txt')))}")
+    return root
+
+
+def list_coco_val_samples(root: Path, max_images: int) -> list[tuple[Path, Path]]:
+    images = sorted((root / "images").glob("*.jpg"))
+    pairs = []
+    for img in images:
+        lab = root / "labels" / f"{img.stem}.txt"
+        if not lab.is_file():
+            continue
+        # Prefer images that have at least one box for training signal.
+        if lab.stat().st_size == 0:
+            continue
         pairs.append((img, lab))
         if len(pairs) >= max_images:
             break
@@ -360,10 +468,24 @@ def pick_device() -> torch.device:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data", type=Path, default=ROOT / "data" / "coco_mini")
+    parser.add_argument(
+        "--source",
+        choices=("coco128", "coco_val"),
+        default="coco128",
+        help="coco128 mini set, or COCO val2017 (~5k boxed images)",
+    )
     parser.add_argument("--steps", type=int, default=1000)
     parser.add_argument("--batch", type=int, default=4)
     parser.add_argument("--size", type=int, default=320)
     parser.add_argument("--lr", type=float, default=1e-3)
+    parser.add_argument("--backbone-lr", type=float, default=1e-4)
+    parser.add_argument(
+        "--unfreeze-after",
+        type=int,
+        default=-1,
+        help="Unfreeze backbone after this many steps (-1 = keep frozen)",
+    )
+    parser.add_argument("--resume", type=Path, default=None)
     parser.add_argument("--max-images", type=int, default=128)
     parser.add_argument("--holdout", type=int, default=8)
     parser.add_argument("--hidden", type=int, default=64)
@@ -383,10 +505,14 @@ def main() -> None:
         raise SystemExit("--size must be divisible by 32")
 
     device = pick_device()
-    print(f"device={device}")
+    print(f"device={device} source={args.source}")
 
-    coco128 = ensure_coco128(args.data)
-    samples = list_samples(coco128, args.max_images)
+    if args.source == "coco_val":
+        data_root = ensure_coco_val(args.data)
+        samples = list_coco_val_samples(data_root, args.max_images)
+    else:
+        data_root = ensure_coco128(args.data)
+        samples = list_samples(data_root, args.max_images)
     if len(samples) < args.holdout + args.batch:
         raise SystemExit(f"need more images than holdout+batch; got {len(samples)}")
 
@@ -395,12 +521,45 @@ def main() -> None:
     print(f"train images={len(train)}  holdout={len(holdout)}")
 
     model = MiniDetector(hidden=args.hidden, freeze_backbone=True).to(device)
-    opt = torch.optim.Adam([p for p in model.parameters() if p.requires_grad], lr=args.lr)
-
     losses: list[float] = []
+    start_step = 0
+    if args.resume is not None and args.resume.is_file():
+        ckpt = torch.load(args.resume, map_location="cpu", weights_only=False)
+        model.load_state_dict(ckpt["state_dict"])
+        losses = list(ckpt.get("losses", []))
+        start_step = int(ckpt.get("steps", len(losses)))
+        print(f"resumed {args.resume} at step={start_step}")
+
+    def make_opt(*, include_backbone: bool) -> torch.optim.Optimizer:
+        if include_backbone:
+            return torch.optim.Adam(
+                [
+                    {"params": model.neck.parameters(), "lr": args.lr},
+                    {"params": model.backbone.parameters(), "lr": args.backbone_lr},
+                ]
+            )
+        return torch.optim.Adam(
+            [p for p in model.neck.parameters() if p.requires_grad], lr=args.lr
+        )
+
+    frozen = True
+    model.set_backbone_frozen(True)
+    opt = make_opt(include_backbone=False)
+
     model.train()
     rng = np.random.default_rng(0)
-    for step in range(args.steps):
+    total_steps = args.steps
+    for step in range(start_step, total_steps):
+        if (
+            args.unfreeze_after >= 0
+            and frozen
+            and step >= args.unfreeze_after
+        ):
+            model.set_backbone_frozen(False)
+            opt = make_opt(include_backbone=True)
+            frozen = False
+            print(f"step {step}: unfroze backbone lr={args.backbone_lr}")
+
         idx = rng.choice(len(train), size=args.batch, replace=len(train) < args.batch)
         images, targets = load_batch(
             train, [int(i) for i in idx], size=args.size, device=device
@@ -411,28 +570,66 @@ def main() -> None:
         loss.backward()
         opt.step()
         losses.append(float(loss.item()))
-        if step % 25 == 0 or step == args.steps - 1:
-            print(f"step {step:4d}  loss={losses[-1]:.4f}")
+        if step % 50 == 0 or step == total_steps - 1:
+            tag = "frozen" if frozen else "unfrozen"
+            print(f"step {step:5d}  loss={losses[-1]:.4f}  ({tag})")
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     meta = {
         "losses": losses,
-        "steps": args.steps,
+        "steps": total_steps,
         "size": args.size,
         "batch": args.batch,
         "device": str(device),
         "train_images": len(train),
+        "holdout_images": len(holdout),
+        "source": args.source,
+        "unfreeze_after": args.unfreeze_after,
+        "backbone_frozen_end": frozen,
+        "hidden": args.hidden,
+        "num_classes": NUM_CLASSES,
     }
     torch.save({"state_dict": model.state_dict(), **meta}, args.out)
-    (args.out.with_suffix(".json")).write_text(json.dumps({k: meta[k] for k in meta if k != "losses"}, indent=2) + "\n")
+    (args.out.with_suffix(".json")).write_text(
+        json.dumps({k: meta[k] for k in meta if k != "losses"}, indent=2) + "\n"
+    )
     print(f"saved {args.out}")
 
-    decreased = losses[0] > 0 and losses[-1] < losses[0] * 0.9
+    decreased = losses[0] > 0 and losses[-1] < losses[0] * 0.5
     print(f"loss start={losses[0]:.4f} end={losses[-1]:.4f} decreased={decreased}")
 
-    # Demo on first holdout image
+    # Hold-out scoreboard (generalization check)
     model.eval()
-    demo_img, demo_lab = holdout[0]
+    hold_max: list[float] = []
+    hold_hits = 0
+    demo_thr = 0.05
+    for img_path, _lab in holdout:
+        rgb = np.asarray(Image.open(img_path).convert("RGB"), dtype=np.uint8)
+        canvas, *_ = letterbox(rgb, args.size)
+        tensor = (
+            torch.from_numpy(canvas).permute(2, 0, 1).float().unsqueeze(0).to(device)
+            / 255.0
+        )
+        with torch.no_grad():
+            preds = model(tensor)
+        score_max = 0.0
+        for p in preds:
+            obj = torch.sigmoid(p[0, 4])
+            cls = torch.sigmoid(p[0, 5:]).amax(0)
+            score_max = max(score_max, float((obj * cls).max().item()))
+        hold_max.append(score_max)
+        if score_max >= 0.1:
+            hold_hits += 1
+    hold_mean = float(np.mean(hold_max)) if hold_max else 0.0
+    hold_frac = hold_hits / max(1, len(holdout))
+    print(
+        f"holdout mean_max_score={hold_mean:.3f} "
+        f"frac_ge_0.1={hold_frac:.2f} ({hold_hits}/{len(holdout)})"
+    )
+
+    # Demo on best holdout image
+    best_i = int(np.argmax(hold_max)) if hold_max else 0
+    demo_img, demo_lab = holdout[best_i]
     rgb = np.asarray(Image.open(demo_img).convert("RGB"), dtype=np.uint8)
     oh, ow = rgb.shape[:2]
     canvas, scale, pad_x, pad_y = letterbox(rgb, args.size)
@@ -442,7 +639,6 @@ def main() -> None:
     with torch.no_grad():
         preds = model(tensor)
     flat = preds_to_flat(preds)
-    demo_thr = 0.05
     dets = decode_yolox_output(
         flat,
         num_classes=NUM_CLASSES,
@@ -469,10 +665,26 @@ def main() -> None:
         orig_h=oh,
     )
     print(f"holdout GT boxes={len(gt)}")
-    if decreased and len(dets) > 0:
-        print("SUCCESS: loss trended down and demo produced boxes")
+    strong = sum(1 for d in dets if d.score >= 0.1)
+    print(f"strong_dets(score>=0.1)={strong}")
+
+    sane = decreased and hold_frac >= 0.30 and strong > 0
+    meta_disk = json.loads(args.out.with_suffix(".json").read_text())
+    meta_disk.update(
+        {
+            "holdout_mean_max_score": hold_mean,
+            "holdout_frac_ge_0.1": hold_frac,
+            "holdout_sane": sane,
+        }
+    )
+    args.out.with_suffix(".json").write_text(json.dumps(meta_disk, indent=2) + "\n")
+
+    if sane:
+        print("SUCCESS: hold-out looks sane (ready to pack)")
+    elif decreased and hold_frac >= 0.15:
+        print("PARTIAL: some hold-out signal but below pack threshold")
     elif decreased:
-        print("PARTIAL: loss decreased but demo had 0 boxes (try lower threshold / more steps)")
+        print("PARTIAL: loss down but hold-out still weak")
     else:
         print("WARNING: loss did not clearly decrease")
 
