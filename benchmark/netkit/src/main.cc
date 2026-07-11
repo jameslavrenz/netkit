@@ -1,7 +1,10 @@
-// netkit MNIST MLP invoke-time benchmark — pairs with benchmark/tflm/.
+// netkit MNIST MLP invoke-time benchmark — pairs with benchmark/tflite/mnist_mlp_bench.py.
 //
-// Uses models/mnist_mlp.nk and the same 10 embedded MNIST test vectors as the
-// TFLM benchmark. Times only MLPNetwork::forward() with std::chrono.
+// Uses models/mnist_mlp.nk and the same 10 embedded MNIST test vectors.
+// Latency: batch N invokes in one timed window (default 1000) to escape ~1 µs timer noise.
+// Accuracy: separate untimed pass over the 10 digit images.
+//
+// Usage: bench [model.nk] [batch_invokes] [batch_passes]
 
 #include "arena.hpp"
 #include "arena_util.hpp"
@@ -14,6 +17,7 @@
 #include <array>
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 #ifndef NETKIT_BENCH_BACKEND
@@ -23,7 +27,17 @@
 namespace {
 
 constexpr const char* kDefaultModelPath = "models/mnist_mlp.nk";
-constexpr int kRuns = BenchmarkStats::kDefaultRuns;
+
+int ParsePositiveInt(const char* s, int fallback)
+{
+    if (!s || !*s)
+        return fallback;
+    char* end = nullptr;
+    const long v = std::strtol(s, &end, 10);
+    if (end == s || *end != '\0' || v < 1 || v > 10000000)
+        return fallback;
+    return static_cast<int>(v);
+}
 
 int ArgMax10(const float* values)
 {
@@ -40,8 +54,19 @@ int ArgMax10(const float* values)
     return best;
 }
 
-int RunBenchmark(const char* model_path)
+int RunBenchmark(const char* model_path, int batch_invokes, int batch_passes)
 {
+    if (batch_passes < 2)
+    {
+        std::fprintf(stderr, "need at least 2 batch passes to discard cold pass 0\n");
+        return 1;
+    }
+    if (batch_passes > BenchmarkStats::kMaxRuns)
+    {
+        std::fprintf(stderr, "batch_passes must be <= %d\n", BenchmarkStats::kMaxRuns);
+        return 1;
+    }
+
     NkLoader::ParsedModel parsed{};
     const NkLoader::LoadResult parse_result = NkLoader::ParseFile(model_path, parsed);
     if (parse_result.status != NkLoader::LoadStatus::Ok)
@@ -110,55 +135,50 @@ int RunBenchmark(const char* model_path)
     std::printf("netkit MNIST MLP benchmark\n");
     std::printf("  backend:     %s\n", NETKIT_BENCH_BACKEND);
     std::printf("  model:       %s\n", model_path);
-    std::printf("  images:      %d per run\n", kMnistBenchmarkImageCount);
-    std::printf("  runs:        %d (discard first invoke each run)\n", kRuns);
+    std::printf("  images:      %d (accuracy only)\n", kMnistBenchmarkImageCount);
+    std::printf("  batch:       %d invokes x %d passes (discard pass 0)\n", batch_invokes,
+                batch_passes);
     std::printf("  arena bytes: %zu\n", static_cast<size_t>(Arena::kDefaultCapacity));
 
-    std::array<double, BenchmarkStats::kMaxRuns> run_averages_us{};
+    float* input_data = static_cast<float*>(input.data);
+
     int correct = 0;
-
-    for (int run = 0; run < kRuns; ++run)
+    for (int i = 0; i < kMnistBenchmarkImageCount; ++i)
     {
-        double run_total_us = 0.0;
-        int counted = 0;
+        const MnistBenchmarkSample& sample = kMnistBenchmarkImages[i];
+        std::memcpy(input_data, sample.pixels, kMnistBenchmarkInputSize * sizeof(float));
+        network->forward(input, output, arena);
+        const int predicted = ArgMax10(static_cast<const float*>(output.data));
+        if (predicted == sample.label)
+            ++correct;
+        std::printf("  image %d label=%d pred=%d %s\n", i, sample.label, predicted,
+                    predicted == sample.label ? "OK" : "MISS");
+    }
+    std::printf("  accuracy:    %d/%d\n", correct, kMnistBenchmarkImageCount);
 
-        for (int i = 0; i < kMnistBenchmarkImageCount; ++i)
-        {
-            const MnistBenchmarkSample& sample = kMnistBenchmarkImages[i];
-            float* input_data = static_cast<float*>(input.data);
-            std::memcpy(input_data, sample.pixels, kMnistBenchmarkInputSize * sizeof(float));
+    std::memcpy(input_data, kMnistBenchmarkImages[0].pixels,
+                kMnistBenchmarkInputSize * sizeof(float));
+    network->forward(input, output, arena);
 
-            const auto start = std::chrono::steady_clock::now();
+    std::array<double, BenchmarkStats::kMaxRuns> pass_averages_us{};
+    for (int pass = 0; pass < batch_passes; ++pass)
+    {
+        const auto start = std::chrono::steady_clock::now();
+        for (int n = 0; n < batch_invokes; ++n)
             network->forward(input, output, arena);
-            const auto end = std::chrono::steady_clock::now();
-
-            const double elapsed_us =
-                std::chrono::duration<double, std::micro>(end - start).count();
-
-            if (i > 0)
-            {
-                run_total_us += elapsed_us;
-                ++counted;
-            }
-
-            if (run == kRuns - 1)
-            {
-                const float* output_data = static_cast<const float*>(output.data);
-                const int predicted = ArgMax10(output_data);
-                if (predicted == sample.label)
-                {
-                    ++correct;
-                }
-            }
-        }
-
-        run_averages_us[static_cast<size_t>(run)] =
-            run_total_us / static_cast<double>(counted);
+        const auto end = std::chrono::steady_clock::now();
+        const double window_us =
+            std::chrono::duration<double, std::micro>(end - start).count();
+        pass_averages_us[static_cast<size_t>(pass)] =
+            window_us / static_cast<double>(batch_invokes);
     }
 
-    std::printf("  accuracy:    %d/%d on final run\n", correct, kMnistBenchmarkImageCount);
-    BenchmarkStats::PrintSummary("netkit", "mlp", NETKIT_BENCH_BACKEND,
-                                 BenchmarkStats::Compute(run_averages_us.data(), kRuns));
+    BenchmarkStats::PrintBatchSummary(
+        "netkit",
+        "mlp",
+        NETKIT_BENCH_BACKEND,
+        BenchmarkStats::Compute(pass_averages_us.data(), batch_passes),
+        batch_invokes);
 
     return correct == kMnistBenchmarkImageCount ? 0 : 1;
 }
@@ -168,5 +188,9 @@ int RunBenchmark(const char* model_path)
 int main(int argc, char** argv)
 {
     const char* model_path = (argc > 1) ? argv[1] : kDefaultModelPath;
-    return RunBenchmark(model_path);
+    const int batch_invokes =
+        ParsePositiveInt(argc > 2 ? argv[2] : nullptr, BenchmarkStats::kDefaultBatchInvokes);
+    const int batch_passes =
+        ParsePositiveInt(argc > 3 ? argv[3] : nullptr, BenchmarkStats::kDefaultBatchPasses);
+    return RunBenchmark(model_path, batch_invokes, batch_passes);
 }

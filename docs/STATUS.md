@@ -37,10 +37,9 @@ Default **on** for cpu + any MPU; opt out with `NETKIT_MMAP=0` on RTOS / bare-me
 Fair CPU peer suite vs TF Lite / LiteRT (`benchmark/tools/run_host_ab_suite_{int8,float32}.py`):
 
 - Prebuild netkit binaries (untimed); discard first process per timed slot; order swaps (nk→TF, TF→nk)
-- LiteRT-matched `-O3` flags; `NETKIT_IM2COL=0`; MLP `--runs 100` both sides
-- **Latency** metric: MNIST `mean_us`; ImageNet `warm_mean_us`
-- **Flash**: on-disk deploy footprint (netkit ELF + `.nk`; TF Lite `.tflite` + core LiteRT CPU libs)
-- **RAM**: peak RSS of the kept timed process
+- LiteRT-matched `-O3` flags; `NETKIT_IM2COL=0`
+- **Latency** metric: MNIST CNN `mean_us` (discard run 0 + image 0 each run); MNIST MLP batched windows (1000 invokes × 10 passes, discard pass 0); ImageNet `warm_mean_us` (discard full first image pass)
+- **Flash / RAM**: MCU-style **runtime image only** — netkit bench ELF `__TEXT`/`__DATA` minus hard-coded test-image `.o` fixtures; TF Lite = core LiteRT CPU libs the same way. **Models and bench fixture images are excluded** (production would not embed those test vectors).
 - Ratio column is always **TF ÷ netkit** (>1 ⇒ netkit faster / smaller)
 
 ```bash
@@ -48,37 +47,46 @@ python3 benchmark/tools/run_host_ab_suite_int8.py
 python3 benchmark/tools/run_host_ab_suite_float32.py
 ```
 
-Results files: `benchmark/host_ab_suite_results_{int8,float32}.txt`.
+Results: `benchmark/host_ab_suite_results_{int8,float32}.txt`, summary PDF `benchmark/host_ab_suite_results.pdf`.
 
 ### Preliminary results (host Apple Silicon, Jul 2026)
+
+Clean rebuild after fixing stale bench mains (CNN now discards run 0 — `runs=9` both sides). Flash/RAM = **runtime image only** (`size` TEXT≈flash, DATA≈static RAM). Models and hard-coded bench fixture images excluded.
+
+**Absolute runtime sizes (same LiteRT libs for all models):**
+
+| mode | netkit flash | netkit RAM | TF Lite flash | TF Lite RAM |
+|------|--------------|------------|---------------|-------------|
+| XNNPACK ON | 1.31–1.32 MiB | 191.8 KiB | 12.41 MiB | 752.0 KiB |
+| XNNPACK OFF | 193–200 KiB | 15.8 KiB | 12.41 MiB | 752.0 KiB |
 
 #### INT8 — latency / flash / ram (TF÷netkit)
 
 | model | XNNPACK | latency | flash | ram |
 |-------|---------|---------|-------|-----|
-| mlp | ON | 1.37× | 9.4× | 16.2× |
-| cnn | ON | 0.72× | 8.9× | 13.0× |
-| cnn_dw | ON | 0.97× | 9.0× | 13.2× |
-| imagenet | ON | 1.00× | 3.1× | 4.6× |
-| mlp | OFF | 1.38× | 45.7× | 21.7× |
-| cnn | OFF | 4.30× | 35.1× | 20.9× |
-| cnn_dw | OFF | 2.31× | 36.1× | 20.5× |
-| imagenet | OFF | 3.70× | 4.0× | 7.0× |
+| mlp | ON | 0.73× | 9.4× | 3.9× |
+| cnn | ON | 1.05× | 9.4× | 3.9× |
+| cnn_dw | ON | 1.12× | 9.4× | 3.9× |
+| imagenet | ON | 1.04× | 9.4× | 3.9× |
+| mlp | OFF | 2.67× | 63.5× | 47.7× |
+| cnn | OFF | 3.92× | 63.5× | 47.7× |
+| cnn_dw | OFF | 2.39× | 63.5× | 47.7× |
+| imagenet | OFF | 3.78× | 65.6× | 47.7× |
 
 #### FLOAT32 — latency / flash / ram (TF÷netkit)
 
 | model | XNNPACK | latency | flash | ram |
 |-------|---------|---------|-------|-----|
-| mlp | ON | 1.18× | 8.1× | 13.2× |
-| cnn | ON | 0.97× | 6.9× | 9.4× |
-| cnn_dw | ON | 1.00× | 7.0× | 9.8× |
-| imagenet | ON | 0.97× | 1.4× | 1.8× |
-| mlp | OFF | 2.24× | 25.0× | 19.0× |
-| cnn | OFF | 2.40× | 15.5× | 14.9× |
-| cnn_dw | OFF | 1.47× | 16.2× | 14.9× |
-| imagenet | OFF | 1.92× | 1.5× | 2.1× |
+| mlp | ON | 1.87× | 9.4× | 3.9× |
+| cnn | ON | 0.97× | 9.4× | 3.9× |
+| cnn_dw | ON | 1.06× | 9.4× | 3.9× |
+| imagenet | ON | 1.04× | 9.4× | 3.9× |
+| mlp | OFF | 2.28× | 65.8× | 47.7× |
+| cnn | OFF | 2.19× | 65.8× | 47.7× |
+| cnn_dw | OFF | 1.58× | 65.8× | 47.7× |
+| imagenet | OFF | 1.87× | 63.6× | 47.7× |
 
-**Takeaways:** with XNNPACK ON, latency is roughly tied (ImageNet ~parity; MNIST within noise). With XNNPACK OFF, netkit reference is clearly ahead on latency. **Flash and RAM favor netkit substantially** on every model (self-contained ELF vs LiteRT shared libs + Python process RSS). Absolute ImageNet float32 warm means were ~5.1 ms (netkit XNN) vs ~4.9 ms (TF); int8 ~1.6 ms both sides.
+**Takeaways:** MLP uses batched windows (1000×10). With XNNPACK ON, netkit is ahead or near-parity on most models (float MLP ~1.9×; int8 MLP still behind). With XNNPACK OFF, netkit reference is clearly ahead. **Runtime flash/RAM favor netkit** — ~1.3 MiB TEXT (XNN) or ~194–200 KiB (reference) vs ~12.4 MiB LiteRT CPU libs. Absolute ImageNet warm means: float32 ~1.05 ms (netkit XNN) vs ~1.10 ms (TF); int8 ~0.69 ms vs ~0.72 ms.
 
 ### `NETKIT_IM2COL` note (from earlier host sweep)
 

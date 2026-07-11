@@ -1364,6 +1364,8 @@ void DestroyUibSubgraph(CmsisQuantPlan::MobilenetV4UibPlan& plan)
     plan.xnn_proj_bias_scales = nullptr;
     plan.xnn_subgraph_ready = false;
     plan.xnn_subgraph_includes_residual = false;
+    plan.xnn_bound_input = nullptr;
+    plan.xnn_bound_output = nullptr;
 }
 
 bool CreateUibSubgraph(CmsisQuantPlan::MobilenetV4UibPlan& plan,
@@ -1500,12 +1502,17 @@ bool InvokeUibSubgraph(CmsisQuantPlan::MobilenetV4UibPlan& plan,
         return false;
 
     auto* runtime = static_cast<xnn_runtime_t>(plan.xnn_runtime);
-    const xnn_external_value externals[2] = {
-        {plan.xnn_ext_input_id, const_cast<int8_t*>(input)},
-        {plan.xnn_ext_output_id, output},
-    };
-    if (xnn_setup_runtime_v2(runtime, 2, externals) != xnn_status_success)
-        return false;
+    if (input != plan.xnn_bound_input || output != plan.xnn_bound_output)
+    {
+        const xnn_external_value externals[2] = {
+            {plan.xnn_ext_input_id, const_cast<int8_t*>(input)},
+            {plan.xnn_ext_output_id, output},
+        };
+        if (xnn_setup_runtime_v2(runtime, 2, externals) != xnn_status_success)
+            return false;
+        plan.xnn_bound_input = input;
+        plan.xnn_bound_output = output;
+    }
     return xnn_invoke_runtime(runtime) == xnn_status_success;
 }
 
@@ -1527,6 +1534,8 @@ void DestroyNetworkSubgraph(CmsisQuantPlan::Runtime& runtime)
     runtime.xnn_network_ready = false;
     runtime.xnn_net_ext_in = 0;
     runtime.xnn_net_ext_out = 1;
+    runtime.bound_input = nullptr;
+    runtime.bound_output = nullptr;
 }
 
 bool CreateNetworkSubgraph(CmsisQuantPlan::Runtime& runtime,
@@ -2126,12 +2135,17 @@ bool InvokeNetworkSubgraph(CmsisQuantPlan::Runtime& runtime,
         return false;
 
     auto* xnn_rt = static_cast<xnn_runtime_t>(runtime.xnn_network_runtime);
-    const xnn_external_value externals[2] = {
-        {runtime.xnn_net_ext_in, const_cast<int8_t*>(input)},
-        {runtime.xnn_net_ext_out, output},
-    };
-    if (xnn_setup_runtime_v2(xnn_rt, 2, externals) != xnn_status_success)
-        return false;
+    if (input != runtime.bound_input || output != runtime.bound_output)
+    {
+        const xnn_external_value externals[2] = {
+            {runtime.xnn_net_ext_in, const_cast<int8_t*>(input)},
+            {runtime.xnn_net_ext_out, output},
+        };
+        if (xnn_setup_runtime_v2(xnn_rt, 2, externals) != xnn_status_success)
+            return false;
+        runtime.bound_input = input;
+        runtime.bound_output = output;
+    }
     return xnn_invoke_runtime(xnn_rt) == xnn_status_success;
 }
 
@@ -2165,6 +2179,8 @@ void DestroyMlpRuntime(MlpRuntime& runtime)
     runtime.ext_out = 1;
     runtime.in_features = 0;
     runtime.out_features = 0;
+    runtime.bound_input = nullptr;
+    runtime.bound_output = nullptr;
 }
 
 bool BuildMlpNetworkSubgraph(MLPNetwork& network,
@@ -2391,12 +2407,17 @@ bool InvokeMlpNetworkSubgraph(MlpRuntime& runtime, const int8_t* input, int8_t* 
     if (!runtime.ready || !runtime.xnn_network_runtime || !input || !output)
         return false;
     auto* xnn_rt = static_cast<xnn_runtime_t>(runtime.xnn_network_runtime);
-    const xnn_external_value externals[2] = {
-        {runtime.ext_in, const_cast<int8_t*>(input)},
-        {runtime.ext_out, output},
-    };
-    if (xnn_setup_runtime_v2(xnn_rt, 2, externals) != xnn_status_success)
-        return false;
+    if (input != runtime.bound_input || output != runtime.bound_output)
+    {
+        const xnn_external_value externals[2] = {
+            {runtime.ext_in, const_cast<int8_t*>(input)},
+            {runtime.ext_out, output},
+        };
+        if (xnn_setup_runtime_v2(xnn_rt, 2, externals) != xnn_status_success)
+            return false;
+        runtime.bound_input = input;
+        runtime.bound_output = output;
+    }
     return xnn_invoke_runtime(xnn_rt) == xnn_status_success;
 }
 

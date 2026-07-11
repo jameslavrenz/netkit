@@ -150,23 +150,26 @@ TfLiteStatus RunBenchmark() {
   for (int i = 0; i < num_images; ++i) first_pass_sum += samples[i];
   const double first_pass_mean = first_pass_sum / static_cast<double>(num_images);
 
+  // Discard the entire first pass (all images) — not just invoke 0.
+  const size_t warm_begin = static_cast<size_t>(num_images);
+  const size_t warm_n = samples.size() - warm_begin;
   double warm_sum = 0.0;
-  double warm_min = samples[1];
-  double warm_max = samples[1];
-  const size_t warm_n = samples.size() - 1;
-  for (size_t k = 1; k < samples.size(); ++k) {
+  double warm_min = samples[warm_begin];
+  double warm_max = samples[warm_begin];
+  for (size_t k = warm_begin; k < samples.size(); ++k) {
     warm_sum += samples[k];
     if (samples[k] < warm_min) warm_min = samples[k];
     if (samples[k] > warm_max) warm_max = samples[k];
   }
   const double warm_mean = warm_sum / static_cast<double>(warm_n);
   double var = 0.0;
-  for (size_t k = 1; k < samples.size(); ++k) {
+  for (size_t k = warm_begin; k < samples.size(); ++k) {
     const double d = samples[k] - warm_mean;
     var += d * d;
   }
   const double warm_std = std::sqrt(var / static_cast<double>(warm_n));
-  std::vector<double> warm_sorted(samples.begin() + 1, samples.end());
+  std::vector<double> warm_sorted(samples.begin() + static_cast<std::ptrdiff_t>(warm_begin),
+                                   samples.end());
   std::sort(warm_sorted.begin(), warm_sorted.end());
   const double warm_median = warm_sorted[warm_sorted.size() / 2];
 

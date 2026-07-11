@@ -635,6 +635,8 @@ void DestroyRuntime(Runtime& runtime)
     runtime.xnn_network_ready = false;
     runtime.xnn_net_ext_in = 0;
     runtime.xnn_net_ext_out = 1;
+    runtime.bound_input = nullptr;
+    runtime.bound_output = nullptr;
     runtime.in_h = runtime.in_w = runtime.in_c = 0;
     runtime.out_elements = 0;
 }
@@ -1422,12 +1424,17 @@ bool InvokeNetwork(Runtime& runtime, const float* input, float* output)
         return false;
 
     auto* xnn_rt = static_cast<xnn_runtime_t>(runtime.xnn_network_runtime);
-    const xnn_external_value externals[2] = {
-        {runtime.xnn_net_ext_in, const_cast<float*>(input)},
-        {runtime.xnn_net_ext_out, output},
-    };
-    if (xnn_setup_runtime_v2(xnn_rt, 2, externals) != xnn_status_success)
-        return false;
+    if (input != runtime.bound_input || output != runtime.bound_output)
+    {
+        const xnn_external_value externals[2] = {
+            {runtime.xnn_net_ext_in, const_cast<float*>(input)},
+            {runtime.xnn_net_ext_out, output},
+        };
+        if (xnn_setup_runtime_v2(xnn_rt, 2, externals) != xnn_status_success)
+            return false;
+        runtime.bound_input = input;
+        runtime.bound_output = output;
+    }
     return xnn_invoke_runtime(xnn_rt) == xnn_status_success;
 }
 

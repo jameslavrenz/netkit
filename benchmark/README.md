@@ -67,7 +67,7 @@ python3 benchmark/tools/run_host_ab_suite_int8.py
 python3 benchmark/tools/run_host_ab_suite_float32.py
 ```
 
-Sweeps XNNPACK ON/OFF with prebuild + discarded first process + order swaps. Reports latency, **flash** (ELF+`.nk` vs `.tflite`+LiteRT CPU libs), and **RAM** (peak RSS), each as TF÷netkit. `NETKIT_IM2COL` is fixed at **0**. Preliminary numbers: [docs/STATUS.md](../docs/STATUS.md#host-ab-suite-preliminary).
+Sweeps XNNPACK ON/OFF with prebuild + discarded first process + order swaps. Reports latency plus MCU-style **runtime** flash/RAM (ELF TEXT/DATA minus fixture images vs LiteRT CPU libs; models excluded), each as TF÷netkit. MLP uses **batched** timing (1000 invokes × 10 passes) to escape ~1 µs timer noise; CNN/ImageNet keep per-invoke methodology. `NETKIT_IM2COL` is fixed at **0**. Preliminary numbers: [docs/STATUS.md](../docs/STATUS.md#host-ab-suite-preliminary); printable summary: [host_ab_suite_results.pdf](host_ab_suite_results.pdf).
 
 ## Run comparison (recommended)
 

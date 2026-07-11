@@ -127,7 +127,7 @@ def main() -> int:
 
     cold_us = samples[0]
     first_pass_mean = statistics.fmean(samples[:num_images])
-    warm = samples[1:]
+    warm = samples[num_images:]  # discard full first pass (cold)
     warm_mean = statistics.fmean(warm)
     warm_median = statistics.median(warm)
     warm_min = min(warm)

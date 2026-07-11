@@ -32,6 +32,9 @@ struct Runtime
     uint32_t in_w = 0;
     uint32_t in_c = 0;
     uint32_t out_elements = 0;
+    // Skip xnn_setup_runtime_v2 when I/O addresses are unchanged.
+    const float* bound_input = nullptr;
+    float* bound_output = nullptr;
     // Owned depthwise weight repacks [1,Kh,Kw,C] for subgraph (GHW → HWC).
     float** dw_hwc_owned = nullptr;
     uint32_t dw_hwc_count = 0;

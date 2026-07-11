@@ -3,7 +3,8 @@
 
 Pairs with benchmark/netkit/src/main.cc:
   - same mnist_mlp.tflite / same float digit vectors from the .nk TCAS
-  - same methodology (10 runs x 10 images, discard first invoke each run)
+  - latency: batch N invokes in one timed window (default 1000) to escape ~1 µs timer noise
+  - accuracy: separate untimed pass over the 10 digit images
 """
 
 from __future__ import annotations
@@ -62,7 +63,19 @@ def _load_float_images() -> list[tuple[str, int, np.ndarray]]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", type=Path, default=DEFAULT_MODEL)
-    parser.add_argument("--runs", type=int, default=10)
+    parser.add_argument(
+        "--runs",
+        type=int,
+        default=10,
+        help="Batch passes (discard pass 0). Alias for --batch-passes.",
+    )
+    parser.add_argument("--batch-passes", type=int, default=None)
+    parser.add_argument(
+        "--batch-invokes",
+        type=int,
+        default=1000,
+        help="Invokes per timed window (default 1000)",
+    )
     parser.add_argument("--num-threads", type=int, default=1)
     parser.add_argument(
         "--no-xnnpack",
@@ -70,6 +83,11 @@ def main() -> int:
         help="Disable XNNPACK (builtin reference kernels only)",
     )
     args = parser.parse_args()
+    batch_passes = args.batch_passes if args.batch_passes is not None else args.runs
+    if batch_passes < 2:
+        raise SystemExit("need at least 2 batch passes to discard cold pass 0")
+    if args.batch_invokes < 1:
+        raise SystemExit("--batch-invokes must be >= 1")
 
     if not args.model.is_file():
         raise SystemExit(
@@ -87,57 +105,62 @@ def main() -> int:
     out = interp.get_output_details()[0]
     if tuple(inp["shape"]) not in ((1, 784), (1, 28, 28)):
         raise SystemExit(f"unexpected input shape {inp['shape']}")
-    if inp["dtype"] != np.float32 or out["dtype"] != np.float32:
-        raise SystemExit(f"expected float32 I/O, got {inp['dtype']} / {out['dtype']}")
 
     images = _load_float_images()
     num_images = len(images)
     in_shape = tuple(int(x) for x in inp["shape"])
 
-    print("TF Lite MNIST MLP float32 benchmark")
+    print("TF Lite MNIST MLP benchmark")
     print("  runtime:     TensorFlow Lite / LiteRT (host interpreter)")
     print(f"  backend:     {backend}")
     print(f"  threads:     {args.num_threads}")
-    print("  dtype:       float32")
     print(f"  model:       {args.model}")
     print(f"  model bytes: {args.model.stat().st_size}")
-    print(f"  images:      {num_images} per run")
-    print(f"  runs:        {args.runs} (discard first invoke each run)")
+    print(f"  images:      {num_images} (accuracy only)")
+    print(
+        f"  batch:       {args.batch_invokes} invokes x {batch_passes} passes "
+        "(discard pass 0)"
+    )
 
-    run_averages: list[float] = []
     correct = 0
-    for run in range(args.runs):
-        run_total = 0.0
-        counted = 0
-        for i, (name, label, pixels) in enumerate(images):
-            batch = pixels.reshape(in_shape)
-            interp.set_tensor(inp["index"], batch)
-            t0 = time.perf_counter()
-            interp.invoke()
-            t1 = time.perf_counter()
-            elapsed_us = (t1 - t0) * 1e6
-            if i > 0:
-                run_total += elapsed_us
-                counted += 1
-            if run == args.runs - 1:
-                logits = interp.get_tensor(out["index"]).reshape(-1)
-                pred = int(logits.argmax())
-                ok = pred == label
-                correct += int(ok)
-                print(f"  image {i} label={label} pred={pred} {'OK' if ok else 'MISS'} ({name})")
-        run_averages.append(run_total / counted)
+    for i, (name, label, pixels) in enumerate(images):
+        batch = pixels.reshape(in_shape)
+        interp.set_tensor(inp["index"], batch)
+        interp.invoke()
+        logits = interp.get_tensor(out["index"]).reshape(-1)
+        pred = int(logits.argmax())
+        ok = pred == label
+        correct += int(ok)
+        print(f"  image {i} label={label} pred={pred} {'OK' if ok else 'MISS'} ({name})")
+    print(f"  accuracy:    {correct}/{num_images}")
 
-    mean_us = float(np.mean(run_averages))
+    interp.set_tensor(inp["index"], images[0][2].reshape(in_shape))
+    interp.invoke()
+
+    pass_averages: list[float] = []
+    for _ in range(batch_passes):
+        t0 = time.perf_counter()
+        for _n in range(args.batch_invokes):
+            interp.invoke()
+        t1 = time.perf_counter()
+        window_us = (t1 - t0) * 1e6
+        pass_averages.append(window_us / args.batch_invokes)
+
+    warm = pass_averages[1:]
+    mean_us = float(np.mean(warm))
     print()
-    print(f"TF Lite MNIST mlp_f32 benchmark summary ({backend})")
-    print(f"  method:      {args.runs} runs x 10 images, discard first invoke each run")
-    print("  per-run avg: avg of images 1-9 (us)")
+    print(f"TF Lite MNIST mlp benchmark summary ({backend})")
+    print(
+        f"  method:      discard batch pass 0; mean over {len(warm)} warm passes; "
+        f"each pass = {args.batch_invokes} invokes in one timed window"
+    )
+    print(f"  per-invoke:  window_us / {args.batch_invokes}")
     print()
     print(f"  mean:   {mean_us:8.3f} us ({mean_us / 1000.0:6.3f} ms)")
-    print(f"  accuracy:    {correct}/{num_images} on final run")
     print(
         f"BENCHMARK_SUMMARY runtime=tflite model=mlp_f32 backend={backend} "
-        f"mean_us={mean_us:.3f} runs={args.runs} top1_correct={correct} top1_total={num_images}"
+        f"mean_us={mean_us:.3f} runs={len(warm)} batch_invokes={args.batch_invokes} "
+        f"top1_correct={correct} top1_total={num_images}"
     )
     return 0 if correct == num_images else 1
 

@@ -133,17 +133,23 @@ def main() -> int:
                 print(f"  image {i} label={label} pred={pred} {'OK' if ok else 'MISS'} ({name})")
         run_averages.append(run_total / counted)
 
-    mean_us = float(np.mean(run_averages))
+    if len(run_averages) < 2:
+        raise SystemExit("need at least 2 runs to discard cold first run")
+    warm_runs = run_averages[1:]
+    mean_us = float(np.mean(warm_runs))
     print()
     print(f"TF Lite MNIST cnn_f32 benchmark summary ({backend})")
-    print(f"  method:      {args.runs} runs x 10 images, discard first invoke each run")
+    print(
+        f"  method:      discard run 0 + first invoke each run; "
+        f"mean over {len(warm_runs)} warm runs x images 1-9"
+    )
     print("  per-run avg: avg of images 1-9 (us)")
     print()
     print(f"  mean:   {mean_us:8.3f} us ({mean_us / 1000.0:6.3f} ms)")
     print(f"  accuracy:    {correct}/{num_images} on final run")
     print(
         f"BENCHMARK_SUMMARY runtime=tflite model=cnn_f32 backend={backend} "
-        f"mean_us={mean_us:.3f} runs={args.runs} top1_correct={correct} top1_total={num_images}"
+        f"mean_us={mean_us:.3f} runs={len(warm_runs)} top1_correct={correct} top1_total={num_images}"
     )
     return 0 if correct == num_images else 1
 

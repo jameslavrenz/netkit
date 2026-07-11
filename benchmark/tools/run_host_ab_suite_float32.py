@@ -8,7 +8,9 @@ order swaps, equalized MLP runs, LiteRT-matched -O3).
 
 Sweeps XNNPACK ON/OFF (reference when XNNPACK is off).
 NETKIT_IM2COL is fixed at 0 (direct).
-Also reports flash (on-disk) and RAM (peak RSS) with TF÷netkit ratios.
+Also reports MCU-style runtime flash/RAM (ELF TEXT/DATA minus fixture images
+vs LiteRT CPU libs; models excluded) with TF÷netkit ratios.
+MLP uses batched invoke windows (1000×10) to escape ~1 µs timer noise.
 
 Results default: benchmark/host_ab_suite_results_float32.txt
 """

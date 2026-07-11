@@ -86,6 +86,9 @@ struct MlpRuntime
     uint32_t out_features = 0;
     float** bias_scales = nullptr;
     uint32_t bias_scales_count = 0;
+    // Skip xnn_setup_runtime_v2 when I/O addresses are unchanged (common in benches).
+    const int8_t* bound_input = nullptr;
+    int8_t* bound_output = nullptr;
 };
 
 bool BuildMlpNetworkSubgraph(MLPNetwork& network,

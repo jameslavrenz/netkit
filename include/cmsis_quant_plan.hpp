@@ -40,6 +40,9 @@ struct Runtime
     bool xnn_network_ready = false;
     uint32_t xnn_net_ext_in = 0;
     uint32_t xnn_net_ext_out = 1;
+    // Skip xnn_setup_runtime_v2 when I/O addresses are unchanged.
+    const int8_t* bound_input = nullptr;
+    int8_t* bound_output = nullptr;
     // Owned per-channel bias scale arrays for network subgraph tensors.
     float** xnn_net_bias_scales = nullptr;
     uint32_t xnn_net_bias_scales_count = 0;

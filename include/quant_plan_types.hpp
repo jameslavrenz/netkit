@@ -172,6 +172,9 @@ struct MobilenetV4UibPlan
     uint32_t xnn_ext_output_id = 1;
     bool xnn_subgraph_ready = false;
     bool xnn_subgraph_includes_residual = false;
+    // Skip xnn_setup_runtime_v2 when I/O addresses are unchanged.
+    const int8_t* xnn_bound_input = nullptr;
+    int8_t* xnn_bound_output = nullptr;
     // Per-channel bias scales for subgraph tensors (heap; freed in DestroyUibSubgraph).
     float* xnn_start_dw_bias_scales = nullptr;
     float* xnn_expand_bias_scales = nullptr;
