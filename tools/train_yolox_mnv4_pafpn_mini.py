@@ -118,13 +118,18 @@ class NanoPafpn(nn.Module):
 
 
 class MiniDetector(nn.Module):
-    def __init__(self, hidden: int = 64, freeze_backbone: bool = True):
+    def __init__(
+        self,
+        hidden: int = 64,
+        freeze_backbone: bool = True,
+        pretrained: bool = True,
+    ):
         super().__init__()
         import timm
 
         self.backbone = timm.create_model(
             "mobilenetv4_conv_small",
-            pretrained=True,
+            pretrained=pretrained,
             features_only=True,
             out_indices=(2, 3, 4),
         )

@@ -109,7 +109,7 @@ def eval_ckpt(
     elif torch.cuda.is_available():
         device = torch.device("cuda")
 
-    model = MiniDetector(hidden=hidden, freeze_backbone=True).to(device)
+    model = MiniDetector(hidden=hidden, freeze_backbone=True, pretrained=False).to(device)
     model.load_state_dict(ckpt["state_dict"], strict=False)
     model.eval()
 
