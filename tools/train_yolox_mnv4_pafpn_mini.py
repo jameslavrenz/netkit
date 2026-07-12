@@ -1512,6 +1512,8 @@ def main() -> None:
         and hold_box_frac >= 0.30
         and strong_box > 0
     )
+    # Pack bar for scale-up runs: COCO-style AP@0.5 on the val hold-out.
+    pack_worthy = sane and coco_map >= 0.15
     meta_disk = json.loads(args.out.with_suffix(".json").read_text())
     meta_disk.update(
         {
@@ -1522,6 +1524,7 @@ def main() -> None:
             "holdout_coco_map50": coco_map,
             "holdout_coco_ap_pooled": coco_ap_all,
             "holdout_sane": sane,
+            "holdout_pack_worthy": pack_worthy,
             "loss_ok": loss_ok,
             "box_decode": "exp_ltrb",
             "box_loss": "l1_exp+giou",
@@ -1530,8 +1533,16 @@ def main() -> None:
     )
     args.out.with_suffix(".json").write_text(json.dumps(meta_disk, indent=2) + "\n")
 
-    if sane:
-        print("SUCCESS: hold-out looks sane (ready to pack)")
+    if pack_worthy:
+        print(
+            f"SUCCESS: hold-out pack-worthy "
+            f"(coco_map50={coco_map:.3f} ≥ 0.15 — ready to pack)"
+        )
+    elif sane:
+        print(
+            f"PARTIAL: hold-out sane but coco_map50={coco_map:.3f} < 0.15 "
+            "(do not pack yet)"
+        )
     elif loss_ok and hold_frac >= 0.15 and hold_box_frac >= 0.15:
         print("PARTIAL: some hold-out signal but below pack threshold")
     elif loss_ok:
