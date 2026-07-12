@@ -14,7 +14,7 @@ from netkit.reader import read_nk, read_test_suite
 from netkit.reference_forward import forward_cnn
 from netkit.runtime_infer import nk_infer_bin, run_nk_infer
 from netkit.writer import RegressionCase, RegressionSuite
-from netkit.yolox_decode import Detection, decode_yolox_output
+from netkit.yolox_decode import Detection, decode_yolox_output, nms_detections
 from netkit.yolox_detector import (
     MNv4_SMALL_BACKBONE_OUT_CHANNELS,
     build_yolox_mnv4_small_detector,
@@ -162,6 +162,42 @@ class YoloxDecodeTests(unittest.TestCase):
             decode_yolox_output(raw, num_classes=1, score_threshold=0.1, input_height=8, input_width=8),
             [],
         )
+
+    def test_nms_suppresses_overlapping_same_class(self) -> None:
+        dets = [
+            Detection(0.0, 0.0, 10.0, 10.0, 0.9, 0),
+            Detection(1.0, 1.0, 11.0, 11.0, 0.8, 0),  # high IoU with first
+            Detection(50.0, 50.0, 60.0, 60.0, 0.7, 0),  # far away
+            Detection(0.0, 0.0, 10.0, 10.0, 0.95, 1),  # different class, keep
+        ]
+        kept = nms_detections(dets, iou_threshold=0.5)
+        self.assertEqual(len(kept), 3)
+        self.assertEqual({(d.class_id, round(d.score, 2)) for d in kept}, {(0, 0.9), (0, 0.7), (1, 0.95)})
+
+    def test_decode_nms_optional(self) -> None:
+        num_classes = 1
+        out_c = yolox_head_output_channels(num_classes)
+        # Two neighboring cells with high scores → overlapping boxes after decode.
+        raw = np.zeros((1, 2, out_c), dtype=np.float32)
+        raw[0, 0, 0:4] = np.log([1.0, 1.0, 1.0, 1.0])
+        raw[0, 0, 4] = 10.0
+        raw[0, 0, 5] = 10.0
+        raw[0, 1, 0:4] = np.log([1.0, 1.0, 1.0, 1.0])
+        raw[0, 1, 4] = 9.0
+        raw[0, 1, 5] = 9.0
+        without = decode_yolox_output(
+            raw, num_classes=1, score_threshold=0.5, input_height=8, input_width=16
+        )
+        with_nms = decode_yolox_output(
+            raw,
+            num_classes=1,
+            score_threshold=0.5,
+            input_height=8,
+            input_width=16,
+            nms_iou_threshold=0.5,
+        )
+        self.assertGreaterEqual(len(without), 2)
+        self.assertEqual(len(with_nms), 1)
 
     def test_decode_accepts_flat_output(self) -> None:
         num_classes = 3

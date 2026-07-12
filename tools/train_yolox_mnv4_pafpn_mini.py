@@ -1382,6 +1382,12 @@ def main() -> None:
         default="simota",
         help="Label assigner: center-radius multi-positive, or SimOTA (pred-aware)",
     )
+    parser.add_argument(
+        "--ema-decay",
+        type=float,
+        default=0.0,
+        help="If >0, keep an EMA copy of weights (e.g. 0.999) and eval/save EMA",
+    )
     parser.add_argument("--hidden", type=int, default=64)
     parser.add_argument(
         "--out",
@@ -1482,6 +1488,15 @@ def main() -> None:
     model.set_backbone_frozen(True)
     opt = make_opt(include_backbone=False)
 
+    ema_model = None
+    if args.ema_decay > 0.0:
+        import copy
+
+        ema_model = copy.deepcopy(model)
+        for p in ema_model.parameters():
+            p.requires_grad = False
+        print(f"EMA enabled decay={args.ema_decay}")
+
     model.train()
     rng = np.random.default_rng(0)
     use_aug = not args.no_aug
@@ -1534,6 +1549,12 @@ def main() -> None:
         loss = detection_loss(preds, targets)
         loss.backward()
         opt.step()
+        if ema_model is not None:
+            with torch.no_grad():
+                for ema_p, p in zip(ema_model.parameters(), model.parameters()):
+                    ema_p.mul_(args.ema_decay).add_(p, alpha=1.0 - args.ema_decay)
+                for ema_b, b in zip(ema_model.buffers(), model.buffers()):
+                    ema_b.copy_(b)
         losses.append(float(loss.item()))
         if device.type == "mps" and step % 100 == 0:
             torch.mps.empty_cache()
@@ -1545,6 +1566,7 @@ def main() -> None:
                 flush=True,
             )
 
+    eval_model = ema_model if ema_model is not None else model
     args.out.parent.mkdir(parents=True, exist_ok=True)
     meta = {
         "losses": losses,
@@ -1565,12 +1587,13 @@ def main() -> None:
         "mosaic_close_frac": args.mosaic_close_frac,
         "multiscale": args.multiscale,
         "multiscale_sizes": list(scale_choices),
+        "ema_decay": args.ema_decay,
     }
-    torch.save({"state_dict": model.state_dict(), **meta}, args.out)
+    torch.save({"state_dict": eval_model.state_dict(), **meta}, args.out)
     (args.out.with_suffix(".json")).write_text(
         json.dumps({k: meta[k] for k in meta if k != "losses"}, indent=2) + "\n"
     )
-    print(f"saved {args.out}")
+    print(f"saved {args.out}" + (" (EMA weights)" if ema_model is not None else ""))
 
     decreased = losses[0] > 0 and losses[-1] < losses[0] * 0.5
     # Warm-starts often begin mid-loss; accept non-explosion.
@@ -1581,7 +1604,7 @@ def main() -> None:
     )
 
     # Hold-out scoreboard (scores + boxes + rough greedy mAP + COCO-style AP@0.5)
-    model.eval()
+    eval_model.eval()
     hold_max: list[float] = []
     hold_hits = 0
     hold_box_ok = 0
@@ -1596,11 +1619,11 @@ def main() -> None:
         oh, ow = rgb.shape[:2]
         canvas, scale, pad_x, pad_y = letterbox(rgb, args.size)
         tensor = (
-            torch.from_numpy(canvas).permute(2, 0, 1).float().unsqueeze(0).to(device)
+            torch.from_numpy(np.array(canvas, copy=True)).permute(2, 0, 1).float().unsqueeze(0).to(device)
             / 255.0
         )
         with torch.no_grad():
-            preds = model(tensor)
+            preds = eval_model(tensor)
         score_max = 0.0
         for p in preds:
             obj = torch.sigmoid(p[0, 4])
@@ -1616,6 +1639,7 @@ def main() -> None:
             score_threshold=0.05,
             input_height=args.size,
             input_width=args.size,
+            nms_iou_threshold=0.65,
         )
         if any(
             d.score >= 0.1
@@ -1670,7 +1694,7 @@ def main() -> None:
         torch.from_numpy(canvas).permute(2, 0, 1).float().unsqueeze(0).to(device) / 255.0
     )
     with torch.no_grad():
-        preds = model(tensor)
+        preds = eval_model(tensor)
     flat = preds_to_flat(preds)
     dets = decode_yolox_output(
         flat,
@@ -1678,6 +1702,7 @@ def main() -> None:
         score_threshold=demo_thr,
         input_height=args.size,
         input_width=args.size,
+        nms_iou_threshold=0.65,
     )
     print(f"demo image={demo_img.name} thr={demo_thr} detections={len(dets)}")
     for d in dets[:8]:

@@ -152,9 +152,9 @@ Python: `python/tests/test_yolox_pafpn.py`, `python/tests/test_yolox_detector.py
 
 ## Limitations
 
-- **No NMS in runtime** — host decode helper only  
+- **No NMS in runtime** — host decode helper supports optional class-aware NMS (`nms_iou_threshold`); train hold-out eval uses it  
 - **No standalone upsample layer** — nearest-2× is private to the PAFPN composite  
-- **Training is mini-scale** — SimOTA (default) + optional Mosaic/multi-scale; hold-out reports both greedy rough mAP and COCO-style AP@0.5 (not a full pycocotools suite)  
+- **Training is mini-scale** — SimOTA (default) + optional Mosaic/multi-scale; hold-out reports both greedy rough mAP and COCO-style AP@0.5 with NMS (not a full pycocotools suite)  
 - **Depthwise Nano PAFPN** — add-based laterals/top-down/bottom-up (no extra bottom-up refine convs)
 
 See also: [MOBILENETV4.md](MOBILENETV4.md), [NK_FORMAT.md](NK_FORMAT.md).
