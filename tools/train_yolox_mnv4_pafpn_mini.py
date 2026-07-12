@@ -478,6 +478,122 @@ def flip_lr_boxes(
     return out
 
 
+def _clip_boxes(
+    boxes: list[tuple[int, float, float, float, float]],
+    *,
+    size: int,
+    min_side: float = 2.0,
+) -> list[tuple[int, float, float, float, float]]:
+    out = []
+    for cls, x1, y1, x2, y2 in boxes:
+        x1 = float(np.clip(x1, 0, size - 1))
+        y1 = float(np.clip(y1, 0, size - 1))
+        x2 = float(np.clip(x2, 0, size - 1))
+        y2 = float(np.clip(y2, 0, size - 1))
+        if x2 - x1 < min_side or y2 - y1 < min_side:
+            continue
+        out.append((cls, x1, y1, x2, y2))
+    return out
+
+
+def _load_rgb_labels(
+    img_path: Path, lab_path: Path, *, rng: np.random.Generator | None, augment: bool
+) -> tuple[np.ndarray, list[tuple[int, float, float, float, float]], int, int]:
+    rgb = np.asarray(Image.open(img_path).convert("RGB"), dtype=np.uint8)
+    if augment and rng is not None:
+        rgb = color_jitter(rgb, rng)
+    oh, ow = rgb.shape[:2]
+    return rgb, load_yolo_label(lab_path), ow, oh
+
+
+def mosaic4(
+    samples: list[tuple[Path, Path]],
+    indices: list[int],
+    *,
+    size: int,
+    rng: np.random.Generator,
+    augment: bool = True,
+) -> tuple[np.ndarray, list[tuple[int, float, float, float, float]]]:
+    """YOLOX-style 4-tile mosaic on a 2×size canvas, resized down to ``size``.
+
+    ``indices`` must have length 4. Boxes are clipped; tiny fragments dropped.
+    """
+    if len(indices) != 4:
+        raise ValueError("mosaic4 expects 4 indices")
+    s = size
+    s2 = s * 2
+    mosaic = np.full((s2, s2, 3), 114, dtype=np.uint8)
+    xc = int(rng.uniform(0.5 * s, 1.5 * s))
+    yc = int(rng.uniform(0.5 * s, 1.5 * s))
+    out_boxes: list[tuple[int, float, float, float, float]] = []
+
+    for i, idx in enumerate(indices):
+        img_path, lab_path = samples[int(idx)]
+        rgb, labels, ow, oh = _load_rgb_labels(
+            img_path, lab_path, rng=rng, augment=augment
+        )
+        # Per-tile resize (keep aspect via scale jitter around fitting into ~s).
+        scale = float(rng.uniform(0.5, 1.5)) * min(s / max(oh, 1), s / max(ow, 1))
+        nw = max(1, int(round(ow * scale)))
+        nh = max(1, int(round(oh * scale)))
+        resized = np.asarray(
+            Image.fromarray(rgb).resize((nw, nh), Image.BILINEAR), dtype=np.uint8
+        )
+
+        if i == 0:  # top-left
+            x1a, y1a, x2a, y2a = max(xc - nw, 0), max(yc - nh, 0), xc, yc
+        elif i == 1:  # top-right
+            x1a, y1a, x2a, y2a = xc, max(yc - nh, 0), min(xc + nw, s2), yc
+        elif i == 2:  # bottom-left
+            x1a, y1a, x2a, y2a = max(xc - nw, 0), yc, xc, min(yc + nh, s2)
+        else:  # bottom-right
+            x1a, y1a, x2a, y2a = xc, yc, min(xc + nw, s2), min(yc + nh, s2)
+
+        w_a = x2a - x1a
+        h_a = y2a - y1a
+        if w_a < 1 or h_a < 1:
+            continue
+
+        # Source crop inside resized tile (aligned to the placement edge).
+        if i == 0:  # paste bottom-right of tile into TL quadrant
+            x1b, y1b = nw - w_a, nh - h_a
+        elif i == 1:  # paste bottom-left of tile into TR
+            x1b, y1b = 0, nh - h_a
+        elif i == 2:  # paste top-right of tile into BL
+            x1b, y1b = nw - w_a, 0
+        else:  # paste top-left of tile into BR
+            x1b, y1b = 0, 0
+        x2b, y2b = x1b + w_a, y1b + h_a
+        mosaic[y1a:y2a, x1a:x2a] = resized[y1b:y2b, x1b:x2b]
+
+        # Labels: normalized YOLO → resized pixels → mosaic coords.
+        pad_x = x1a - x1b
+        pad_y = y1a - y1b
+        for cls, cx, cy, bw, bh in labels:
+            bx1 = (cx - bw / 2.0) * nw + pad_x
+            by1 = (cy - bh / 2.0) * nh + pad_y
+            bx2 = (cx + bw / 2.0) * nw + pad_x
+            by2 = (cy + bh / 2.0) * nh + pad_y
+            # Keep only boxes that overlap the placed region.
+            ix1 = max(bx1, x1a)
+            iy1 = max(by1, y1a)
+            ix2 = min(bx2, x2a)
+            iy2 = min(by2, y2a)
+            if ix2 - ix1 < 1 or iy2 - iy1 < 1:
+                continue
+            out_boxes.append((cls, float(ix1), float(iy1), float(ix2), float(iy2)))
+
+    # Downscale 2s → s (matches YOLOX mosaic finish).
+    canvas = np.asarray(Image.fromarray(mosaic).resize((s, s), Image.BILINEAR), dtype=np.uint8)
+    scaled = [
+        (cls, x1 * 0.5, y1 * 0.5, x2 * 0.5, y2 * 0.5) for cls, x1, y1, x2, y2 in out_boxes
+    ]
+    return canvas, _clip_boxes(scaled, size=s)
+
+
+MULTISCALE_SIZES = (288, 320, 352)
+
+
 def box_iou_xyxy(a: np.ndarray, b: np.ndarray) -> np.ndarray:
     """IoU between sets of boxes [N,4] and [M,4]."""
     if a.size == 0 or b.size == 0:
@@ -1094,25 +1210,44 @@ def load_batch(
     device: torch.device,
     rng: np.random.Generator | None = None,
     augment: bool = False,
+    mosaic_prob: float = 0.0,
 ) -> tuple[torch.Tensor, list[list[tuple[int, float, float, float, float]]]]:
-    """Load images + GT boxes in letterboxed pixel xyxy (no label assign yet)."""
+    """Load images + GT boxes in letterboxed / mosaic pixel xyxy (no label assign yet)."""
     imgs = []
     boxes_batch: list[list[tuple[int, float, float, float, float]]] = []
+    n = len(samples)
     for idx in indices:
-        img_path, lab_path = samples[idx]
-        rgb = np.asarray(Image.open(img_path).convert("RGB"), dtype=np.uint8)
-        oh, ow = rgb.shape[:2]
-        if augment and rng is not None:
-            rgb = color_jitter(rgb, rng)
-        canvas, scale, pad_x, pad_y = letterbox(rgb, size)
-        labels = load_yolo_label(lab_path)
-        boxes = boxes_to_xyxy_pixels(
-            labels, size=size, scale=scale, pad_x=pad_x, pad_y=pad_y, orig_w=ow, orig_h=oh
+        use_mosaic = (
+            augment
+            and rng is not None
+            and mosaic_prob > 0.0
+            and n >= 4
+            and float(rng.random()) < mosaic_prob
         )
+        if use_mosaic:
+            extra = [int(x) for x in rng.choice(n, size=3, replace=n < 4)]
+            canvas, boxes = mosaic4(
+                samples, [int(idx), *extra], size=size, rng=rng, augment=True
+            )
+        else:
+            img_path, lab_path = samples[idx]
+            rgb, labels, ow, oh = _load_rgb_labels(
+                img_path, lab_path, rng=rng, augment=augment
+            )
+            canvas, scale, pad_x, pad_y = letterbox(rgb, size)
+            boxes = boxes_to_xyxy_pixels(
+                labels,
+                size=size,
+                scale=scale,
+                pad_x=pad_x,
+                pad_y=pad_y,
+                orig_w=ow,
+                orig_h=oh,
+            )
         if augment and rng is not None and float(rng.random()) < 0.5:
             canvas = np.ascontiguousarray(canvas[:, ::-1, :])
             boxes = flip_lr_boxes(boxes, size)
-        tensor = torch.from_numpy(canvas).permute(2, 0, 1).float() / 255.0
+        tensor = torch.from_numpy(np.ascontiguousarray(canvas)).permute(2, 0, 1).float() / 255.0
         imgs.append(tensor)
         boxes_batch.append(boxes)
     batch = torch.stack(imgs, dim=0).to(device)
@@ -1213,6 +1348,23 @@ def main() -> None:
         help="Disable flip + color jitter on the training stream",
     )
     parser.add_argument(
+        "--mosaic-prob",
+        type=float,
+        default=0.0,
+        help="Probability of 4-tile mosaic per sample (0 disables)",
+    )
+    parser.add_argument(
+        "--mosaic-close-frac",
+        type=float,
+        default=0.15,
+        help="Disable mosaic for the last this fraction of steps (YOLOX-style)",
+    )
+    parser.add_argument(
+        "--multiscale",
+        action="store_true",
+        help=f"Random train size in {MULTISCALE_SIZES} each step (hold-out stays --size)",
+    )
+    parser.add_argument(
         "--assign",
         choices=("center", "simota"),
         default="simota",
@@ -1233,9 +1385,16 @@ def main() -> None:
 
     if args.size % 32 != 0:
         raise SystemExit("--size must be divisible by 32")
+    if not (0.0 <= args.mosaic_prob <= 1.0):
+        raise SystemExit("--mosaic-prob must be in [0, 1]")
+    if not (0.0 <= args.mosaic_close_frac < 1.0):
+        raise SystemExit("--mosaic-close-frac must be in [0, 1)")
 
     device = pick_device()
-    print(f"device={device} source={args.source} assign={args.assign}")
+    print(
+        f"device={device} source={args.source} assign={args.assign} "
+        f"mosaic_prob={args.mosaic_prob} multiscale={args.multiscale}"
+    )
 
     holdout: list[tuple[Path, Path]]
     if args.source == "coco_val":
@@ -1300,6 +1459,7 @@ def main() -> None:
     rng = np.random.default_rng(0)
     use_aug = not args.no_aug
     total_steps = args.steps
+    mosaic_close_step = int(total_steps * (1.0 - args.mosaic_close_frac))
     for step in range(start_step, total_steps):
         if (
             args.unfreeze_after >= 0
@@ -1311,21 +1471,38 @@ def main() -> None:
             frozen = False
             print(f"step {step}: unfroze backbone lr={args.backbone_lr}")
 
+        step_size = (
+            int(rng.choice(MULTISCALE_SIZES)) if args.multiscale else int(args.size)
+        )
+        mosaic_prob = (
+            float(args.mosaic_prob)
+            if use_aug and step < mosaic_close_step
+            else 0.0
+        )
+        if (
+            use_aug
+            and args.mosaic_prob > 0
+            and step == mosaic_close_step
+            and mosaic_close_step < total_steps
+        ):
+            print(f"step {step}: mosaic closed for final fine-tune")
+
         idx = rng.choice(len(train), size=args.batch, replace=len(train) < args.batch)
         images, boxes_batch = load_batch(
             train,
             [int(i) for i in idx],
-            size=args.size,
+            size=step_size,
             device=device,
             rng=rng,
             augment=use_aug,
+            mosaic_prob=mosaic_prob,
         )
         opt.zero_grad()
         preds = model(images)
         targets = assign_batch_targets(
             preds,
             boxes_batch,
-            size=args.size,
+            size=step_size,
             device=device,
             mode=args.assign,
         )
@@ -1337,7 +1514,11 @@ def main() -> None:
             torch.mps.empty_cache()
         if step % 50 == 0 or step == total_steps - 1:
             tag = "frozen" if frozen else "unfrozen"
-            print(f"step {step:5d}  loss={losses[-1]:.4f}  ({tag})", flush=True)
+            print(
+                f"step {step:5d}  loss={losses[-1]:.4f}  size={step_size}  "
+                f"mosaic={mosaic_prob:.2f}  ({tag})",
+                flush=True,
+            )
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     meta = {
@@ -1355,6 +1536,10 @@ def main() -> None:
         "num_classes": NUM_CLASSES,
         "augment": use_aug,
         "assign": args.assign,
+        "mosaic_prob": args.mosaic_prob,
+        "mosaic_close_frac": args.mosaic_close_frac,
+        "multiscale": args.multiscale,
+        "multiscale_sizes": list(MULTISCALE_SIZES) if args.multiscale else [args.size],
     }
     torch.save({"state_dict": model.state_dict(), **meta}, args.out)
     (args.out.with_suffix(".json")).write_text(
