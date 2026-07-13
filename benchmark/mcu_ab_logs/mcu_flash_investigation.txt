@@ -1,0 +1,217 @@
+MCU flash investigation — MNIST CNN int8, CMSIS-ON, NUCLEO-F446RE
+Date: 2026-07-13
+Builds (no flash/UART):
+  boards/nucleo-f446re-cnn-int8:
+    make clean && make NETKIT_REFERENCE_QUANT_LOOPS=0 NETKIT_ARENA_KB=96 -j8
+  boards/nucleo-f446re-tflm-cnn-int8:
+    make clean && make TFLM_OPT_KERNEL=cmsis_nn -j8
+
+================================================================================
+1. FLASH TOTALS (berkeley text+data = Flash)
+================================================================================
+  netkit:  text=406216  data=1760  flash=407976  (398.4 KiB)
+  TFLM:    text=361320  data=1752  flash=363072  (354.6 KiB)
+  delta:   flash=+44904             (+43.9 KiB)   ← the ~45 KiB question
+
+  section -A:
+    netkit .text=405896  .data=1760  .bss=99801 (+8KiB stack reserve)
+    TFLM   .text=361000  .data=1752  .bss=119192 (+8KiB stack reserve)
+
+  Model blobs (nearly equal — NOT the cause of the delta):
+    netkit  kNkBlob                  = 235872 B (230.34 KiB)
+    TFLM    g_mnist_cnn_int8_model_data = 235384 B (229.87 KiB)
+    delta model = +488 B
+
+  Test images (identical):
+    10 × 784 + table ≈ 7960–8279 B both sides
+
+================================================================================
+2. TOP 15 SYMBOLS
+================================================================================
+=== NETKIT ===
+  235872  (230.34 KiB)  T  netkit::aot::mnist_cnn_int8::kNkBlob
+   11148  ( 10.89 KiB)  t  d_print_comp_inner          ← C++ demangler
+    8992  (  8.78 KiB)  T  _vfprintf_r                ← pulled via demangle/sprintf
+    8688  (  8.48 KiB)  T  _svfprintf_r
+    7808  (  7.62 KiB)  T  NkLoader::LoadCNNFromBuffer
+    4744  (  4.63 KiB)  T  _vfiprintf_r
+    4264  (  4.16 KiB)  t  QuantOps::Conv2dNhwcQuantRef   ← reference fallback
+    4148  (  4.05 KiB)  T  _dtoa_r
+    3908  (  3.82 KiB)  T  CmsisQuantPlan::BuildRuntime
+    3752  (  3.66 KiB)  T  arm_nn_vec_mat_mult_t_per_ch_s8
+    3600  (  3.52 KiB)  T  arm_nn_vec_mat_mult_t_s8
+    3416  (  3.34 KiB)  T  arm_nn_softmax_common_s8
+    3084  (  3.01 KiB)  t  NkLoader::InstantiateQuantizedCNN
+    2880  (  2.81 KiB)  T  NkLoader::ParseBuffer
+    2316  (  2.26 KiB)  T  arm_nn_mat_mult_nt_t_s8
+
+=== TFLM ===
+  235384  (229.87 KiB)  T  g_mnist_cnn_int8_model_data
+    8688  (  8.48 KiB)  T  _svfprintf_r
+    7908  (  7.72 KiB)  T  arm_nn_mat_mult_nt_t_s4   ← unused s4 path still linked
+    4744  (  4.63 KiB)  T  _vfiprintf_r
+    4148  (  4.05 KiB)  T  _dtoa_r
+    3752  (  3.66 KiB)  T  arm_nn_vec_mat_mult_t_per_ch_s8
+    3600  (  3.52 KiB)  T  arm_nn_vec_mat_mult_t_s8
+    3416  (  3.34 KiB)  T  arm_nn_softmax_common_s8
+    2506  (  2.45 KiB)  T  arm_nn_mat_mult_kernel_s4_s16
+    2316  (  2.26 KiB)  T  arm_nn_mat_mult_nt_t_s8
+    2084  (  2.04 KiB)  T  arm_nn_mat_mult_kernel_s16
+    1680  (  1.64 KiB)  T  arm_nn_vec_mat_mult_t_s4
+    1598  (  1.56 KiB)  T  arm_convolve_s8
+    1432  (  1.40 KiB)  T  _malloc_r
+    1420  (  1.39 KiB)  T  tflite::CalculateSoftmaxParams
+
+================================================================================
+3. KEPT MAP OBJECT BUCKETS (VMA in Flash @ 0x0800_0000)
+================================================================================
+  bucket         NETKIT     TFLM      delta
+  model          236024    235384      +640
+  images           8279      8279         0
+  cmsis_nn        32436     41468     -9032   (TFLM keeps extra s4/s16 kernels)
+  runtime         43407     49783     -6376   (netkit runtime leaner than microlite)
+  board_app       10669     10214      +455
+  libc/libgcc     45042     32636    +12406   (extra printf path from demangle)
+  libstdc++       37923         0    +37923   ← DOMINANT
+  ------------------------------------------------
+  map sum        413804    377788    +36016
+  (map sum ≈ text+data + small overcount from section accounting)
+
+  libstdc++ breakdown (kept in flash):
+    cp-demangle.o          33020
+    eh_personality.o        1544
+    vterminate + eh_*       ~3300
+    operator new/delete      ~120
+    TOTAL                  37923
+
+================================================================================
+4. IS AOT A MAJOR AVOIDABLE BLOAT FOR INTERPRETER EMBED?
+================================================================================
+  NETKIT_LOWERED=0 (default). Makefile ALWAYS links:
+    OBJS += build/mnist_cnn_int8_aot.o
+    GEN_SOURCES := generated/mnist_cnn_int8_aot.cpp
+  AOT is generated with --no-lower (kQuantLowered=false).
+
+  What lands from mnist_cnn_int8_aot.o:
+    .rodata kNkBlob     235872 B   ← required model embed (fair vs TFLM .tflite)
+    .text Model::load       100 B
+    .text Model::forwardInt8 48 B
+    kNkBytes                  4 B
+
+  Verdict: AOT object IS linked, but for interpreter-embed it is essentially
+  the .nk blob wrapper — NOT a second full lowered codegen. Dual-shipping of
+  AOT kernels is NOT the ~45 KiB. Do not treat "don't link AOT" as removing
+  230 KiB unless you replace the blob with another embed vehicle.
+
+  However: naming/process still calls aot export for embed; a thinner
+  "embed-only" codegen (blob + accessors, no Model class) would save ~150 B
+  and clarify the build.
+
+================================================================================
+5. ROOT CAUSE OF THE ~45 KiB
+================================================================================
+  Primary (~37 KiB, avoidable):
+    quant_ops.o / nk_loader.o call operator new[] (throwing / nothrow).
+    That pulls libstdc++ new → exception personality →
+    __gnu_cxx::__verbose_terminate_handler (vterminate.o) →
+    __cxa_demangle → cp-demangle.o (~33 KiB) + extra printf/dtoa.
+
+    TFLM links -lstdc++ but GC removes nearly all of it (0 B kept).
+    Netkit app objects are compiled -fno-exceptions, but libstdc++'s
+    operator new[] still has throw paths that survive --gc-sections.
+
+  Secondary (~11 KiB, partially avoidable):
+    QuantOps reference conv/depthwise (Conv2dNhwcQuantRef etc.) remain
+    linked even with NETKIT_REFERENCE_QUANT_LOOPS=0 / CMSIS-NN on —
+    backend fallback / unresolved edges into quant_ops.cpp.
+
+  Necessary for interpreter-embed fairness (not "bloat" vs TFLM):
+    NkLoader (~18 KiB kept) ↔ TFLM MicroInterpreter + flatbuffer path
+    CmsisQuantPlan + cmsis_nn_quant_backend (~12 KiB)
+    CMSIS-NN s8 kernels (~30 KiB; TFLM actually keeps MORE cmsis)
+
+  Minor (~1–3 KiB):
+    Resolver still pulls tiny stubs from mobilenetv4_uib / resnet blocks
+    despite NETKIT_MCU_QUANT_ONLY=1 archiving those .cpp files.
+
+  NOT the cause:
+    Model size parity, test images, missing --gc-sections (both use it),
+    missing -flto (both use MCU_LDFLAGS -flto), AOT dual kernels.
+
+================================================================================
+6. AVOIDABLE BYTE ESTIMATE
+================================================================================
+  High confidence:
+    libstdc++ demangle + EH + verbose terminate     ~37–38 KiB
+    QuantOps reference kernels if CMSIS-only          ~8–11 KiB
+    Unused arch-block stubs                           ~1–3 KiB
+    AOT wrapper text (optional thin embed)            ~0.15 KiB
+  ---------------------------------------------------------------
+  Realistic reclaim vs this TFLM build:               ~40–50 KiB
+  After reclaim, netkit flash would be at or below TFLM
+  (netkit runtime+cmsis already smaller than TFLM microlite+cmsis).
+
+  Note: eliminating demangle may also drop ~8–12 KiB of the extra
+  libc printf/vfprintf that demangle pulled (libc delta +12 KiB).
+
+================================================================================
+7. CONCRETE RECOMMENDATIONS
+================================================================================
+  1. Kill the demangle chain (largest win, ~33–45 KiB with printf cascade)
+     - Replace heap new[] in MCU quant_ops / nk_loader with Arena alloc, OR
+     - Provide a freestanding operator new[] that aborts (no throw), OR
+     - Link a stub:
+         void __gnu_cxx::__verbose_terminate_handler() { abort(); }
+       so vterminate/cp-demangle are never referenced, OR
+     - Prefer -specs=nano.specs and ensure no iostream/locale from
+       tensor_factory/nk_loader (they currently U-ref basic_ios::clear).
+
+  2. When NETKIT_REFERENCE_QUANT_LOOPS=0, do not retain QuantOps *QuantRef
+     symbols — split CMSIS-only TU or guard reference defs so --gc-sections
+     can drop them (~10 KiB).
+
+  3. Interpreter embed does NOT need to "stop linking AOT" for flash;
+     keep blob embed. Optionally rename export-embed to emit blob-only
+     .c/.S to avoid confusion. NETKIT_LOWERED=1 is the path that removes
+     NkLoader (trade interpreter fairness for size).
+
+  4. Already OK: -ffunction-sections / -fdata-sections / -Wl,--gc-sections
+     / -flto are on both builds. CMSIS archive has 51 objs; GC keeps ~27
+     s8 members — fine. TFLM actually wastes more on s4/s16 CMSIS.
+
+  5. Optional: stop archiving yolox/mobilenet/resnet/convnext sources under
+     NETKIT_MCU_QUANT_ONLY=1 (or make resolver registration explicit) to
+     drop residual stubs and speed links.
+
+  6. Test images (~8 KiB) are shared cost; compress/omit only if both sides
+     change — not an A/B fairness win alone.
+
+================================================================================
+8. Makefile NOTES (step 4)
+================================================================================
+  NETKIT_LOWERED ?= 0          → interpreter embed (--no-lower)
+  NETKIT_CMSIS_NN forced 1 when REFERENCE_QUANT_LOOPS=0
+  NETKIT_MCU_QUANT_ONLY ?= 1   → smaller source set, but still includes
+                                 quant_ops, nk_loader, cmsis_* , cnn*,
+                                 ops_resolver, and several arch block .cpp
+  GEN/AOT always in OBJS       → yes, but blob-only cost for LOWERED=0
+  Full default resolver        → archived; GC removes most unused ops
+  libnetkit is a .a of .o      → GC works; unused CMSIS mostly discarded
+
+================================================================================
+9. ONE-LINE ROOT CAUSE
+================================================================================
+  The extra ~44 KiB is almost entirely avoidable C++ runtime bloat:
+  operator new[] → libstdc++ verbose terminate → __cxa_demangle
+  (~33 KiB demangler + printf), plus ~10 KiB of QuantOps reference
+  fallbacks — not the model blob and not dual-linked AOT kernels.
+
+
+## Fix applied (Jul 2026) — MCU no-heap + flash reclaim
+- Buffer/flash loads zero-copy per-channel weight scales (no new[] in nk_loader)
+- NETKIT_HEAP_ARENA forbidden on MCU; aborting operator new/malloc + _sbrk ENOMEM
+- NETKIT_MCU_CMSIS_ONLY strips QuantOps::*QuantRef (~8–11 KiB)
+- NETKIT_DISABLE_IOSTREAM default on MCU
+- CNN int8 CMSIS ON after fix: text+data ≈ 346.7 KiB (was ≈ 398.4 KiB; TFLM ≈ 354.6 KiB)
+- __cxa_demangle gone from ELF
+appended investigation note

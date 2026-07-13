@@ -23,6 +23,8 @@ namespace QuantOps
 {
 namespace
 {
+#if !NETKIT_MCU_CMSIS_ONLY
+#if !defined(NETKIT_CLASS_MCU)
     // TF Lite Prepare-style: fill per-channel (or broadcast per-tensor) multipliers once.
     bool FillEffectiveMultipliers(const NkFormat::MlpLayerQuantDesc& quant,
                                   uint32_t channels,
@@ -67,8 +69,10 @@ namespace
         }
         return true;
     }
+#endif
 
-    // Prefer caller-provided plan multipliers; otherwise heap-fill once per call.
+    // Prefer caller-provided plan multipliers; otherwise heap-fill once per call
+    // (CPU/MPU only). MCU never allocates — plan must supply multipliers.
     bool ResolveMultipliers(const NkFormat::MlpLayerQuantDesc& quant,
                             uint32_t channels,
                             const int32_t* in_multipliers,
@@ -83,6 +87,12 @@ namespace
             *out_shifts = in_shifts;
             return true;
         }
+#if defined(NETKIT_CLASS_MCU)
+        (void)quant;
+        (void)channels;
+        (void)owned;
+        return false;
+#else
         owned.reset(new int32_t[static_cast<std::size_t>(channels) * 2u]);
         int32_t* m = owned.get();
         int32_t* s = m + channels;
@@ -91,6 +101,7 @@ namespace
         *out_multipliers = m;
         *out_shifts = s;
         return true;
+#endif
     }
 
     // Fully-valid output range where every kernel tap is in-bounds (no pad checks).
@@ -122,6 +133,7 @@ namespace
         *lo_exclusive_hi_hi = hi;
     }
 
+#if !defined(NETKIT_CLASS_MCU)
     // bias' = bias + input_offset * sum(filter)  (weight_zp == 0). Bit-exact with
     // acc += filter * (input + input_offset) when every tap is applied (interior or
     // pad==0). Border pixels with skip-OOB still use the original bias + offset MAC.
@@ -141,6 +153,7 @@ namespace
             bias_folded[oc] = bias[oc] + input_offset * sum;
         }
     }
+#endif
 
     const int32_t* ResolveBiasInterior(const int32_t* bias,
                                        const int32_t* bias_folded_plan,
@@ -155,10 +168,19 @@ namespace
             return bias;
         if (bias_folded_plan)
             return bias_folded_plan;
+#if defined(NETKIT_CLASS_MCU)
+        // No heap scratch on MCU — keep original bias; callers use offset MAC.
+        (void)weights;
+        (void)out_channels;
+        (void)filter_elems;
+        (void)scratch;
+        return bias;
+#else
         scratch->reset(new int32_t[out_channels]);
         FoldInputOffsetIntoBias(
             weights, bias, out_channels, filter_elems, input_offset, scratch->get());
         return scratch->get();
+#endif
     }
 
     // Fast path: 1x1 conv, no padding — dominant UIB expand/proj shape.
@@ -927,6 +949,7 @@ namespace
             }
         }
     }
+#endif // !NETKIT_MCU_CMSIS_ONLY
 }  // namespace
 
     void FullyConnectedQuant(const int8_t* input,
@@ -974,6 +997,7 @@ namespace
             return;
         }
 #endif
+#if !NETKIT_MCU_CMSIS_ONLY
         QuantTrace::RecordFcReference();
 
         // Int8→int8 only: integer multiply-by-quantized-multiplier (no float requantize/dequant).
@@ -1016,6 +1040,13 @@ namespace
                                baked_max,
                                output_int8,
                                bias_folded);
+#else
+        (void)multipliers;
+        (void)shifts;
+        (void)act_min;
+        (void)act_max;
+        (void)bias_folded;
+#endif
     }
 
     void ForwardQuantizedDense(const Tensor& input,
@@ -1136,6 +1167,7 @@ namespace
             wrote = true;
         }
 #endif
+#if !NETKIT_MCU_CMSIS_ONLY
         if (!wrote)
         {
             QuantTrace::RecordConv2dReference();
@@ -1189,6 +1221,14 @@ namespace
                                output,
                                bias_folded);
         }
+#else
+        (void)wrote;
+        (void)multipliers;
+        (void)shifts;
+        (void)act_min;
+        (void)act_max;
+        (void)bias_folded;
+#endif
 
         if (residual && residual->data)
         {
@@ -1283,6 +1323,7 @@ namespace
             return;
         }
 #endif
+#if !NETKIT_MCU_CMSIS_ONLY
         QuantTrace::RecordConv2dReference();
         const uint32_t out_h =
             nk_op_detail::CalcOutputDimAsymmetric(in_h, kernel_h, stride, pad_h, pad_h_end);
@@ -1332,6 +1373,15 @@ namespace
                                     baked_max,
                                     output,
                                     bias_folded);
+#else
+        (void)pad_h_end;
+        (void)pad_w_end;
+        (void)multipliers;
+        (void)shifts;
+        (void)act_min;
+        (void)act_max;
+        (void)bias_folded;
+#endif
     }
 
     void MaxPool2dNhwcQuant(const int8_t* input,

@@ -11,6 +11,7 @@
 #include <cstdio>
 #include <cstring>
 #include <new>
+#include <tuple>
 #ifndef NETKIT_DISABLE_IOSTREAM
 #include <iostream>
 #endif
@@ -23,7 +24,9 @@ namespace NkLoader
 
         void FreeWeightChannelScaleBlob(ParsedModel& parsed)
         {
+#if !defined(NETKIT_CLASS_MCU)
             delete[] parsed.weight_channel_scale_blob;
+#endif
             parsed.weight_channel_scale_blob = nullptr;
             parsed.weight_channel_scale_floats = 0;
             for (uint32_t i = 0; i < parsed.num_quant_layers; ++i)
@@ -35,8 +38,14 @@ namespace NkLoader
 
         bool RelocateWeightChannelScalesToArena(ParsedModel& parsed, Arena& arena)
         {
+            // Flash / buffer zero-copy: scales already point into the .nk image.
             if (!parsed.weight_channel_scale_blob || parsed.weight_channel_scale_floats == 0)
                 return true;
+#if defined(NETKIT_CLASS_MCU)
+            (void)arena;
+            // MCU never heap-owns scales; blob must stay null.
+            return false;
+#else
             float* arena_blob = static_cast<float*>(arena.alloc(
                 parsed.weight_channel_scale_floats * sizeof(float), alignof(float)));
             if (!arena_blob)
@@ -58,6 +67,7 @@ namespace NkLoader
             parsed.weight_channel_scale_blob = nullptr;
             parsed.weight_channel_scale_floats = 0;
             return true;
+#endif
         }
 
         void SetError(const char* message)
@@ -773,8 +783,10 @@ namespace NkLoader
             if ((quan_flags & NkFormat::kQuanFlagPerChannelWeights) != 0)
             {
                 // Layout matches pack_quant_section: per layer u32 n_ch + float32[n_ch].
+                // Zero-copy into the caller buffer / flash image — no heap, no arena copy.
                 uint32_t counts[NkFormat::kMaxLayers]{};
                 std::size_t total = 0;
+                const std::size_t scales_start = cursor.pos;
                 for (uint32_t i = 0; i < num_layers; ++i)
                 {
                     uint32_t n_ch = 0;
@@ -785,42 +797,25 @@ namespace NkLoader
                     if (!CursorAdvance(cursor, static_cast<std::size_t>(n_ch) * sizeof(float)))
                         return false;
                 }
-                // Rewind to the start of the per-channel blob and load into one heap array.
-                std::size_t rewind = 0;
+                if (total == 0)
+                    return true;
+
+                cursor.pos = scales_start;
                 for (uint32_t i = 0; i < num_layers; ++i)
-                    rewind += sizeof(uint32_t) + static_cast<std::size_t>(counts[i]) * sizeof(float);
-                if (cursor.pos < rewind)
-                    return false;
-                cursor.pos -= rewind;
-                if (total > 0)
                 {
-                    // Owned for ParsedModel lifetime; Instantiate copies into Arena.
-                    float* blob = new (std::nothrow) float[total];
-                    if (!blob)
+                    uint32_t n_ch = 0;
+                    if (!CursorReadU32(cursor, n_ch) || n_ch != counts[i])
                         return false;
-                    std::size_t offset = 0;
-                    for (uint32_t i = 0; i < num_layers; ++i)
-                    {
-                        uint32_t n_ch = 0;
-                        if (!CursorReadU32(cursor, n_ch) || n_ch != counts[i])
-                        {
-                            delete[] blob;
-                            return false;
-                        }
-                        if (n_ch == 0)
-                            continue;
-                        if (!CursorReadExact(cursor, blob + offset, n_ch * sizeof(float)))
-                        {
-                            delete[] blob;
-                            return false;
-                        }
-                        out.layer_quant[i].weight_channel_scales = blob + offset;
-                        out.layer_quant[i].num_weight_channel_scales = n_ch;
-                        offset += n_ch;
-                    }
-                    out.weight_channel_scale_blob = blob;
-                    out.weight_channel_scale_floats = total;
+                    if (n_ch == 0)
+                        continue;
+                    out.layer_quant[i].weight_channel_scales =
+                        reinterpret_cast<const float*>(cursor.data + cursor.pos);
+                    out.layer_quant[i].num_weight_channel_scales = n_ch;
+                    if (!CursorAdvance(cursor, static_cast<std::size_t>(n_ch) * sizeof(float)))
+                        return false;
                 }
+                out.weight_channel_scale_blob = nullptr;
+                out.weight_channel_scale_floats = 0;
             }
             return true;
         }
@@ -894,6 +889,11 @@ namespace NkLoader
                     return false;
                 if (total > 0)
                 {
+#if defined(NETKIT_CLASS_MCU)
+                    // MCU: no heap. Load quantized models from a flash buffer instead.
+                    (void)counts;
+                    return false;
+#else
                     float* blob = new (std::nothrow) float[total];
                     if (!blob)
                         return false;
@@ -919,6 +919,7 @@ namespace NkLoader
                     }
                     out.weight_channel_scale_blob = blob;
                     out.weight_channel_scale_floats = total;
+#endif
                 }
             }
             return true;

@@ -113,7 +113,7 @@ Default capacities by build target (`NK_ARENA_DEFAULT_CAPACITY`):
 | Target | Default | Backing |
 |--------|---------|---------|
 | CPU | 64 MiB | Heap by default (`NETKIT_ARENA_HEAP`); optional static via `NETKIT_GLOBAL_ARENA=1` |
-| MCU | 64 KiB | Caller-owned static/global buffer |
+| MCU | 64 KiB | Caller-owned static/global buffer only — **no heap ever** |
 | MPU | 64 MiB | Caller-owned static/global buffer; optional heap via `NETKIT_HEAP_ARENA=1` |
 
 Full details: [BUILD_TARGETS.md](BUILD_TARGETS.md), [ARENA.md](ARENA.md).

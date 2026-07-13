@@ -2,20 +2,12 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
-extern int _end;
-
 void* _sbrk(int incr)
 {
-    static unsigned char* heap_end = 0;
-    unsigned char* prev_heap_end;
-
-    if (heap_end == 0)
-    {
-        heap_end = (unsigned char*)&_end;
-    }
-    prev_heap_end = heap_end;
-    heap_end += incr;
-    return prev_heap_end;
+    /* MCU policy: no heap. Refuse growth so malloc/new cannot succeed quietly. */
+    (void)incr;
+    errno = ENOMEM;
+    return (void*)-1;
 }
 
 int _close(int fd)

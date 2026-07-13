@@ -1,0 +1,44 @@
+# NUCLEO-F446RE MNIST int8 A/B (netkit vs TFLM)
+# Board: STM32F446RE, Cortex-M4F, 512 KiB flash
+# Methodology: UART BENCHMARK_SUMMARY; 10 runs × 10 images; discard first invoke
+# No XNNPACK. Gain = TFLM / netkit (>1 ⇒ netkit faster / smaller).
+# Flash/RAM sizes measured after MCU no-heap / demangle reclaim (Jul 2026).
+# Only models that fit on-device are listed.
+
+## Latency (all 10/10)
+
+| Model | Mode | netkit | TFLM | Gain (TFLM÷nk) |
+|-------|------|--------|------|----------------|
+| MNIST CNN | CMSIS-NN | 95.3 ms | 95.5 ms | 1.00× |
+| MNIST CNN | reference | 394 ms | 2594 ms | 6.59× |
+| MNIST DS-CNN | CMSIS-NN | 58.3 ms | 61.4 ms | 1.05× |
+| MNIST DS-CNN | reference | 129 ms | 827 ms | 6.41× |
+
+## Flash / RAM (post no-heap fix)
+
+flash = text+data; ram = data+bss. netkit arena NETKIT_ARENA_KB=96.
+
+| Model | Mode | netkit flash | TFLM flash | flash gain | netkit RAM | TFLM RAM | RAM gain |
+|-------|------|-------------:|-----------:|-----------:|-----------:|---------:|---------:|
+| MNIST CNN | CMSIS-NN | 346.7 KiB | 354.6 KiB | 1.02× | 107.1 KiB | 126.1 KiB | 1.18× |
+| MNIST CNN | reference | 327.9 KiB | 324.2 KiB | 0.99× | 107.1 KiB | 126.1 KiB | 1.18× |
+| MNIST DS-CNN | CMSIS-NN | 332.3 KiB | 360.5 KiB | 1.09× | 107.1 KiB | 126.1 KiB | 1.18× |
+| MNIST DS-CNN | reference | 313.6 KiB | 317.9 KiB | 1.01× | 107.1 KiB | 126.1 KiB | 1.18× |
+
+## Raw size lines (bytes)
+
+netkit_cnn_cmsis text=353280 data=1748 bss=107952 flash=355028 ram=109700
+netkit_cnn_ref text=334112 data=1748 bss=107952 flash=335860 ram=109700
+tflm_cnn_cmsis text=361320 data=1752 bss=127384 flash=363072 ram=129136
+tflm_cnn_ref text=330248 data=1752 bss=127384 flash=332000 ram=129136
+netkit_cnn_dw_cmsis text=338576 data=1748 bss=107952 flash=340324 ram=109700
+netkit_cnn_dw_ref text=319424 data=1748 bss=107952 flash=321172 ram=109700
+tflm_cnn_dw_cmsis text=367432 data=1752 bss=127384 flash=369184 ram=129136
+tflm_cnn_dw_ref text=323768 data=1752 bss=127384 flash=325520 ram=129136
+
+## UART logs
+
+netkit_cnn_int8_cmsis.log / netkit_cnn_int8_ref.log
+tflm_cnn_int8_cmsis.log / tflm_cnn_int8_ref.log
+netkit_cnn_dw_int8_cmsis.log / netkit_cnn_dw_int8_ref.log
+tflm_cnn_dw_int8_cmsis.log / tflm_cnn_dw_int8_ref.log

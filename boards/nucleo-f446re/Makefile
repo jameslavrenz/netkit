@@ -90,7 +90,8 @@ endif
 CFLAGS := $(MCU_CORE_CFLAGS) $(MCU_DEBUG_FLAGS) $(INCLUDES) $(NETKIT_CPPFLAGS)
 CXXFLAGS := $(MCU_CORE_CXXFLAGS) $(MCU_DEBUG_FLAGS) $(INCLUDES) $(NETKIT_CPPFLAGS)
 ASFLAGS := $(MCU_ASFLAGS) $(MCU_DEBUG_FLAGS)
-LDFLAGS := $(MCU_LDFLAGS) $(NETKIT_CPPFLAGS) -T$(LINKER_SCRIPT) -Wl,-Map=$(BUILD_DIR)/$(TARGET).map
+LDFLAGS := $(MCU_LDFLAGS) $(NETKIT_CPPFLAGS) -T$(LINKER_SCRIPT) -Wl,-Map=$(BUILD_DIR)/$(TARGET).map \
+	-Wl,-u,malloc -Wl,-u,_Znwj -Wl,-u,_Znaj
 
 LIBNETKIT := $(LIB_DIR)/libnetkit_mnist_mlp.a
 
@@ -138,6 +139,7 @@ OBJS := \
 	$(BUILD_DIR)/uart.o \
 	$(BUILD_DIR)/dwt_time.o \
 	$(BUILD_DIR)/syscalls.o \
+	$(BUILD_DIR)/netkit_mcu_no_heap.o \
 	$(BUILD_DIR)/main.o \
 	$(BUILD_DIR)/mnist_test_images.o \
 	$(BUILD_DIR)/mnist_mlp_aot.o
@@ -149,6 +151,10 @@ $(BUILD_DIR)/startup.o: startup/startup_stm32f446xx.S
 $(BUILD_DIR)/syscalls.o: src/syscalls.c
 	@mkdir -p $(BUILD_DIR)
 	$(CC) $(CFLAGS) -fno-lto -c $< -o $@
+
+$(BUILD_DIR)/netkit_mcu_no_heap.o: src/netkit_mcu_no_heap.cpp
+	@mkdir -p $(BUILD_DIR)
+	$(CXX) $(CXXFLAGS) -fno-lto -c $< -o $@
 
 $(BUILD_DIR)/%.o: src/%.c
 	@mkdir -p $(BUILD_DIR)

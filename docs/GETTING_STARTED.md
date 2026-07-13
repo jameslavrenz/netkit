@@ -93,7 +93,8 @@ Platform maturity: [STATUS.md](STATUS.md).
 | Target | `NK_ARENA_DEFAULT_CAPACITY` | Arena backing |
 |--------|------------------------------|---------------|
 | CPU | **64 MiB** | **Heap** (default); `NETKIT_GLOBAL_ARENA=1` for static buffer |
-| MCU | **64 KiB** | Your static/global buffer; `NETKIT_HEAP_ARENA=1` for optional heap API |
+| MCU | **64 KiB** | Your static/global buffer only — **no heap** (`malloc`/`new` forbidden) |
+| MPU | **64 MiB** | Your static/global buffer; `NETKIT_HEAP_ARENA=1` for optional heap API |
 | MPU | **64 MiB** | Same as MCU (caller-owned buffer; size with inspect) |
 
 ```bash

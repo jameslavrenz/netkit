@@ -129,24 +129,29 @@ With XNNPACK ON, im2col does not move the needle (accelerated path ignores it). 
 
 ### MCU (NUCLEO-F446RE)
 
-UART A/B logs: `benchmark/mcu_ab_logs/` (10 runs × 10 images; discard first invoke each run).
+UART A/B logs + tables: `benchmark/mcu_ab_logs/` (10×10 methodology; discard first invoke). Gain = TFLM÷netkit. Flash/RAM after MCU **no-heap** reclaim (weights flash zero-copy; no `new`/`malloc`; demangle stripped).
 
-| Board / backend | Mean invoke | Acc |
-|-----------------|-------------|-----|
-| MNIST CNN int8 — netkit CMSIS-NN | **~95.3 ms** | 10/10 |
-| MNIST CNN int8 — netkit reference | **~394 ms** | 10/10 |
-| MNIST CNN int8 — TFLM CMSIS-NN | **~95.5 ms** | 10/10 |
-| MNIST CNN int8 — TFLM reference | **~2594 ms** | 10/10 |
-| MNIST DS-CNN int8 — netkit CMSIS-NN | **~58.3 ms** | 10/10 |
-| MNIST DS-CNN int8 — netkit reference | **~129 ms** | 10/10 |
-| MNIST DS-CNN int8 — TFLM CMSIS-NN | **~61.4 ms** | 10/10 |
-| MNIST DS-CNN int8 — TFLM reference | **~827 ms** | 10/10 |
-| MNIST MLP int8 (CMSIS-NN) | ~3.4 ms | 10/10 |
-| XNNPACK in MCU ELF | **None** — `nm` shows no `xnn*` / XNNPACK symbols on nucleo CNN int8 firmware | — |
+**Latency** (all 10/10, no XNNPACK):
 
-Boards: `nucleo-f446re-cnn-int8` / `nucleo-f446re-tflm-cnn-int8`; DS-CNN twins `nucleo-f446re-cnn-dw-int8` / `nucleo-f446re-tflm-cnn-dw-int8` (netkit arena **96 KiB**).
+| Model | Mode | netkit | TFLM | Gain |
+|-------|------|--------|------|------|
+| MNIST CNN | CMSIS-NN | **95.3 ms** | 95.5 ms | **1.00×** |
+| MNIST CNN | reference | **394 ms** | 2594 ms | **6.59×** |
+| MNIST DS-CNN | CMSIS-NN | **58.3 ms** | 61.4 ms | **1.05×** |
+| MNIST DS-CNN | reference | **129 ms** | 827 ms | **6.41×** |
 
-**Float32 MNIST CNN / DS-CNN on this MCU:** **deferred — flash.** `mnist_cnn.nk` ≈ 933 KiB and `mnist_cnn_dw.nk` ≈ 870 KiB exceed the STM32F446RE **512 KiB** flash (same class of limit as float32 MNv4). On-device digit CNN peers remain **int8**. Float32 MCU path stays reference kernels only (no XNNPACK); CMSIS-NN production acceleration is **int8**.
+**Flash / RAM** (`NETKIT_ARENA_KB=96`):
+
+| Model | Mode | netkit flash | TFLM flash | flash gain | netkit RAM | TFLM RAM | RAM gain |
+|-------|------|-------------:|-----------:|-----------:|-----------:|---------:|---------:|
+| MNIST CNN | CMSIS-NN | **346.7 KiB** | 354.6 KiB | **1.02×** | 107.1 KiB | 126.1 KiB | **1.18×** |
+| MNIST CNN | reference | **327.9 KiB** | 324.2 KiB | 0.99× | 107.1 KiB | 126.1 KiB | **1.18×** |
+| MNIST DS-CNN | CMSIS-NN | **332.3 KiB** | 360.5 KiB | **1.09×** | 107.1 KiB | 126.1 KiB | **1.18×** |
+| MNIST DS-CNN | reference | **313.6 KiB** | 317.9 KiB | **1.01×** | 107.1 KiB | 126.1 KiB | **1.18×** |
+
+Boards: `nucleo-f446re-cnn-int8` / `nucleo-f446re-tflm-cnn-int8`; DS-CNN twins `nucleo-f446re-cnn-dw-int8` / `nucleo-f446re-tflm-cnn-dw-int8`. MLP int8 CMSIS ~3.4 ms (10/10). XNNPACK: **none** on MCU ELFs.
+
+**MCU heap policy:** forbidden forever (`NETKIT_HEAP_ARENA` error; aborting `new`/`malloc`; static arena only).
 
 ## What “done” means here
 

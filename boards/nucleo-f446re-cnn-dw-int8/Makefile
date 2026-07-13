@@ -209,6 +209,7 @@ BOARD_C_SOURCES := \
 
 BOARD_CXX_SOURCES := \
 	src/main.cpp \
+	$(BOARD_COMMON)/src/netkit_mcu_no_heap.cpp \
 	$(NETKIT_ROOT)/benchmark/tflm/generated/cnn_dw/mnist_cnn_int8_test_images.cc
 
 BOARD_ASM_SOURCES := $(BOARD_COMMON)/startup/startup_stm32f446xx.S
@@ -219,7 +220,8 @@ GEN_SOURCES := \
 CFLAGS := $(MCU_CORE_CFLAGS) $(MCU_DEBUG_FLAGS) $(INCLUDES) $(NETKIT_CPPFLAGS)
 CXXFLAGS := $(MCU_CORE_CXXFLAGS) $(MCU_DEBUG_FLAGS) $(INCLUDES) $(NETKIT_CPPFLAGS)
 ASFLAGS := $(MCU_ASFLAGS) $(MCU_DEBUG_FLAGS)
-LDFLAGS := $(MCU_LDFLAGS) $(NETKIT_CPPFLAGS) -T$(LINKER_SCRIPT) -Wl,-Map=$(BUILD_DIR)/$(TARGET).map
+LDFLAGS := $(MCU_LDFLAGS) $(NETKIT_CPPFLAGS) -T$(LINKER_SCRIPT) -Wl,-Map=$(BUILD_DIR)/$(TARGET).map \
+	-Wl,-u,malloc -Wl,-u,_Znwj -Wl,-u,_Znaj
 
 LIBNETKIT := $(LIB_DIR)/libnetkit_cnn_dw_int8.a
 
@@ -276,6 +278,7 @@ OBJS := \
 	$(BUILD_DIR)/uart.o \
 	$(BUILD_DIR)/dwt_time.o \
 	$(BUILD_DIR)/syscalls.o \
+	$(BUILD_DIR)/netkit_mcu_no_heap.o \
 	$(BUILD_DIR)/main.o \
 	$(BUILD_DIR)/mnist_cnn_int8_test_images.o \
 	$(BUILD_DIR)/mnist_cnn_dw_int8_aot.o
@@ -299,6 +302,10 @@ $(BUILD_DIR)/dwt_time.o: $(BOARD_COMMON)/src/dwt_time.c
 $(BUILD_DIR)/syscalls.o: $(BOARD_COMMON)/src/syscalls.c
 	@mkdir -p $(BUILD_DIR)
 	$(CC) $(CFLAGS) -fno-lto -c $< -o $@
+
+$(BUILD_DIR)/netkit_mcu_no_heap.o: $(BOARD_COMMON)/src/netkit_mcu_no_heap.cpp
+	@mkdir -p $(BUILD_DIR)
+	$(CXX) $(CXXFLAGS) -fno-lto -c $< -o $@
 
 $(BUILD_DIR)/main.o: src/main.cpp $(GEN_DIR)/mnist_cnn_dw_int8_aot.hpp
 	@mkdir -p $(BUILD_DIR)

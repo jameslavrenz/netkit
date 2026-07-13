@@ -62,8 +62,8 @@ MCU builds also add `-Ithird_party/CMSIS-Core/CMSIS/Core/Include` when that dire
 | Target | Default arena | Override flag |
 |--------|---------------|---------------|
 | **CPU** | **Heap** (`malloc` backing via `nk_arena_init_heap` / `Arena::init_heap`) | `NETKIT_GLOBAL_ARENA=1` → static/global buffer only |
-| **MCU** | **Global/static** (`nk_arena_init` with your buffer) | `NETKIT_HEAP_ARENA=1` → also compile heap helpers |
-| **MPU** | **Global/static** (same as MCU) | `NETKIT_HEAP_ARENA=1` → also compile heap helpers |
+| **MCU** | **Global/static only** (`nk_arena_init` with your buffer). **No heap ever** — `malloc` / `new` / `delete` / `free` are forbidden; weights stay in the flash `.nk` image | — |
+| **MPU** | **Global/static** (same as MCU default) | `NETKIT_HEAP_ARENA=1` → also compile heap helpers |
 
 Compile-time macros (from `include/netkit_config.h`):
 
@@ -77,8 +77,10 @@ Compile-time macros (from `include/netkit_config.h`):
 | `NETKIT_CLASS_MCU` / `NETKIT_CLASS_MPU` | Firmware class (arena / lean API) |
 | `NETKIT_ISA_ARM` / `NETKIT_ISA_RISC` | Instruction-set family (backend policy) |
 | `NETKIT_DESKTOP` | CPU only — CLI, regression, debug tooling |
-| `NETKIT_ARENA_HEAP` | Heap arena API compiled in (CPU default; MCU/MPU when opted in) |
+| `NETKIT_ARENA_HEAP` | Heap arena API compiled in (CPU default; MPU when opted in; **never MCU**) |
 | `NETKIT_GLOBAL_ARENA` | CPU only — force global/static arena instead of heap default |
+| `NETKIT_MCU_CMSIS_ONLY` | MCU + CMSIS production path — QuantOps reference loops omitted (flash) |
+| `NETKIT_DISABLE_IOSTREAM` | Default on MCU — keeps iostream out of flash |
 | `NETKIT_USE_CMSIS_NN` | CMSIS-NN backends enabled (see CMSIS section) |
 | `NETKIT_IM2COL` | Conv2D strategy for **float reference** and **int8 QuantOps** only: `0` = direct loops, `1` = partial im2col, `2` = full im2col + GEMM. **Default `0` on cpu / MCU / MPU.** CMSIS-NN and XNNPACK ignore this knob. Prefer leaving `0`; at most try `1` on MCU or on MPU/cpu when XNNPACK is off (small bump possible). Avoid `2` unless profiling shows a clear win. See guidance below. |
 | `NETKIT_LOOP_UNROLL` | `1` — **experimental** 4× manual loop unroll in **netkit reference kernels** only (default **0**). Increases `.text` size; can exceed flash on small MCUs. Does not affect CMSIS (`ARM_MATH_LOOPUNROLL` is separate). |
@@ -139,15 +141,13 @@ make NETKIT_TARGET=mpu_arm lib
 make NETKIT_ARCH=CM4 NETKIT_TARGET=mcu_arm NETKIT_CMSIS_NN=1 lib
 make NETKIT_ARCH=M33 NETKIT_TARGET=mcu_arm NETKIT_CMSIS_NN=1 lib
 
-# MCU/MPU with optional heap arena API
-make NETKIT_TARGET=mcu_arm NETKIT_HEAP_ARENA=1 lib
+# MPU with optional heap arena API (MCU forbids heap)
 make NETKIT_TARGET=mpu_arm NETKIT_HEAP_ARENA=1 lib
 
 # Convenience aliases
 make cpu              # NETKIT_TARGET=cpu (heap default)
 make cpu-global       # NETKIT_TARGET=cpu NETKIT_GLOBAL_ARENA=1
 make mcu-arm              # NETKIT_TARGET=mcu_arm lib
-make mcu-arm-heap         # NETKIT_TARGET=mcu_arm NETKIT_HEAP_ARENA=1 lib
 make mpu-arm              # NETKIT_TARGET=mpu_arm lib
 make mpu-arm-heap         # NETKIT_TARGET=mpu_arm NETKIT_HEAP_ARENA=1 lib
 make mcu-risc             # NETKIT_TARGET=mcu_risc lib (generic kernels)

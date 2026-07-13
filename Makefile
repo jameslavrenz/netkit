@@ -13,7 +13,8 @@
 #
 # Arena overrides:
 #   NETKIT_GLOBAL_ARENA=1  — CPU only: use static/global arena instead of heap default
-#   NETKIT_HEAP_ARENA=1    — MCU/MPU class: compile heap arena helpers (off by default)
+# NETKIT_HEAP_ARENA=1    — MPU class only: compile heap arena helpers (off by default).
+#                          Forbidden on MCU (static/global arena only; no malloc/new).
 #   NETKIT_ARENA_CAPACITY=<bytes> — override NK_ARENA_DEFAULT_CAPACITY (MCU default 64 KiB;
 #                                   CPU/MPU default 64 MiB). Alternate: NETKIT_ARENA_KB=<KiB>.
 #
@@ -242,7 +243,7 @@ else ifeq ($(NETKIT_TARGET),mcu_arm)
   BUILD_CLI = 0
   BUILD_C_TESTS = 0
   ifeq ($(NETKIT_HEAP_ARENA),1)
-    TARGET_CPPFLAGS += -DNETKIT_HEAP_ARENA=1
+    $(error NETKIT_HEAP_ARENA is forbidden on MCU — use a static/global arena buffer)
   endif
 else ifeq ($(NETKIT_TARGET),mpu_arm)
   TARGET_CPPFLAGS += -DNETKIT_TARGET_MPU_ARM=1
@@ -258,7 +259,7 @@ else ifeq ($(NETKIT_TARGET),mcu_risc)
   BUILD_CLI = 0
   BUILD_C_TESTS = 0
   ifeq ($(NETKIT_HEAP_ARENA),1)
-    TARGET_CPPFLAGS += -DNETKIT_HEAP_ARENA=1
+    $(error NETKIT_HEAP_ARENA is forbidden on MCU — use a static/global arena buffer)
   endif
 else ifeq ($(NETKIT_TARGET),mpu_risc)
   TARGET_CPPFLAGS += -DNETKIT_TARGET_MPU_RISC=1
@@ -345,7 +346,7 @@ $(NETKIT_BUILD_STAMP):
 .PHONY: all lib clean rebuild test test-full test-cpp test-c test-python test-python-full run example-c example-cpp examples \
         export-mnist export-mnist-int8 export-mnist-cnn export-mnist-all export-op-matrix \
         export-nk build-all embed-tests cmsis-nn-init cmsis-init \
-        cpu cpu-global mcu-arm mcu-arm-heap mpu-arm mpu-arm-heap mcu-risc mpu-risc \
+        cpu cpu-global mcu-arm mpu-arm mpu-arm-heap mcu-risc mpu-risc \
         embedded-smoke test-embedded-smoke test-embedded-smoke-matrix trim-lib check-trim-lib
 
 ifeq ($(BUILD_CLI),1)
@@ -484,9 +485,6 @@ cpu-global:
 
 mcu-arm:
 	$(MAKE) NETKIT_TARGET=mcu_arm lib
-
-mcu-arm-heap:
-	$(MAKE) NETKIT_TARGET=mcu_arm NETKIT_HEAP_ARENA=1 lib
 
 mpu-arm:
 	$(MAKE) NETKIT_TARGET=mpu_arm lib

@@ -53,9 +53,10 @@ namespace NkLoader
         bool has_quant = false;
         uint32_t num_quant_layers = 0;
         NkFormat::MlpLayerQuantDesc layer_quant[NkFormat::kMaxLayers]{};
-        // Heap-owned per-channel weight scales (optional QUAN flag). ParseFile
-        // allocates; LoadCNN relocates into the Arena and clears this pointer.
-        // Call FreeParsedModelExtras (or delete[] the blob) if you only ParseFile.
+        // Heap-owned per-channel weight scales (optional QUAN flag) — CPU/MPU
+        // ParseFile only. Buffer/flash loads zero-copy into the .nk image and
+        // leave this nullptr (MCU never allocates). LoadCNN relocates a heap
+        // blob into the Arena when present; flash pointers stay in place.
         float* weight_channel_scale_blob = nullptr;
         std::size_t weight_channel_scale_floats = 0;
         std::size_t payload_offset = 0;

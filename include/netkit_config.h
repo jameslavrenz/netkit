@@ -33,8 +33,11 @@
  * Arena backing (override via Makefile):
  *   CPU default  — one heap malloc per session; free when session ends.
  *                  Set NETKIT_GLOBAL_ARENA=1 for static/global only (no heap).
- *   MCU / MPU default — caller-owned static/global buffer via nk_arena_init().
- *                       NETKIT_HEAP_ARENA=1 allows one init_heap() at startup.
+ *   MCU default  — caller-owned static/global buffer via nk_arena_init() only.
+ *                  Heap is forbidden forever (no malloc/new/delete/free).
+ *                  Weights stay in the flash .nk image; arena holds activations.
+ *   MPU default  — caller-owned static/global buffer via nk_arena_init().
+ *                  NETKIT_HEAP_ARENA=1 allows one init_heap() at startup.
  *
  * Optional file mmap (NETKIT_USE_MMAP / Makefile NETKIT_MMAP):
  *   Default ON for cpu + any MPU (macOS/Linux POSIX; Windows Win32). Forbidden on MCU.
@@ -93,8 +96,18 @@
 #define NETKIT_ARENA_HEAP 1
 #endif
 #else
-#if defined(NETKIT_HEAP_ARENA) && NETKIT_HEAP_ARENA
+#if defined(NETKIT_CLASS_MCU) && defined(NETKIT_HEAP_ARENA) && NETKIT_HEAP_ARENA
+#error "NETKIT_HEAP_ARENA is forbidden on MCU — use a static/global arena; no malloc/new"
+#endif
+#if defined(NETKIT_CLASS_MPU) && defined(NETKIT_HEAP_ARENA) && NETKIT_HEAP_ARENA
 #define NETKIT_ARENA_HEAP 1
+#endif
+#endif
+
+/* MCU: no iostream (keeps libstdc++ iostream out of flash). */
+#if defined(NETKIT_CLASS_MCU)
+#ifndef NETKIT_DISABLE_IOSTREAM
+#define NETKIT_DISABLE_IOSTREAM 1
 #endif
 #endif
 
@@ -131,6 +144,13 @@
 
 #if NETKIT_REFERENCE_QUANT_LOOPS != 0 && NETKIT_REFERENCE_QUANT_LOOPS != 1
 #error "NETKIT_REFERENCE_QUANT_LOOPS must be 0 or 1"
+#endif
+
+/* MCU CMSIS-only production path omits QuantOps reference loops (flash reclaim). */
+#if defined(NETKIT_CLASS_MCU) && !NETKIT_REFERENCE_QUANT_LOOPS
+#define NETKIT_MCU_CMSIS_ONLY 1
+#else
+#define NETKIT_MCU_CMSIS_ONLY 0
 #endif
 
 #ifndef NETKIT_LOOP_UNROLL

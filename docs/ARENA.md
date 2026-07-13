@@ -85,7 +85,7 @@ CLI/regression on CPU use the default heap capacity (`Arena::kDefaultCapacity`).
 
 ### Heap-backed arena (CPU default; MCU/MPU optional)
 
-When `NETKIT_ARENA_HEAP` is defined ( **CPU builds by default**, or MCU/MPU with `NETKIT_HEAP_ARENA=1` ), `init_heap()` performs **one** `malloc` for the backing buffer. All inference allocations are bump-pointer inside that buffer — no `realloc`, no per-tensor heap calls.
+When `NETKIT_ARENA_HEAP` is defined ( **CPU builds by default**, or MPU with `NETKIT_HEAP_ARENA=1` ), `init_heap()` performs **one** `malloc` for the backing buffer. All inference allocations are bump-pointer inside that buffer — no `realloc`, no per-tensor heap calls. **MCU never enables `NETKIT_ARENA_HEAP`** — arena memory is always a caller-owned static/global buffer, and weights stay in the flash `.nk` image.
 
 | Target | `init_heap` | `destroy_heap` / `ArenaUtil::Release` |
 |--------|-------------|----------------------------------------|
