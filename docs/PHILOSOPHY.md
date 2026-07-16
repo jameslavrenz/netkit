@@ -4,7 +4,7 @@ netkit is a **multi-modal inference engine** (voice, image, vision) with an **em
 
 **Status:** Active development. **Float32** and **int8** inference are complete ([DATATYPES.md](DATATYPES.md), [STATUS.md](STATUS.md)). Arm MCU/MPU and host cpu paths are done; RISC MPU uses XNNPACK; RISC MCU runs on fast generic kernels (no RISC-optimized microkernels yet). float16, int16, and int4 are on the roadmap.
 
-Companion project: [memkit](https://github.com/jameslavrenz/memkit) for general-purpose embedded memory management. netkit owns the **inference arena and tensor lifecycle** inside a caller-provided buffer.
+Companion project: [memkit](https://github.com/NetKit-Labs/memkit) for general-purpose embedded memory management. netkit owns the **inference arena and tensor lifecycle** inside a caller-provided buffer.
 
 ## Deployment modes: interpreter or compiled
 

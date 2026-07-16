@@ -134,7 +134,7 @@ Both APIs use a **caller-provided arena buffer** (or heap backing when `NETKIT_A
 
 **Alignment:** `alignas(max_align_t)` backing buffers; `nk_arena_alloc(arena, size, alignment)` with power-of-two alignment.
 
-netkit implements its own minimal arena rather than linking [memkit](https://github.com/jameslavrenz/memkit); alignment behavior matches memkit’s bump policy.
+netkit implements its own minimal arena rather than linking [memkit](https://github.com/NetKit-Labs/memkit); alignment behavior matches memkit’s bump policy.
 
 ## Supported model format
 
