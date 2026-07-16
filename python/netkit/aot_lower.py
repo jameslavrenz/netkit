@@ -1144,6 +1144,7 @@ namespace netkit::aot::{symbol} {{
 inline constexpr const char* kName = "{symbol}";
 inline constexpr const char* kNetwork = "{network}";
 inline constexpr bool kLowered = true;
+inline constexpr bool kSpecialized = false;
 inline constexpr std::uint32_t kInputElements = {input_elements}u;
 inline constexpr std::uint32_t kOutputElements = {output_elements}u;
 inline constexpr std::uint32_t kInputShape[] = {{{shape_literals}}};

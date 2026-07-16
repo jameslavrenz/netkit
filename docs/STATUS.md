@@ -129,16 +129,23 @@ With XNNPACK ON, im2col does not move the needle (accelerated path ignores it). 
 
 ### MCU (NUCLEO-F446RE)
 
-UART A/B logs + tables: `benchmark/mcu_ab_logs/` (10×10 methodology; discard first invoke). Gain = TFLM÷netkit. Flash/RAM after MCU **no-heap** reclaim (weights flash zero-copy; no `new`/`malloc`; demangle stripped).
+UART A/B logs + tables: [`benchmark/mcu_ab_logs/`](../benchmark/mcu_ab_logs/) (10×10 methodology; discard first invoke). Matched toolchain: `mcu_tflm_toolchain.mk` (−O2 CORE/KERNEL/THIRD_PARTY, −flto, shared linker). **netkit** numbers below are **interpreter embed** (`NETKIT_EMBED=1`). Gain = TFLM÷netkit. Flash/RAM after MCU **no-heap** reclaim.
 
-**Latency** (all 10/10, no XNNPACK):
+**Latency — CMSIS-NN** (all 10/10, no XNNPACK):
 
-| Model | Mode | netkit | TFLM | Gain |
-|-------|------|--------|------|------|
-| MNIST CNN | CMSIS-NN | **95.3 ms** | 95.5 ms | **1.00×** |
-| MNIST CNN | reference | **394 ms** | 2594 ms | **6.59×** |
-| MNIST DS-CNN | CMSIS-NN | **58.3 ms** | 61.4 ms | **1.05×** |
-| MNIST DS-CNN | reference | **129 ms** | 827 ms | **6.41×** |
+| Model | netkit embed | TFLM | microTVM AOT |
+|-------|-------------:|-----:|-------------:|
+| MNIST CNN | **95.3 ms** | 95.5 ms | 112.3 ms |
+| MNIST DS-CNN | **58.3 ms** | 61.4 ms | 86.4 ms |
+
+**Latency — reference kernels** (CMSIS-NN off; all 10/10):
+
+| Model | netkit embed | TFLM | microTVM C AOT |
+|-------|-------------:|-----:|---------------:|
+| MNIST CNN | **336.2 ms** | 2593.5 ms | 343.0 ms |
+| MNIST DS-CNN | **140.3 ms** | 826.8 ms | 236.0 ms |
+
+TFLM÷netkit gain (CMSIS): CNN **1.00×**, DS-CNN **1.05×**. Reference: CNN **7.71×**, DS-CNN **5.89×**. microTVM CMSIS path still keeps per-channel FC on C (conv/pool/softmax via CMSIS-NN).
 
 **Flash / RAM** (`NETKIT_ARENA_KB=96`):
 
@@ -149,11 +156,11 @@ UART A/B logs + tables: `benchmark/mcu_ab_logs/` (10×10 methodology; discard fi
 | MNIST DS-CNN | CMSIS-NN | **332.3 KiB** | 360.5 KiB | **1.09×** | 107.1 KiB | 126.1 KiB | **1.18×** |
 | MNIST DS-CNN | reference | **313.6 KiB** | 317.9 KiB | **1.01×** | 107.1 KiB | 126.1 KiB | **1.18×** |
 
-Boards: `nucleo-f446re-cnn-int8` / `nucleo-f446re-tflm-cnn-int8`; DS-CNN twins `nucleo-f446re-cnn-dw-int8` / `nucleo-f446re-tflm-cnn-dw-int8`. MLP int8 CMSIS ~3.4 ms (10/10). XNNPACK: **none** on MCU ELFs.
+Boards: `nucleo-f446re-cnn-int8` / `nucleo-f446re-tflm-cnn-int8` / `nucleo-f446re-tvm-cnn-int8`; DS-CNN twins `*-cnn-dw-int8`. MLP int8 CMSIS ~3.4 ms (10/10). XNNPACK: **none** on MCU ELFs.
 
 **MCU heap policy:** forbidden forever (`NETKIT_HEAP_ARENA` error; aborting `new`/`malloc`; static arena only).
 
-**Float32 MNIST CNN / DS-CNN on this MCU:** deferred — models exceed 512 KiB flash; on-device digit peers remain int8.
+**Float32 MNIST CNN / DS-CNN on this MCU:** deferred — models exceed 512 KiB flash (~850–911 KiB); on-device digit peers remain int8.
 
 ### YOLOX detection (host CPU, float32)
 

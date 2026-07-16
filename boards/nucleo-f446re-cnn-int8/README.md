@@ -21,17 +21,18 @@ Int8 conv/pool/dense use CMSIS-NN kernels on Cortex-M4 (`CmsisQuantPlan`). Final
 
 ## Verified on-device results (NUCLEO-F446RE @ 180 MHz, interpreter embed)
 
-| Metric | Value |
-|--------|-------|
-| Mean invoke | **~95 ms** (typical **94.9–97.0 ms** across captures; interpreter embed, CMSIS-NN s8) |
-| Accuracy | **10/10** |
-| Arena | **64 KiB** static buffer (fixed; verified 10/10 on-device) |
-| Flash (text + data) | **~334 KiB** (of 512 KiB) |
-| SRAM (bss + data) | **~75 KiB** (of 128 KiB; ~53 KiB headroom) |
+Matched toolchain with TFLM/microTVM peers (`mcu_tflm_toolchain.mk`, −O2/−flto). Methodology: 10×10, discard first invoke. Full three-way tables: [docs/STATUS.md](../../docs/STATUS.md), [`benchmark/mcu_ab_logs/`](../../benchmark/mcu_ab_logs/).
 
-Capture above is the **interpreter embed** path (`NETKIT_EMBED=1`) used for TFLM A/B. Default lowered firmware uses static ping-pong BSS instead of a large arena — re-capture after flashing `make` / `make deploy-lowered`.
+| Mode | netkit (`NETKIT_EMBED=1`) | TFLM | microTVM |
+|------|--------------------------:|-----:|---------:|
+| CMSIS-NN | **95.3 ms** | 95.5 ms | 112.3 ms |
+| reference (`NETKIT_REFERENCE_QUANT_LOOPS=1`) | **336.2 ms** | 2593.5 ms | 343.0 ms |
 
-Compare with TFLM int8 on the same board: [nucleo-f446re-tflm-cnn-int8](../nucleo-f446re-tflm-cnn-int8/README.md).
+Accuracy **10/10** all cells. Arena (embed) **64 KiB**; flash/RAM details in STATUS / board memory section below.
+
+Default lowered firmware uses static ping-pong BSS instead of a large arena — re-capture after flashing `make` / `make deploy-lowered`.
+
+Peers: [tflm-cnn-int8](../nucleo-f446re-tflm-cnn-int8/README.md), [tvm-cnn-int8](../nucleo-f446re-tvm-cnn-int8/README.md).
 
 ## Memory budget (STM32F446RE)
 

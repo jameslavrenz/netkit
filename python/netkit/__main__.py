@@ -92,6 +92,15 @@ def main(argv: list[str] | None = None) -> int:
         help="Fail if lowering is requested but the graph has unsupported ops (no silent embed fallback)",
     )
     aot.add_argument(
+        "--specialize",
+        action="store_true",
+        help=(
+            "Emit shape-specialized compute (int8: direct CMSIS-NN with constexpr dims; "
+            "no CmsisQuantPlan/Try wrappers). Keeps --no-lower interpreter and default "
+            "--lower plan-chain modes available separately."
+        ),
+    )
+    aot.add_argument(
         "--no-flash-section",
         action="store_true",
         help="Do not place embedded coefs in a GCC .rodata section",
@@ -209,6 +218,7 @@ def main(argv: list[str] | None = None) -> int:
             lower=not args.no_lower,
             omit_final_softmax=args.omit_final_softmax,
             strict_lower=args.strict_lower,
+            specialize=args.specialize,
             target=args.target,
         )
         print(f"Wrote {result.header_path}")
@@ -218,8 +228,12 @@ def main(argv: list[str] | None = None) -> int:
             f"output={result.output_elements} nk_bytes={result.nk_bytes} "
             f"language={result.language.value}"
         )
-        if result.quant_fast:
+        if result.specialized and result.quant_fast:
+            print("specialized=true (direct CMSIS-NN, constexpr shapes; no plan wrappers)")
+        elif result.quant_fast:
             print("quant_fast=true (quant lowered static CmsisQuantPlan call chain)")
+        elif result.specialized and result.lowered:
+            print("specialized=true (float lowered static Kernels:: chain)")
         elif result.lowered:
             print("lowered=true (static Kernels:: / plan call chain; no .nk loader)")
         else:

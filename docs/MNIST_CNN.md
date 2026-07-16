@@ -63,6 +63,13 @@ make -C benchmark/tflite run-cnn-dw
 make -C benchmark/tflite run-cnn-dw-int8
 ```
 
+MCU peer A/B (`NETKIT_EMBED=1`, matched toolchain) — [STATUS.md](STATUS.md):
+
+| Backend | netkit | TFLM | microTVM |
+|---------|-------:|-----:|---------:|
+| CMSIS-NN | **58.3 ms** | 61.4 ms | 86.4 ms |
+| reference | **140.3 ms** | 826.8 ms | 236.0 ms |
+
 ### Int8 on-device (NUCLEO-F446RE)
 
 ```bash
@@ -72,7 +79,14 @@ make -C boards/nucleo-f446re-cnn-int8
 cd boards/nucleo-f446re-cnn-int8 && ./scripts/flash.sh && ./scripts/monitor.sh
 ```
 
-Verified (interpreter embed A/B): **10/10** accuracy, **~95 ms** mean invoke (typical **94.9–97.0 ms** across captures; `NETKIT_EMBED=1`). Board default is **quant lowered** (`make` / `make deploy-lowered`). See [boards/nucleo-f446re-cnn-int8/README.md](../boards/nucleo-f446re-cnn-int8/README.md).
+Verified peer A/B on NUCLEO-F446RE @ 180 MHz (matched −O2/−flto toolchain; `NETKIT_EMBED=1`; 10×10, discard first invoke) — full tables in [STATUS.md](STATUS.md) and [`benchmark/mcu_ab_logs/`](../benchmark/mcu_ab_logs/):
+
+| Backend | netkit | TFLM | microTVM |
+|---------|-------:|-----:|---------:|
+| CMSIS-NN | **95.3 ms** | 95.5 ms | 112.3 ms |
+| reference | **336.2 ms** | 2593.5 ms | 343.0 ms |
+
+All **10/10**. Board default is **quant lowered** (`make` / `make deploy-lowered`); use `NETKIT_EMBED=1` for the TFLM-fair interpreter numbers above. Reference: `NETKIT_REFERENCE_QUANT_LOOPS=1`. Peers: [cnn-int8](../boards/nucleo-f446re-cnn-int8/README.md), [tflm-cnn-int8](../boards/nucleo-f446re-tflm-cnn-int8/README.md), [tvm-cnn-int8](../boards/nucleo-f446re-tvm-cnn-int8/README.md).
 
 On-device memory (interpreter embed): **~334 KiB flash**, **~75 KiB SRAM** (64 KiB arena + ~53 KiB headroom on 128 KiB SRAM). Quant lowered uses static ping-pong BSS instead of a large arena — [ARENA.md](ARENA.md#quant-lowered-vs-interpreter-embed-on-mcu).
 

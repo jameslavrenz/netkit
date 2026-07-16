@@ -1,22 +1,44 @@
-# NUCLEO-F446RE MNIST int8 A/B (netkit vs TFLM)
-# Board: STM32F446RE, Cortex-M4F, 512 KiB flash
+# NUCLEO-F446RE MNIST int8 A/B (netkit vs TFLM vs microTVM)
+# Board: STM32F446RE @ 180 MHz, Cortex-M4F, 512 KiB flash / 128 KiB SRAM
 # Methodology: UART BENCHMARK_SUMMARY; 10 runs × 10 images; discard first invoke
-# No XNNPACK. Gain = TFLM / netkit (>1 ⇒ netkit faster / smaller).
-# Flash/RAM sizes measured after MCU no-heap / demangle reclaim (Jul 2026).
-# Only models that fit on-device are listed.
+# Toolchain: boards/nucleo-f446re/mcu_tflm_toolchain.mk (−O2 CORE/KERNEL/THIRD_PARTY, −flto,
+#   shared STM32F446RETx_FLASH.ld with __exidx_*). No XNNPACK on MCU.
+# netkit path: interpreter embed (NETKIT_EMBED=1) — fastest / TFLM-fair peer.
+# Gain = peer ÷ netkit (>1 ⇒ netkit faster).
+# Captured Jul 2026 (matched compiler/linker flags). Only models that fit on-device.
 
 ## Latency (all 10/10)
 
-| Model | Mode | netkit | TFLM | Gain (TFLM÷nk) |
-|-------|------|--------|------|----------------|
-| MNIST CNN | CMSIS-NN | 95.3 ms | 95.5 ms | 1.00× |
-| MNIST CNN | reference | 394 ms | 2594 ms | 6.59× |
-| MNIST DS-CNN | CMSIS-NN | 58.3 ms | 61.4 ms | 1.05× |
-| MNIST DS-CNN | reference | 129 ms | 827 ms | 6.41× |
+### CMSIS-NN (production)
 
-## Flash / RAM (post no-heap fix)
+| Model | netkit embed | TFLM | microTVM AOT |
+|-------|-------------:|-----:|-------------:|
+| MNIST CNN | 95.3 ms | 95.5 ms | 112.3 ms |
+| MNIST DS-CNN | 58.3 ms | 61.4 ms | 86.4 ms |
 
-flash = text+data; ram = data+bss. netkit arena NETKIT_ARENA_KB=96.
+Gain vs TFLM: CNN 1.00×, DS-CNN 1.05×. TVM keeps per-channel FC on the C path
+(CMSIS-NN BYOC for conv/pool/softmax only).
+
+### Reference kernels (CMSIS-NN off)
+
+| Model | netkit embed | TFLM | microTVM C AOT |
+|-------|-------------:|-----:|---------------:|
+| MNIST CNN | 336.2 ms | 2593.5 ms | 343.0 ms |
+| MNIST DS-CNN | 140.3 ms | 826.8 ms | 236.0 ms |
+
+Gain vs TFLM: CNN 7.71×, DS-CNN 5.89×.
+
+## Build switches
+
+| Runtime | CMSIS-NN ON | Reference |
+|---------|-------------|-----------|
+| netkit | `NETKIT_EMBED=1` (default CMSIS) | `NETKIT_EMBED=1 NETKIT_REFERENCE_QUANT_LOOPS=1` |
+| TFLM | `TFLM_OPT_KERNEL=cmsis_nn` (default) | `TFLM_OPT_KERNEL=` |
+| microTVM | `TVM_USE_CMSISNN=1` (default) | `TVM_USE_CMSISNN=0` (`--no-cmsisnn`) |
+
+## Flash / RAM (post no-heap fix; netkit arena NETKIT_ARENA_KB=96)
+
+flash = text+data; ram = data+bss.
 
 | Model | Mode | netkit flash | TFLM flash | flash gain | netkit RAM | TFLM RAM | RAM gain |
 |-------|------|-------------:|-----------:|-----------:|-----------:|---------:|---------:|
@@ -40,5 +62,11 @@ tflm_cnn_dw_ref text=323768 data=1752 bss=127384 flash=325520 ram=129136
 
 netkit_cnn_int8_cmsis.log / netkit_cnn_int8_ref.log
 tflm_cnn_int8_cmsis.log / tflm_cnn_int8_ref.log
+tvm_cnn_int8_cmsis.log / tvm_cnn_int8_ref.log
 netkit_cnn_dw_int8_cmsis.log / netkit_cnn_dw_int8_ref.log
 tflm_cnn_dw_int8_cmsis.log / tflm_cnn_dw_int8_ref.log
+tvm_cnn_dw_int8_cmsis.log / tvm_cnn_dw_int8_ref.log
+
+## Float32 note
+
+Float MNIST CNN / DS-CNN `.nk` / `.tflite` (~850–911 KiB) exceed 512 KiB flash — not runnable on F446RE.

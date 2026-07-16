@@ -33,18 +33,22 @@ make
 
 - TFLite int8 model: embedded in flash (`.rodata`)
 - Tensor arena: **120 KiB** SRAM (`kTensorArenaSize` in `src/main.cc`)
-- TFLM microlite built with `OPTIMIZED_KERNEL_DIR=cmsis_nn`
+- TFLM microlite: `OPTIMIZED_KERNEL_DIR=cmsis_nn` (default); `make TFLM_OPT_KERNEL=` for reference
 
-## Compare with netkit int8 CNN
+## Verified on-device results (NUCLEO-F446RE @ 180 MHz)
+
+Matched toolchain with netkit/microTVM; 10×10, discard first invoke — [STATUS.md](../../docs/STATUS.md).
+
+| Mode | TFLM | netkit embed | microTVM |
+|------|-----:|-------------:|---------:|
+| CMSIS-NN | **95.5 ms** | 95.3 ms | 112.3 ms |
+| reference (`TFLM_OPT_KERNEL=`) | **2593.5 ms** | 336.2 ms | 343.0 ms |
+
+All **10/10**.
 
 ```text
-BENCHMARK_SUMMARY runtime=tflm model=cnn_int8 backend=cmsis-nn mean_us=... runs=10
-```
-
-vs netkit:
-
-```text
-BENCHMARK_SUMMARY runtime=netkit model=cnn_int8 backend=cmsis-nn-int8 mean_us=... runs=10
+BENCHMARK_SUMMARY runtime=tflm model=cnn_int8 backend=cmsis-nn mean_us=95513 runs=10
+BENCHMARK_SUMMARY runtime=tflm model=cnn_int8 backend=reference mean_us=2593540 runs=10
 ```
 
 ## Per-digit confidence (offline)

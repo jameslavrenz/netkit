@@ -573,8 +573,9 @@ def plan_lowered_quant(
             w_idx += _uib_subop_count(layer)
         elif layer["type"] == "dense":
             load_lines.append(
-                f"CmsisNnQuant::FinalizeFcPlan(kFc{w_idx}Plan, kW{w_idx}, kB{w_idx}, arena);"
+                f"if (!CmsisNnQuant::FinalizeFcPlan(kFc{w_idx}Plan, kW{w_idx}, kB{w_idx}, arena))"
             )
+            load_lines.append("    return false;")
             if layer.get("activation") == "softmax" and not omit_final_softmax:
                 q = bundle.quant_layers[w_idx]
                 load_lines.append(
@@ -737,8 +738,11 @@ def _emit_plan_structs(bundle: QuantNkBundle, *, omit_final_softmax: bool = Fals
             else:
                 clamp = "QuantInteger::QuantClamp::None"
             fc_ws = _cmsis_fc_s8_workspace(in_features, out_features)
+            # CMSIS-NN + FinalizeFcPlan require multipliers/shifts pointers (not only scalars).
             lines.append(
-                f"""static CmsisQuantPlan::FcPlan kFc{weight_idx}Plan = {{
+                f"""static int32_t kFc{weight_idx}Mult[1] = {{{mult}}};
+static int32_t kFc{weight_idx}Shift[1] = {{{shift}}};
+static CmsisQuantPlan::FcPlan kFc{weight_idx}Plan = {{
     .input_offset = {-quant.input_zero_point},
     .filter_offset = {-quant.weight_zero_point},
     .output_offset = {quant.output_zero_point},
@@ -748,6 +752,8 @@ def _emit_plan_structs(bundle: QuantNkBundle, *, omit_final_softmax: bool = Fals
     .out_features = {out_features},
     .multiplier = {mult},
     .shift = {shift},
+    .multipliers = kFc{weight_idx}Mult,
+    .shifts = kFc{weight_idx}Shift,
     .workspace_bytes = {fc_ws},
     .ready = true,
 }};"""
@@ -790,6 +796,7 @@ inline constexpr const char* kName = "{symbol}";
 inline constexpr const char* kNetwork = "{network}";
 inline constexpr bool kLowered = true;
 inline constexpr bool kQuantLowered = true;
+inline constexpr bool kSpecialized = false;
 inline constexpr std::uint32_t kInputElements = {input_elements}u;
 inline constexpr std::uint32_t kOutputElements = {output_elements}u;
 inline constexpr std::uint32_t kInputShape[] = {{{shape_literals}}};

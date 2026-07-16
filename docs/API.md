@@ -19,7 +19,7 @@ Both APIs share:
 
 Core inference, loading, tensor/ops, MLP/CNN construction (including FeatureTap / PAFPN), regression, and CLI entry points have documented C equivalents — see [API_PARITY.md](API_PARITY.md). Some C++ helpers (block introspection, op trimming, timed forward) remain C++-only.
 
-**MCU on NUCLEO-F446RE:** production peers are **int8** CNN/DS-CNN vs TFLM (CMSIS-NN). Float32 MNIST CNN/DS-CNN exceed 512 KiB flash — [STATUS.md](STATUS.md).
+**MCU on NUCLEO-F446RE:** production peers are **int8** CNN/DS-CNN vs TFLM and microTVM (CMSIS-NN and reference kernels). Float32 MNIST CNN/DS-CNN exceed 512 KiB flash — [STATUS.md](STATUS.md).
 
 ## Documentation map
 

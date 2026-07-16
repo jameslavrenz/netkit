@@ -28,9 +28,15 @@ MCU_BOARD_COMMON := $(BOARD_COMMON)
 include $(BOARD_COMMON)/mcu_tflm_toolchain.mk
 
 # 1 = quant lowered (default). 0 / NETKIT_EMBED=1 = interpreter embed (TFLM-fair).
+# NETKIT_SPECIALIZE=1 = shape-specialized direct CMSIS-NN (overrides plan-chain lower).
 NETKIT_LOWERED ?= 1
+NETKIT_SPECIALIZE ?= 0
 ifneq ($(NETKIT_EMBED),)
   NETKIT_LOWERED := $(if $(filter 1,$(NETKIT_EMBED)),0,1)
+  NETKIT_SPECIALIZE := 0
+endif
+ifeq ($(NETKIT_SPECIALIZE),1)
+  NETKIT_LOWERED := 1
 endif
 
 BUILD_DIR := build
@@ -42,7 +48,8 @@ TARGET := mnist_cnn_int8_nucleo_f446re
 ELF := $(BUILD_DIR)/$(TARGET).elf
 BIN := $(BUILD_DIR)/$(TARGET).bin
 
-LINKER_SCRIPT := $(BOARD_ROOT)/linker/STM32F446RETx_FLASH.ld
+# Shared linker (same as TFLM/TVM peers; includes __exidx_* PROVIDEs).
+LINKER_SCRIPT := $(BOARD_COMMON)/linker/STM32F446RETx_FLASH.ld
 
 INCLUDES := \
 	-I$(BOARD_COMMON)/include \
@@ -253,16 +260,22 @@ $(GEN_DIR)/mnist_cnn_int8_aot.cpp $(GEN_DIR)/mnist_cnn_int8_aot.hpp: $(NETKIT_CN
 	cd $(NETKIT_ROOT) && PYTHONPATH=$(NETKIT_ROOT)/python python3 -m netkit aot \
 		$(abspath $(GEN_DIR))/mnist_cnn_int8.nk \
 		-o $(abspath $(GEN_DIR)) --language cpp --target mcu --arena-headroom 0 \
-		$(if $(filter 1,$(NETKIT_LOWERED)),--strict-lower,--no-lower) --omit-final-softmax
+		$(if $(filter 1,$(NETKIT_LOWERED)),--strict-lower,--no-lower) \
+		$(if $(filter 1,$(NETKIT_SPECIALIZE)),--specialize,) \
+		--omit-final-softmax
 	@touch $(GEN_DIR)/.embed_stamp
 
 # Back-compat alias (prefer export-embed).
 export-aot: export-embed
 
-.PHONY: deploy-lowered
+.PHONY: deploy-lowered deploy-specialize
 deploy-lowered:
-	$(MAKE) NETKIT_LOWERED=1 clean
-	$(MAKE) NETKIT_LOWERED=1
+	$(MAKE) NETKIT_LOWERED=1 NETKIT_SPECIALIZE=0 clean
+	$(MAKE) NETKIT_LOWERED=1 NETKIT_SPECIALIZE=0
+
+deploy-specialize:
+	$(MAKE) NETKIT_SPECIALIZE=1 clean
+	$(MAKE) NETKIT_SPECIALIZE=1
 
 $(LIBNETKIT): $(NETKIT_RUNTIME_SOURCES) $(CMSIS_NN_SOURCES)
 	@mkdir -p $(LIB_DIR)

@@ -42,7 +42,8 @@ TARGET := mnist_cnn_dw_int8_nucleo_f446re
 ELF := $(BUILD_DIR)/$(TARGET).elf
 BIN := $(BUILD_DIR)/$(TARGET).bin
 
-LINKER_SCRIPT := $(BOARD_ROOT)/linker/STM32F446RETx_FLASH.ld
+# Shared linker (same as TFLM/TVM peers; includes __exidx_* PROVIDEs).
+LINKER_SCRIPT := $(BOARD_COMMON)/linker/STM32F446RETx_FLASH.ld
 
 INCLUDES := \
 	-I$(BOARD_COMMON)/include \

@@ -440,6 +440,31 @@ class TestAotCompile(unittest.TestCase):
                     if "dw" in model_file:
                         self.assertIn("TryDepthwiseConv2dNhwcQuantPlan", source)
 
+    def test_quant_specialize_emits_direct_cmsis(self) -> None:
+        nk_path = MODELS / "mnist_cnn_int8.nk"
+        if not nk_path.is_file():
+            self.skipTest("mnist_cnn_int8.nk missing")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = compile_aot(
+                nk_path,
+                Path(tmpdir) / "spec",
+                language=AotLanguage.CPP,
+                specialize=True,
+                strict_lower=True,
+                omit_final_softmax=True,
+            )
+            self.assertTrue(result.specialized)
+            self.assertTrue(result.quant_fast)
+            self.assertEqual(result.nk_bytes, 0)
+            header = result.header_path.read_text(encoding="utf-8")
+            source = result.source_path.read_text(encoding="utf-8")
+            self.assertIn("kSpecialized = true", header)
+            self.assertIn("arm_convolve_wrapper_s8", source)
+            self.assertIn("arm_max_pool_s8", source)
+            self.assertIn("arm_fully_connected_wrapper_s8", source)
+            self.assertNotIn("CmsisQuantPlan", source)
+            self.assertNotIn("TryConv2dNhwcQuantPlan", source)
+
     def test_yolox_float_lower_matches_reference(self) -> None:
         """YOLOX feature_tap + PAFPN lower to YoloxPafpnMultiscale (no .nk blob)."""
         nk_path = MODELS / "yolox_pafpn_taps.nk"

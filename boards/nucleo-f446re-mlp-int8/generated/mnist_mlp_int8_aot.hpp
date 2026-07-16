@@ -12,6 +12,7 @@ inline constexpr const char* kName = "mnist_mlp_int8";
 inline constexpr const char* kNetwork = "mlp";
 inline constexpr bool kLowered = true;
 inline constexpr bool kQuantLowered = true;
+inline constexpr bool kSpecialized = false;
 inline constexpr std::uint32_t kInputElements = 784u;
 inline constexpr std::uint32_t kOutputElements = 10u;
 inline constexpr std::uint32_t kInputShape[] = {1, 784};

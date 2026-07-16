@@ -10,17 +10,6 @@ TFLM NUCLEO-F446RE MNIST CNN int8 benchmark
   sysclk:      180000000 Hz
   probe:       label=0 pred=0 pred_i8=127 out_i8=127,-128,-128,-128,-128,-128,-128,-128,-128,-128
 
-TFLM NUCLEO-F446RE MNIST CNN int8 benchmark
-  backend:     tflm cmsis-nn int8 (MCU CM4)
-  model bytes: 235384
-  input type:  int8 (prequantized test vectors)
-  output type: int8 softmax (int8 only on device)
-  images:      10 per run
-  runs:        10 (discard first invoke each run)
-  arena bytes: 118784
-  sysclk:      180000000 Hz
-  probe:       label=0 pred=0 pred_i8=127 out_i8=127,-128,-128,-128,-128,-128,-128,-128,-128,-128
-
   per-digit results (final run, int8 only — dequant in Python):
     image  label  pred  pred_i8  ok
         0      0     0      127  yes

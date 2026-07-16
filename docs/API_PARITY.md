@@ -208,7 +208,7 @@ High-level combined handle (C convenience):
 | Weights | Stay in the flash `.nk` image (zero-copy scales); arena holds activations + metadata |
 | `NETKIT_MCU_CMSIS_ONLY` | Default when CMSIS production path (`REFERENCE_QUANT_LOOPS=0`) — QuantOps reference loops omitted |
 | `NETKIT_DISABLE_IOSTREAM` | Default on MCU — `nk_arch_print` / `PrintNetworkSummary` are no-ops |
-| NUCLEO-F446RE peers | **int8** CNN / DS-CNN vs TFLM; float32 CNN/DS-CNN exceed 512 KiB flash — [STATUS.md](STATUS.md) |
+| NUCLEO-F446RE peers | **int8** CNN / DS-CNN vs TFLM + microTVM (CMSIS-NN and reference); float32 CNN/DS-CNN exceed 512 KiB flash — [STATUS.md](STATUS.md) |
 
 ### AOT deployment
 

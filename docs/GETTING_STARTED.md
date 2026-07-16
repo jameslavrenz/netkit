@@ -213,7 +213,8 @@ The Python **`netkit aot`** command turns a `.nk` into C/C++ firmware sources. *
 
 | Goal | Command |
 |------|---------|
-| **Lowered / compiled** (default — static kernel / plan chain) | `python -m netkit aot model.nk -o out` |
+| **Lowered** (default — static `Kernels::` / `CmsisQuantPlan`) | `python -m netkit aot model.nk -o out` |
+| **Specialized** (direct CMSIS-NN, constexpr shapes) | `python -m netkit aot model.nk -o out --specialize --strict-lower` |
 | **Fail if not lowerable** | `python -m netkit aot model.nk -o out --strict-lower` |
 | **Interpreter embed** (TFLM-fair) | `python -m netkit aot model.nk -o out --no-lower` |
 

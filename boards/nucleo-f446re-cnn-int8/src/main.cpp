@@ -1,5 +1,5 @@
 // NUCLEO-F446RE MNIST CNN int8 invoke benchmark — same 10 images as benchmark/netkit.
-// Supports interpreter embed (default) or quant lowered embed (NETKIT_LOWERED=1).
+// Modes: specialize (NETKIT_SPECIALIZE=1), quant lowered (default), embed (NETKIT_EMBED=1).
 // Test inputs are prequantized int8 (export_int8_test_images.py) — no float conversion.
 // Dequantized confidence is computed offline — see benchmark/tools/parse_mcu_cnn_int8_log.py.
 
@@ -98,7 +98,9 @@ extern "C" int main(void)
     uart_write("\r\nnetkit NUCLEO-F446RE MNIST CNN int8 benchmark\r\n");
     uart_printf("  backend:     %s int8 (MCU CM4%s)\r\n",
                 NETKIT_REFERENCE_QUANT_LOOPS ? "netkit reference" : "cmsis-nn",
-                aot::kQuantLowered ? ", quant lowered AOT" : ", .nk loader");
+                aot::kSpecialized   ? ", quant specialized AOT"
+                : aot::kQuantLowered ? ", quant lowered AOT"
+                                     : ", .nk loader");
     uart_printf("  weights:     %s\r\n",
                 aot::kQuantLowered ? "flash (static .rodata)"
                                    : "flash (embedded .nk blob)");
@@ -227,11 +229,18 @@ extern "C" int main(void)
     uart_write(")\r\n");
     uart_printf("  method:      %d runs x 10 images, discard first invoke each run\r\n", kRuns);
     uart_write("  per-run avg: avg of images 1-9 (us)\r\n\r\n");
-    uart_printf("  mean:   %8.3f us (%6.3f ms)\r\n", mean_us, mean_us / 1000.0);
+    // Integer-only UART (no %f): newlib float formatting can malloc; MCU bans heap.
+    const unsigned long mean_us_i = static_cast<unsigned long>(mean_us + 0.5);
+    const unsigned long mean_ms_whole = mean_us_i / 1000ul;
+    const unsigned long mean_ms_frac = mean_us_i % 1000ul;
+    uart_printf("  mean:   %lu us (%lu.%03lu ms)\r\n",
+                mean_us_i,
+                mean_ms_whole,
+                mean_ms_frac);
     uart_printf(
         "BENCHMARK_SUMMARY runtime=netkit model=cnn_int8 backend=" NK_CNN_INT8_BACKEND_LABEL
-        " mean_us=%.3f runs=%d\r\n",
-        mean_us,
+        " mean_us=%lu runs=%d\r\n",
+        mean_us_i,
         kRuns);
 #if defined(NETKIT_STAGE_TIMING) && NETKIT_STAGE_TIMING
     CmsisQuantPlan::PrintStageTimingSummary();

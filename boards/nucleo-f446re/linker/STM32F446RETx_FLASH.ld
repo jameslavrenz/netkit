@@ -55,6 +55,10 @@ SECTIONS
   PROVIDE(end = .);
   PROVIDE(_end = .);
 
+  /* libgcc may still reference these when unwind tables are discarded. */
+  PROVIDE(__exidx_start = .);
+  PROVIDE(__exidx_end = .);
+
   /DISCARD/ :
   {
     *(.ARM.exidx*)

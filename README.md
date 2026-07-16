@@ -2,7 +2,7 @@
 
 netkit is a **multi-modal inference engine** (image / vision today; voice next) with an **embedded-first** design for **MCUs, MPUs, and NPUs**. Primary API is **C++26**; firmware and FFI use a matching **C23** API. Develop on the desktop, then deploy the lean runtime to embedded targets. Companion to [memkit](https://github.com/NetKit-Labs/memkit) for memory management.
 
-**Status:** **Float32** and **int8** inference are **complete** on **Arm MCU**, **Arm MPU**, and **cpu** (RISC MCU on fast generic kernels; RISC MPU via XNNPACK). The inference engine is **peer-benched end-to-end** across **MCU** (NUCLEO-F446RE vs TFLM), **MPU** (Raspberry Pi Zero 2 W vs TF Lite), and **CPU** (Apple M4 vs TF Lite) for latency and flash/RAM — see [docs/STATUS.md](docs/STATUS.md) and the gallery below. **YOLOX** detection (MobileNetV4 + PAFPN) is supported and latency-competitive on host; **detector accuracy still needs more training / calibration**. Next: voice fixtures and broader quantization.
+**Status:** **Float32** and **int8** inference are **complete** on **Arm MCU**, **Arm MPU**, and **cpu** (RISC MCU on fast generic kernels; RISC MPU via XNNPACK). The inference engine is **peer-benched end-to-end** across **MCU** (NUCLEO-F446RE vs TFLM and microTVM), **MPU** (Raspberry Pi Zero 2 W vs TF Lite), and **CPU** (Apple M4 vs TF Lite) for latency and flash/RAM — see [docs/STATUS.md](docs/STATUS.md) and the gallery below. **YOLOX** detection (MobileNetV4 + PAFPN) is supported and latency-competitive on host; **detector accuracy still needs more training / calibration**. Next: voice fixtures and broader quantization.
 
 Models are loaded from binary **`.nk`** files (single-file architecture + weights). Convert from ONNX with `python -m netkit convert`, or embed a `.nk` in firmware with `python -m netkit aot`.
 
@@ -10,7 +10,7 @@ Use netkit as an **`NkOpsResolver` interpreter** (load `.nk`, dispatch layers at
 
 ## Peer benchmarks (MCU · MPU · CPU)
 
-Fair A/B vs TFLM (MCU) and TF Lite (MPU/CPU). Full tables and methodology: [docs/STATUS.md](docs/STATUS.md). Suite infographics:
+Fair A/B vs TFLM + microTVM (MCU) and TF Lite (MPU/CPU). Full tables and methodology: [docs/STATUS.md](docs/STATUS.md). Suite infographics:
 
 | Int8 suite | Float32 suite |
 |------------|---------------|
@@ -38,9 +38,10 @@ Raw logs and scripts: [benchmark/README.md](benchmark/README.md), `benchmark/lin
 | **[MNIST benchmarks](benchmark/README.md)** | Host invoke latency + per-op profiles: netkit vs TFLM |
 | **[Peer-suite infographics](benchmark/linkedin/)** | MCU / MPU / CPU float32 + int8 A/B images |
 | **[NUCLEO-F446RE firmware](boards/nucleo-f446re/README.md)** | On-device MNIST MLP f32 benchmark (CMSIS-NN / reference, lowered AOT) |
-| **[NUCLEO-F446RE CNN int8](boards/nucleo-f446re-cnn-int8/README.md)** | On-device MNIST CNN int8 benchmark (CMSIS-NN, interpreter embed) |
+| **[NUCLEO-F446RE CNN int8](boards/nucleo-f446re-cnn-int8/README.md)** | On-device MNIST CNN int8 (CMSIS-NN / reference, interpreter embed) |
 | **[NUCLEO-F446RE MLP int8](boards/nucleo-f446re-mlp-int8/README.md)** | On-device MNIST MLP int8 benchmark (CMSIS-NN, interpreter embed) |
 | **[NUCLEO-F446RE TFLM CNN int8](boards/nucleo-f446re-tflm-cnn-int8/README.md)** | Same CNN int8 vectors via TFLite Micro (comparison baseline) |
+| **[NUCLEO-F446RE microTVM CNN int8](boards/nucleo-f446re-tvm-cnn-int8/README.md)** | Same CNN int8 via microTVM AOT (CMSIS-NN / pure C) |
 | **[NUCLEO-F446RE TFLM MLP int8](boards/nucleo-f446re-tflm-mlp-int8/README.md)** | Same MLP int8 vectors via TFLite Micro (comparison baseline) |
 | **[C API Reference](docs/c-api.md)** | `netkit.h` (C23) |
 | **[C++ API Reference](docs/cpp-api.md)** | Headers in `include/` (C++26) |

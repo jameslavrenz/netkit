@@ -6,20 +6,7 @@ netkit NUCLEO-F446RE MNIST CNN int8 benchmark
   classify:    argmax(logits) — final Softmax omitted
   images:      10 per run
   runs:        10 (discard first invoke each run)
-  arena bytes: 98304
-  nk bytes:    235872
-  sysclk:      180000000 Hz
-  model:       loaded
-  probe:       label=0 pred=0 pred_i8=25 out_i8=25,-15,0,-9,-10,-8,1,-4,-2,0
-
-netkit NUCLEO-F446RE MNIST CNN int8 benchmark
-  backend:     cmsis-nn int8 (MCU CM4, .nk loader)
-  weights:     flash (embedded .nk blob)
-  dtype:       int8 end-to-end (weights, activations, inputs; logits out)
-  classify:    argmax(logits) — final Softmax omitted
-  images:      10 per run
-  runs:        10 (discard first invoke each run)
-  arena bytes: 98304
+  arena bytes: 65536
   nk bytes:    235872
   sysclk:      180000000 Hz
   model:       loaded
@@ -53,7 +40,7 @@ netkit MNIST cnn int8 benchmark summary (cmsis-nn-int8)
   method:      10 runs x 10 images, discard first invoke each run
   per-run avg: avg of images 1-9 (us)
 
-  mean:   95309.028 us (95.309 ms)
-BENCHMARK_SUMMARY runtime=netkit model=cnn_int8 backend=cmsis-nn-int8 mean_us=95309.028 runs=10
+  mean:   95309 us (95.309 ms)
+BENCHMARK_SUMMARY runtime=netkit model=cnn_int8 backend=cmsis-nn-int8 mean_us=95309 runs=10
 
 DONE

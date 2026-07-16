@@ -31,6 +31,13 @@ from .aot_lower_quant import (
     render_lowered_quant_cpp_source,
     unsupported_quant_lower_layers,
 )
+from .aot_specialize_quant import (
+    can_specialize_quantized_arch,
+    plan_specialize_quant,
+    render_specialize_quant_cpp_header,
+    render_specialize_quant_cpp_source,
+    unsupported_specialize_quant_layers,
+)
 from .reader import read_nk, read_test_suite
 from .reference_forward import forward_cnn, forward_mlp
 
@@ -61,6 +68,7 @@ class AotCompileResult:
     optimizations_applied: tuple[str, ...] = ()
     lowered: bool = False
     quant_fast: bool = False
+    specialized: bool = False
 
 
 def _sanitize_symbol(name: str) -> str:
@@ -289,6 +297,7 @@ def compile_aot(
     lower: bool = True,
     omit_final_softmax: bool = False,
     strict_lower: bool = False,
+    specialize: bool = False,
     target: Literal["cpu", "mpu", "mcu"] = "cpu",
 ) -> AotCompileResult:
     """Compile a .nk model into firmware C/C++ sources.
@@ -297,15 +306,21 @@ def compile_aot(
     plus C++ implementation (``.cpp``) when lowering succeeds; otherwise C embeds the
     ``.nk`` blob (``.h`` + ``.c``).
 
-    C++ / C lowering (``lower=True``, default): static ``Kernels::`` or
-    ``CmsisQuantPlan`` call chain with explicit weight arrays — no ``.nk`` loader.
-    Pass ``lower=False`` for interpreter embed. If lowering is requested but the graph
-    is unsupported, emit a warning and fall back to embed unless ``strict_lower=True``.
+    Modes (mutually exclusive hot paths):
+
+    - ``lower=True`` (default): static ``Kernels::`` / ``CmsisQuantPlan`` call chain.
+    - ``specialize=True``: shape-specialized direct CMSIS-NN (int8) — no plan/Try wrappers.
+    - ``lower=False``: interpreter embed of the ``.nk`` blob.
+
+    If lowering/specialize is requested but the graph is unsupported, warn and fall
+    back to embed unless ``strict_lower=True``.
 
     ``target`` currently documents the intended deploy class (cpu/mpu/mcu); arena
     probe behavior is unchanged.
     """
     del target  # reserved for future target-specific emit profiles
+    if specialize and not lower:
+        raise ValueError("specialize requires lowering (omit --no-lower)")
     path = Path(nk_path)
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -340,28 +355,56 @@ def compile_aot(
     input_shape = arch["input"]
 
     want_lower = bool(lower)
+    want_specialize = bool(specialize)
     can_float = (not quantized) and can_lower_arch(arch)
     can_quant = quantized and can_lower_quantized_arch(arch)
-    if want_lower and not (can_float or can_quant):
+    can_quant_spec = quantized and can_specialize_quantized_arch(arch)
+    # Float specialize v1: same emitter as float lower (shape-specialized Kernels chain).
+    can_float_spec = (not quantized) and can_float
+
+    if want_specialize:
+        can_ok = can_quant_spec or can_float_spec
+        blockers = (
+            unsupported_specialize_quant_layers(arch)
+            if quantized
+            else unsupported_lower_layers(arch)
+        )
+    else:
+        can_ok = can_float or can_quant
         blockers = (
             unsupported_quant_lower_layers(arch)
             if quantized
             else unsupported_lower_layers(arch)
         )
+
+    if want_lower and not can_ok:
         detail = ", ".join(blockers) if blockers else "unknown"
+        mode = "specialize" if want_specialize else "lower"
         msg = (
-            f"AOT lower requested for {path.name} but unsupported ops remain: {detail}. "
+            f"AOT {mode} requested for {path.name} but unsupported ops remain: {detail}. "
             "Falling back to .nk blob embed (interpreter)."
         )
         if strict_lower:
             raise ValueError(msg.replace("Falling back to .nk blob embed (interpreter).", "").strip())
         warnings.warn(msg, stacklevel=2)
+        want_specialize = False
 
-    # C lowered uses C API header + C++ implementation unit.
-    use_lowered = want_lower and can_float
-    use_quant_lowered = want_lower and can_quant
+    # Prefer specialize when requested and supported; else plan/kernel lower; else embed.
+    use_quant_specialized = want_lower and want_specialize and can_quant_spec
+    use_quant_lowered = want_lower and can_quant and not use_quant_specialized
+    # Float: specialize currently shares the float-lower emitter (no interpreter).
+    use_lowered = want_lower and can_float and not quantized
+    use_float_specialized = want_specialize and use_lowered
 
-    if use_quant_lowered:
+    if use_quant_specialized:
+        quant_plan = plan_specialize_quant(path, omit_final_softmax=omit_final_softmax)
+        after_load = quant_plan.arena_after_load
+        after_forward = quant_plan.arena_after_forward
+        arena_recommended = max(
+            64,
+            _recommend_arena_bytes(after_forward, headroom_percent=arena_headroom_percent),
+        )
+    elif use_quant_lowered:
         quant_plan = plan_lowered_quant(path, omit_final_softmax=omit_final_softmax)
         after_load = quant_plan.arena_after_load
         after_forward = quant_plan.arena_after_forward
@@ -401,11 +444,34 @@ def compile_aot(
         joined = ", ".join(optimizations_applied)
         opt_comment = f"\n/* Optimizations: {joined} */"
 
-    lowered = use_lowered or use_quant_lowered
+    lowered = use_lowered or use_quant_lowered or use_quant_specialized
+    specialized = use_quant_specialized or use_float_specialized
     if lang is AotLanguage.CPP:
         header_path = out_dir / f"{symbol}_aot.hpp"
         source_path = out_dir / f"{symbol}_aot.cpp"
-        if use_quant_lowered:
+        if use_quant_specialized:
+            header_path.write_text(
+                render_specialize_quant_cpp_header(
+                    symbol,
+                    network,
+                    input_elements,
+                    output_elements,
+                    input_shape,
+                    quant_plan,
+                    arena_recommended,
+                ),
+                encoding="utf-8",
+            )
+            source_path.write_text(
+                opt_comment
+                + render_specialize_quant_cpp_source(
+                    symbol,
+                    quant_plan,
+                    flash_section=flash_section,
+                ),
+                encoding="utf-8",
+            )
+        elif use_quant_lowered:
             header_path.write_text(
                 render_lowered_quant_cpp_header(
                     symbol,
@@ -498,11 +564,29 @@ def compile_aot(
                 after_load,
                 after_forward,
                 arena_recommended,
-                quantized=use_quant_lowered,
+                quantized=use_quant_lowered or use_quant_specialized,
             ),
             encoding="utf-8",
         )
-        if use_quant_lowered:
+        if use_quant_specialized:
+            cpp_body = render_specialize_quant_cpp_source(
+                symbol,
+                quant_plan,
+                flash_section=flash_section,
+            )
+            (out_dir / f"{symbol}_aot.hpp").write_text(
+                render_specialize_quant_cpp_header(
+                    symbol,
+                    network,
+                    input_elements,
+                    output_elements,
+                    input_shape,
+                    quant_plan,
+                    arena_recommended,
+                ),
+                encoding="utf-8",
+            )
+        elif use_quant_lowered:
             cpp_body = render_lowered_quant_cpp_source(
                 symbol,
                 path,
@@ -546,7 +630,9 @@ def compile_aot(
         source_path.write_text(
             opt_comment
             + cpp_body
-            + _render_c_lowered_extern_bridge(symbol, quantized=use_quant_lowered),
+            + _render_c_lowered_extern_bridge(
+                symbol, quantized=use_quant_lowered or use_quant_specialized
+            ),
             encoding="utf-8",
         )
     else:
@@ -592,7 +678,8 @@ def compile_aot(
         optimized=bool(optimizations_applied),
         optimizations_applied=optimizations_applied,
         lowered=lowered,
-        quant_fast=use_quant_lowered,
+        quant_fast=use_quant_lowered or use_quant_specialized,
+        specialized=specialized,
     )
 
 
@@ -613,7 +700,11 @@ def _render_cpp_header(
     quant_fast_line = (
         "inline constexpr bool kQuantFastPath = true;\n" if quant_fast else ""
     )
-    quant_lowered_line = "inline constexpr bool kQuantLowered = false;\ninline constexpr std::size_t kWorkspaceBytes = 0u;\n"
+    quant_lowered_line = (
+        "inline constexpr bool kQuantLowered = false;\n"
+        "inline constexpr bool kSpecialized = false;\n"
+        "inline constexpr std::size_t kWorkspaceBytes = 0u;\n"
+    )
     if quantized:
         forward_decls = (
             "    bool forwardInt8(Arena& arena, const int8_t* input, int8_t* output) const;\n"

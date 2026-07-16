@@ -1,0 +1,14 @@
+--- a/python/tvm/relay/op/contrib/cmsisnn.py
++++ b/python/tvm/relay/op/contrib/cmsisnn.py
+@@ -274,7 +274,14 @@ def pattern_table():
+         # kernel zero_point should be 0
+         kernel_zp = fc.args[3].data.numpy().item(0)
+ 
+-        return are_dtypes_valid and kernel_zp == 0
++        # CMSIS-NN FC lowering in this TVM version expects scalar (per-tensor)
++        # requantize/kernel scales. Per-channel dense fails in GetScalarFromConstant.
++        kernel_scale = fc.args[5].data.numpy()
++        req_input_scale = requantize.args[1].data.numpy()
++        is_per_tensor = kernel_scale.size == 1 and req_input_scale.size == 1
++
++        return are_dtypes_valid and kernel_zp == 0 and is_per_tensor

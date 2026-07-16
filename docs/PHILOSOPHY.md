@@ -79,14 +79,23 @@ The C++ engine supports both an **interpreter-style** forward executor and **AOT
 
 **Goals:** correctness, predictable memory, small firmware surface, dual C/C++ API, desktop CLI, real AOT lower for deploy.
 
-**AOT scope by deployment:**
+**AOT modes (three options — pick per binary):**
 
-| Path | Intended use | Coverage |
-|------|--------------|----------|
-| **Float lower** | Host / MPU / Linux (typical 64-bit, ample RAM) | Full float graphs — UIB, ResNet, ConvNeXt, YOLOX taps+PAFPN, etc. |
-| **Quant lower** | Tight MCU int8 (MNIST-class CNN/DS-CNN/MLP, optional UIB) | conv / DW / pool / dense / UIB only — **by design**, not an unfinished backlog |
+| Mode | CLI | Runtime | Intended use |
+|------|-----|---------|--------------|
+| **Interpreter embed** | `aot --no-lower` | `.nk` blob + loader / plan build | TFLM-fair A/B, flexible |
+| **Lower (plan chain)** | `aot` (default) | Static `Kernels::` / `CmsisQuantPlan` + `Try*` | Default deploy; same kernels, less flash |
+| **Specialize** | `aot --specialize` | Shape-specialized **direct CMSIS-NN** (constexpr H/W/C; no plan/Try wrappers) | Fastest int8 MCU path (EI/TVM-class codegen style) |
 
-ResNet, ConvNeXt, BN/LayerNorm as layers, and YOLOX are **not** planned for quant AOT: in practice those models run float on Linux-class devices. Optional later work: deeper float specialization beyond shared kernel APIs.
+MCU boards: `make` / `deploy-lowered` = plan lower; `make NETKIT_SPECIALIZE=1` / `deploy-specialize` = specialize; `NETKIT_EMBED=1` = interpreter.
+
+| Path | Coverage notes |
+|------|----------------|
+| **Float lower** | Full float graphs — UIB, ResNet, ConvNeXt, YOLOX taps+PAFPN, etc. |
+| **Quant lower** | conv / DW / pool / dense / UIB |
+| **Quant specialize** | Primitive int8 (conv / DW / pool / dense); UIB still uses plan lower for now |
+
+ResNet / ConvNeXt / YOLOX quant AOT remain out of scope (float on Linux-class devices).
 
 **Not in Phase 1:** training, autograd, dynamic shapes, automatic heap growth inside layer code.
 

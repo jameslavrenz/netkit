@@ -22,6 +22,15 @@ make export-cnn-dw-int8-model-data
 make setup-deps
 make                          # CMSIS-NN
 make TFLM_OPT_KERNEL= clean all   # reference
+
+## Verified on-device results (NUCLEO-F446RE @ 180 MHz)
+
+| Mode | TFLM | netkit embed | microTVM |
+|------|-----:|-------------:|---------:|
+| CMSIS-NN | **61.4 ms** | 58.3 ms | 86.4 ms |
+| reference | **826.8 ms** | 140.3 ms | 236.0 ms |
+
+All **10/10**. Full tables: [STATUS.md](../../docs/STATUS.md), [`mcu_ab_logs`](../../benchmark/mcu_ab_logs/).
 ./scripts/flash.sh
 ./scripts/monitor.sh
 ```

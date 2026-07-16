@@ -36,4 +36,13 @@ ELF: `build/mnist_cnn_dw_int8_nucleo_f446re.elf`
 BENCHMARK_SUMMARY runtime=netkit model=cnn_dw_int8 backend=cmsis-nn-int8 mean_us=... runs=10
 ```
 
-Compare with TFLM twin: [nucleo-f446re-tflm-cnn-dw-int8](../nucleo-f446re-tflm-cnn-dw-int8/README.md).
+## Verified on-device results (NUCLEO-F446RE @ 180 MHz, interpreter embed)
+
+Matched −O2/−flto toolchain; 10×10, discard first invoke. See [STATUS.md](../../docs/STATUS.md) / [`mcu_ab_logs`](../../benchmark/mcu_ab_logs/).
+
+| Mode | netkit (`NETKIT_EMBED=1`) | TFLM | microTVM |
+|------|--------------------------:|-----:|---------:|
+| CMSIS-NN | **58.3 ms** | 61.4 ms | 86.4 ms |
+| reference (`NETKIT_REFERENCE_QUANT_LOOPS=1`) | **140.3 ms** | 826.8 ms | 236.0 ms |
+
+All **10/10**. Peers: [tflm-cnn-dw-int8](../nucleo-f446re-tflm-cnn-dw-int8/README.md), [tvm-cnn-dw-int8](../nucleo-f446re-tvm-cnn-dw-int8/README.md).
