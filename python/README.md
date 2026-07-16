@@ -1,8 +1,8 @@
 # netkit-tools (Python)
 
-Python tooling for **netkit** — a multi-modal (voice, image, vision) inference engine with an embedded-first design for MCU, MPU, and NPU targets. Converts ONNX models into binary **`.nk`** files for the C++26 / C23 runtime, and optionally AOT-embeds `.nk` bytes into C/C++ source for firmware.
+Python tooling for **netkit** — a multi-modal (voice, image, vision) inference engine with an embedded-first design for MCU, MPU, and NPU targets. Converts ONNX models into binary **`.nk`** files for the C++26 / C23 runtime, and AOT-compiles them to firmware sources.
 
-**Role in netkit:** Phase 1 serializer (ONNX → `.nk`) for the **`NkOpsResolver` interpreter** path, and AOT embedder (`.nk` → C++26 / C23) for the **compiled** path. Use `convert --optimize` / `aot --optimize` to fold and fuse the graph before embedding — fewer runtime layer dispatches. Phase 2 adds more packager-side compilation (layout, broader quantization) — see [docs/PHILOSOPHY.md](../docs/PHILOSOPHY.md#deployment-modes-interpreter-or-compiled).
+**Role in netkit:** ONNX → `.nk` packager for the **interpreter** path, and **AOT lower** (`.nk` → static `Kernels::` / `CmsisQuantPlan` call chains with weight arrays — no `.nk` loader by default). Use `aot --no-lower` only when you need interpreter embed (e.g. TFLM-fair A/B). Use `--strict-lower` to fail instead of falling back to embed. See [docs/PHILOSOPHY.md](../docs/PHILOSOPHY.md#terminology-embed-vs-lowered).
 
 Supported ONNX ops: `Gemm`, `Conv` (symmetric padding), `MaxPool` / `AveragePool` (symmetric padding), `GlobalAveragePool`, `BatchNormalization`, `Flatten`, and fused activations (`Relu`, `Sigmoid`, `Tanh`, `LeakyRelu`, `Clip`→ReLU6, `Softmax`). Details: [docs/ONNX.md](../docs/ONNX.md).
 
@@ -29,13 +29,15 @@ python -m netkit convert models/test_mlp.onnx -o models/test_mlp.nk
 # Inspect header + tensor catalog
 python -m netkit inspect models/test_mlp.nk
 
-# AOT embed .nk in firmware source (default: C++26)
+# AOT lower to static call chain (default: C++26; int8 → CmsisQuantPlan)
 python -m netkit aot models/test_mlp.nk -o build/aot
+python -m netkit aot models/mnist_cnn_dw_int8.nk -o build/aot --strict-lower --omit-final-softmax
+python -m netkit aot models/yolox_pafpn_taps.nk -o build/aot --strict-lower   # float YOLOX taps+PAFPN
 python -m netkit aot models/test_mlp.nk -o build/aot --no-lower          # embed .nk + loader
-python -m netkit aot models/test_mlp.nk -o build/aot --language c
+python -m netkit aot models/test_mlp.nk -o build/aot --language c        # C API + C++ lowered body
 python -m netkit aot models/test_mlp.nk -o build/aot --main   # optional smoke main
 python -m netkit aot models/mlp_hand.nk -o build/aot --target mcu --arena-headroom 15
-# Weights always flash/blob-backed (coefs in .rodata)
+# Weights in .rodata (NETKIT_AOT_FLASH_CONST)
 python -m netkit aot models/cnn_extended_ops.nk -o build/aot --optimize   # fewer runtime ops
 
 # Convert all bundled regression models (from repo root)

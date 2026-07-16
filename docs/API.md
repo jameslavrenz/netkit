@@ -2,7 +2,7 @@
 
 netkit is a **multi-modal inference engine** (voice, image, vision) with an **embedded-first** design for **MCUs, MPUs, and NPUs**. It exposes two language interfaces over the same **C++26** engine — a type-safe **C++26 API** and a **C23** mirror. **Float32** and **int8** inference are complete on Arm MCU/MPU and host cpu; RISC MPU uses XNNPACK; RISC MCU uses fast generic kernels — [STATUS.md](STATUS.md).
 
-**Deployment:** use the **`NkOpsResolver` interpreter** (load `.nk`, runtime layer dispatch) or the **compiled path** (AOT embed + packager optimizations + trimmed op tables for production speed). Both share the same kernels — [PHILOSOPHY.md](PHILOSOPHY.md#deployment-modes-interpreter-or-compiled). New users start with [GETTING_STARTED.md](GETTING_STARTED.md).
+**Deployment:** use the **`NkOpsResolver` interpreter** (load `.nk`, runtime layer dispatch) or the **compiled path** (AOT **lower** by default — static kernel / plan chain + weight arrays; `--no-lower` for interpreter embed). Both share the same kernels — [PHILOSOPHY.md](PHILOSOPHY.md#deployment-modes-interpreter-or-compiled). New users start with [GETTING_STARTED.md](GETTING_STARTED.md).
 
 | API | Header | Language | Use when |
 |-----|--------|----------|----------|

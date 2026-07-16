@@ -77,7 +77,7 @@ Requires **`make tools/nk_infer`** (model-sized heap arena via `nk_recommended_a
 
 `python/tests/test_aot_compile.py` generates C++26 and C23 sources from hand `.nk` models, compiles them against `libnetkit.a`, and checks outputs against the NumPy reference forward pass (embedded TCAS inputs). Generated headers are checked for arena sizing constants; an MCU-target compile (`-DNETKIT_TARGET_MCU_ARM=1`) is exercised against `mlp_hand.nk`.
 
-Models exercised: `test_mlp.nk`, `cnn_4x4_single.nk`, `mlp_hand.nk`, `cnn_hand.nk`. With `--optimize` / `optimize=True`, `cnn_extended_ops.nk` is also checked end-to-end (optimized graph embedded, runtime parity preserved).
+Models exercised: `test_mlp.nk`, `cnn_4x4_single.nk`, `mlp_hand.nk`, `cnn_hand.nk`. Also: quant lowered (`mnist_*_int8.nk`, DS-CNN depthwise), YOLOX float lower (`yolox_pafpn_taps.nk` + `yolox_mnv4_small.nk` `--strict-lower`), and `--optimize` on `cnn_extended_ops.nk`.
 
 `python/tests/test_nk_optimize.py` covers individual graph passes (BN folding, conv+BN fusion, linear dense merge) with numeric checks against the reference forward pass.
 

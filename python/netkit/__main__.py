@@ -84,7 +84,12 @@ def main(argv: list[str] | None = None) -> int:
     aot.add_argument(
         "--no-lower",
         action="store_true",
-        help="Embed .nk blob and use runtime loader (C++ only; default is static kernel lowering)",
+        help="Embed .nk blob and use runtime loader/interpreter (default is static lowering)",
+    )
+    aot.add_argument(
+        "--strict-lower",
+        action="store_true",
+        help="Fail if lowering is requested but the graph has unsupported ops (no silent embed fallback)",
     )
     aot.add_argument(
         "--no-flash-section",
@@ -95,7 +100,7 @@ def main(argv: list[str] | None = None) -> int:
         "--target",
         choices=("cpu", "mpu", "mcu"),
         default="cpu",
-        help="Firmware target for arena sizing (mcu subtracts flash payload from probe peaks)",
+        help="Deploy target hint (cpu/mpu/mcu); reserved for emit profiles",
     )
     aot.add_argument(
         "--omit-final-softmax",
@@ -203,17 +208,22 @@ def main(argv: list[str] | None = None) -> int:
             flash_section=not args.no_flash_section,
             lower=not args.no_lower,
             omit_final_softmax=args.omit_final_softmax,
+            strict_lower=args.strict_lower,
+            target=args.target,
         )
         print(f"Wrote {result.header_path}")
         print(f"Wrote {result.source_path}")
         print(
             f"network={result.network} input={result.input_elements} "
-            f"output={result.output_elements} bytes={result.nk_bytes} language={result.language.value}"
+            f"output={result.output_elements} nk_bytes={result.nk_bytes} "
+            f"language={result.language.value}"
         )
         if result.quant_fast:
             print("quant_fast=true (quant lowered static CmsisQuantPlan call chain)")
         elif result.lowered:
-            print("lowered=true (static Kernels:: call chain)")
+            print("lowered=true (static Kernels:: / plan call chain; no .nk loader)")
+        else:
+            print("lowered=false (interpreter embed of .nk blob)")
         print(
             f"arena_after_load={result.arena_bytes_after_load} "
             f"arena_after_forward={result.arena_bytes_after_forward} "

@@ -27,7 +27,7 @@ using TrimOps = NkOpList<NkConv2DOpDescriptor, NkDenseOpDescriptor>;
 cnn.SetOpsResolver(TrimOps::View());
 ```
 
-### Compiled — AOT embed + packager optimizations
+### Compiled — AOT lower + packager optimizations
 
 For production firmware with a **fixed model**, compile as much work as possible **before** inference:
 
@@ -35,48 +35,60 @@ For production firmware with a **fixed model**, compile as much work as possible
 |------|------|--------|
 | ONNX → `.nk` | `python -m netkit convert` | Serialize graph + float32 weights |
 | Graph optimize | `convert` (default) or `aot --optimize` | BN fold, conv+BN fusion, dense merge, composite block fuse — **fewer layer dispatches** at runtime; each pass verified numerically |
-| AOT embed | `python -m netkit aot` | Bake `.nk` into flash `.rodata`; emit arena sizing constants and thin load/run wrappers |
+| AOT lower | `python -m netkit aot` (default) | Static `Kernels::` / `CmsisQuantPlan` call chain + weight arrays in `.rodata` (no `.nk` loader) |
+| Interpreter embed | `aot --no-lower` | Optional: bake `.nk` blob for TFLM-fair A/B |
 | Lean link | `NkOpList` + trimmed `libnetkit.a` | Only op TUs and kernels your model uses |
 | Kernel backends | `NETKIT_CMSIS_NN` / `NETKIT_XNNPACK` | Hardware-accelerated matmul, conv, pool, FC where available |
 
 **Best for:** shipping firmware — minimum RAM, predictable latency, no filesystem, coefs in flash.
 
-Both modes call the **same kernels** (`Kernels::MatMul`, `Conv2D`, …). The compiled path moves graph rewriting and model embedding to **build time** so inference does less dispatch and allocation work. Phase 2 expands packager-side compilation (layout, quantization, target profiles) — see below.
+Both modes call the **same kernels** (`Kernels::MatMul`, `Conv2D`, …). The **lowered** path moves graph walk and weight binding to **build time** so inference does less dispatch and allocation work.
 
 ### Terminology: embed vs lowered
 
-The CLI command is `python -m netkit aot`, but that name covers **two different outputs**. Do not read “AOT” as always meaning “no interpreter.”
+The CLI command is `python -m netkit aot`, but that name covers **two different outputs**. Do not read “AOT” as always meaning “embed `.nk`.”
 
 | Term | CLI | On-device runtime | Comparable to |
 |------|-----|-------------------|---------------|
+| **Lowered / compiled** | `aot` (default) | Static `Kernels::` or `CmsisQuantPlan` call chain; explicit weight arrays in `.rodata`; **no `.nk` loader** | Custom fused firmware |
 | **Interpreter embed** | `aot … --no-lower` | `.nk` blob in flash → `NkLoader` → `NkOpsResolver` per layer | TFLM: `.tflite` blob → `MicroInterpreter` |
-| **Lowered / compiled** | `aot` (C++ default) | Static `Kernels::` or `CmsisQuantPlan` call chain; explicit weights; **no loader** | Custom fused firmware (not TFLM) |
 
-Generated files are still named `*_aot.{hpp,cpp}` for historical reasons. Makefile targets use **`export-embed`** for the packaging step (both modes). MCU **benchmark** firmware defaults to **interpreter embed** for apples-to-apples host and on-device comparisons with TFLM.
+Generated files are still named `*_aot.{hpp,cpp}` for historical reasons. If lowering cannot cover the graph, `aot` **warns** and falls back to embed unless `--strict-lower` is set (then it fails).
+
+MCU **deploy** boards (`nucleo-*-int8`) default to **quant lowered**. Use `NETKIT_EMBED=1` for TFLM-fair interpreter A/B. `make deploy-lowered` forces a clean lowered rebuild.
 
 Pipeline comparison:
 
 ```text
-Interpreter embed:  model.nk  ──aot --no-lower──►  flash blob  ──load──►  NkOpsResolver  ──►  Kernels
 Lowered / compiled: model.onnx  ──convert/optimize──►  model.nk  ──aot──►  static call chain  ──►  Kernels
+Interpreter embed:  model.nk  ──aot --no-lower──►  flash blob  ──load──►  NkOpsResolver  ──►  Kernels
 ```
 
 Details: [GETTING_STARTED.md](GETTING_STARTED.md#5-aot-compile-embed-nk-in-firmware), [BUILD_TARGETS.md](BUILD_TARGETS.md#layer-dispatch-opsresolver), [python/README.md](../python/README.md).
 
 ## Two-phase roadmap
 
-### Phase 1 — Interpreter runtime (today)
+### Phase 1 — Runtime + AOT lower (today)
 
-The C++ engine described above is an **interpreter-style forward executor** (see [Deployment modes](#deployment-modes-interpreter-or-compiled)):
+The C++ engine supports both an **interpreter-style** forward executor and **AOT lowered** firmware emission:
 
-1. Load a `.nk` file (architecture descriptor + float32 or int8 weights).
-2. Walk the layer list at runtime (Dense, Conv2D, MaxPool2D, AvgPool2D, BatchNorm2d, Flatten, activations).
-3. Execute kernel ops via the compile-time `Kernels` facade (`MatMul`, `Conv2D`, pool, activations) — reference implementations with optional CMSIS-NN / XNNPACK backends ([KERNELS.md](KERNELS.md)).
-4. Allocate weights and **ping-pong activation buffers** from a bump arena.
+1. Load a `.nk` file **or** link AOT-generated weight arrays + static call chain.
+2. Interpreter: walk the layer list at runtime. Lowered: unrolled `Kernels::` / `CmsisQuantPlan` calls (float + int8, including depthwise / DS-CNN).
+3. Execute via the `Kernels` facade — reference with optional CMSIS-NN / XNNPACK backends ([KERNELS.md](KERNELS.md)).
+4. Arena for activations (MCU: static buffer only; lowered int8 uses static act ping-pong).
 
-**Goals:** correctness, predictable memory, small firmware surface, dual C/C++ API, desktop CLI for debug and regression.
+**Goals:** correctness, predictable memory, small firmware surface, dual C/C++ API, desktop CLI, real AOT lower for deploy.
 
-**Not in Phase 1:** training, autograd, dynamic shapes, automatic heap growth inside layer code, or aggressive operator fusion in the runtime.
+**AOT scope by deployment:**
+
+| Path | Intended use | Coverage |
+|------|--------------|----------|
+| **Float lower** | Host / MPU / Linux (typical 64-bit, ample RAM) | Full float graphs — UIB, ResNet, ConvNeXt, YOLOX taps+PAFPN, etc. |
+| **Quant lower** | Tight MCU int8 (MNIST-class CNN/DS-CNN/MLP, optional UIB) | conv / DW / pool / dense / UIB only — **by design**, not an unfinished backlog |
+
+ResNet, ConvNeXt, BN/LayerNorm as layers, and YOLOX are **not** planned for quant AOT: in practice those models run float on Linux-class devices. Optional later work: deeper float specialization beyond shared kernel APIs.
+
+**Not in Phase 1:** training, autograd, dynamic shapes, automatic heap growth inside layer code.
 
 The Python packager (`python/netkit/`) converts **ONNX → `.nk`** and can embed regression test cases. It is primarily a **serializer** today — it records the graph and weights the runtime will interpret.
 

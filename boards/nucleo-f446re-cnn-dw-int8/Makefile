@@ -5,13 +5,15 @@
 #   NETKIT_TARGET=mcu_arm, NETKIT_ARCH=CM4 (weights always flash/blob-backed)
 #   Toolchain: boards/nucleo-f446re/mcu_tflm_toolchain.mk (TFLM microlite tiers:
 #     CORE/KERNEL/THIRD_PARTY all -O2, -flto link)
-#   Default: interpreter embed (--no-lower) — fair vs TFLM MicroInterpreter
-#   Optional: NETKIT_LOWERED=1 for quant lowered deployment profile
+#   Default: quant lowered AOT (static CmsisQuantPlan; no .nk loader)
+#   Optional: NETKIT_EMBED=1 for interpreter embed (TFLM-fair A/B)
 #
 # Usage:
 #   make cmsis-init          # once, from repo root
 #   make export-mnist-cnn-dw-int8  # once, from repo root (if model missing)
-#   make                     # build firmware.elf (interpreter embed)
+#   make                     # build firmware.elf (quant lowered)
+#   make NETKIT_EMBED=1      # interpreter embed for TFLM-fair compare
+#   make deploy-lowered      # alias: force lowered regenerate + build
 #   ./scripts/flash.sh       # program via ST-Link (USB)
 #   ./scripts/monitor.sh     # read UART results (ST-Link VCP)
 
@@ -25,8 +27,11 @@ MCU_BOARD_COMMON := $(BOARD_COMMON)
 
 include $(BOARD_COMMON)/mcu_tflm_toolchain.mk
 
-# 0 = interpreter embed (default, TFLM-fair). 1 = quant lowered call chain.
-NETKIT_LOWERED ?= 0
+# 1 = quant lowered (default). 0 / NETKIT_EMBED=1 = interpreter embed (TFLM-fair).
+NETKIT_LOWERED ?= 1
+ifneq ($(NETKIT_EMBED),)
+  NETKIT_LOWERED := $(if $(filter 1,$(NETKIT_EMBED)),0,1)
+endif
 
 BUILD_DIR := build
 GEN_DIR := generated
@@ -249,11 +254,16 @@ $(GEN_DIR)/mnist_cnn_dw_int8_aot.cpp $(GEN_DIR)/mnist_cnn_dw_int8_aot.hpp: $(NET
 	cd $(NETKIT_ROOT) && PYTHONPATH=$(NETKIT_ROOT)/python python3 -m netkit aot \
 		$(abspath $(GEN_DIR))/mnist_cnn_dw_int8.nk \
 		-o $(abspath $(GEN_DIR)) --language cpp --target mcu --arena-headroom 0 \
-		$(if $(filter 1,$(NETKIT_LOWERED)),,--no-lower) --omit-final-softmax
+		$(if $(filter 1,$(NETKIT_LOWERED)),--strict-lower,--no-lower) --omit-final-softmax
 	@touch $(GEN_DIR)/.embed_stamp
 
 # Back-compat alias (prefer export-embed).
 export-aot: export-embed
+
+.PHONY: deploy-lowered
+deploy-lowered:
+	$(MAKE) NETKIT_LOWERED=1 clean
+	$(MAKE) NETKIT_LOWERED=1
 
 $(LIBNETKIT): $(NETKIT_RUNTIME_SOURCES) $(CMSIS_NN_SOURCES)
 	@mkdir -p $(LIB_DIR)

@@ -4,7 +4,7 @@ Bare-metal firmware for the **STM32 NUCLEO-F446RE** (STM32F446RET6, Cortex-M4F, 
 
 Runs the **MNIST DS-CNN (depthwise-separable)** int8 peer of `boards/nucleo-f446re-cnn-int8` (10 test images, 10 runs).
 
-**Default build = interpreter embed** (embedded `.nk` + runtime loader). Optional `NETKIT_LOWERED=1` for quant lowered deployment. Toggle reference kernels with `NETKIT_REFERENCE_QUANT_LOOPS=1`.
+**Default build = quant lowered** (static `CmsisQuantPlan` + depthwise). Use `NETKIT_EMBED=1` for interpreter embed (TFLM-fair). Toggle reference kernels with `NETKIT_REFERENCE_QUANT_LOOPS=1`.
 
 ## netkit build profile (default)
 
@@ -14,15 +14,18 @@ Runs the **MNIST DS-CNN (depthwise-separable)** int8 peer of `boards/nucleo-f446
 | Images | `benchmark/tflm/generated/cnn_dw/mnist_cnn_int8_test_images.*` |
 | Target | `NETKIT_TARGET_MCU_ARM` / `CM4` |
 | CMSIS | **CMSIS-NN** (default); `NETKIT_REFERENCE_QUANT_LOOPS=1` for QuantOps |
-| Arena | **96 KiB** (`NETKIT_ARENA_KB=96`) |
+| Deployment | **Quant lowered** (default); `NETKIT_EMBED=1` → interpreter embed |
+| Arena | Tiny bump (lowered); **96 KiB** embed (`NETKIT_ARENA_KB=96`) |
 | Dtype | int8 end-to-end; Softmax omitted; argmax logits |
 
 ## Build / flash / capture
 
 ```bash
 cd boards/nucleo-f446re-cnn-dw-int8
-make                          # CMSIS-NN
-make NETKIT_REFERENCE_QUANT_LOOPS=1 clean all   # reference
+make                          # quant lowered + CMSIS-NN
+make NETKIT_EMBED=1           # interpreter embed (TFLM-fair)
+make deploy-lowered           # clean + lowered rebuild
+make NETKIT_REFERENCE_QUANT_LOOPS=1 clean all   # reference kernels
 ./scripts/flash.sh
 PORT=/dev/cu.usbmodem11203 CAPTURE_SEC=180 ./scripts/deploy.sh capture
 ```

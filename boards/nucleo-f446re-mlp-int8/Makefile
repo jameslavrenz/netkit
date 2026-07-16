@@ -1,7 +1,12 @@
 # NUCLEO-F446RE (STM32F446RET6) — MNIST MLP int8 benchmark firmware.
 #
+# Default: quant lowered AOT. NETKIT_EMBED=1 selects interpreter embed (TFLM-fair).
+#
 # Usage:
 #   make -C ../.. export-mnist-mlp-int8   # once
+#   make                                  # quant lowered
+#   make NETKIT_EMBED=1                   # interpreter embed
+#   make deploy-lowered
 #   make NETKIT_REFERENCE_QUANT_LOOPS=0   # CMSIS-NN (default)
 #   make NETKIT_REFERENCE_QUANT_LOOPS=1   # reference QuantOps loops
 #   ./scripts/flash.sh
@@ -14,6 +19,12 @@ MCU_CXX_STD := -std=c++20
 MCU_BOARD_COMMON := $(BOARD_COMMON)
 
 include $(BOARD_COMMON)/mcu_tflm_toolchain.mk
+
+# 1 = quant lowered (default). NETKIT_EMBED=1 → interpreter embed.
+NETKIT_LOWERED ?= 1
+ifneq ($(NETKIT_EMBED),)
+  NETKIT_LOWERED := $(if $(filter 1,$(NETKIT_EMBED)),0,1)
+endif
 
 BUILD_DIR := build
 GEN_DIR := generated
@@ -129,8 +140,13 @@ $(GEN_DIR)/.embed_stamp: $(NETKIT_ROOT)/models/mnist_mlp_int8.nk
 	@mkdir -p $(GEN_DIR)
 	cd $(NETKIT_ROOT) && PYTHONPATH=$(NETKIT_ROOT)/python python3 -m netkit aot models/mnist_mlp_int8.nk \
 		-o $(abspath $(GEN_DIR)) --language cpp --target mcu --arena-headroom 0 \
-		--no-lower --omit-final-softmax
+		$(if $(filter 1,$(NETKIT_LOWERED)),--strict-lower,--no-lower) --omit-final-softmax
 	@touch $(GEN_DIR)/.embed_stamp
+
+.PHONY: deploy-lowered
+deploy-lowered:
+	$(MAKE) NETKIT_LOWERED=1 clean
+	$(MAKE) NETKIT_LOWERED=1
 
 $(LIBNETKIT): $(NETKIT_RUNTIME_SOURCES) $(CMSIS_NN_SOURCES)
 	@mkdir -p $(LIB_DIR)

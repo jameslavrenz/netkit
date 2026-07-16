@@ -276,6 +276,73 @@ def _decompose_cnn(arch: dict[str, Any], weights: np.ndarray) -> tuple[list[_Gra
             offset += ch
             pairs.append((w, b))
             layers.append(_GraphLayer(spec=dict(layer), tensors=_TensorPair(), tensor_pairs=pairs))
+        elif layer_type == "feature_tap":
+            layers.append(_GraphLayer(spec=dict(layer), tensors=_TensorPair()))
+        elif layer_type == "yolox_decoupled_head":
+            in_c = int(layer["in_channels"])
+            hidden = int(layer["hidden_dim"])
+            num_classes = int(layer["num_classes"])
+            num_convs = int(layer["num_convs"])
+            pairs: list[tuple[np.ndarray, np.ndarray]] = []
+
+            def take_pair(w_elems: int, b_elems: int, w_shape: tuple[int, ...]) -> None:
+                nonlocal offset
+                w = weights[offset : offset + w_elems].reshape(w_shape).copy()
+                offset += w_elems
+                b = weights[offset : offset + b_elems].copy()
+                offset += b_elems
+                pairs.append((w, b))
+
+            take_pair(hidden * in_c, hidden, (hidden, 1, 1, in_c))
+            branch_elems = hidden * hidden * 9
+            for _ in range(num_convs):
+                take_pair(branch_elems, hidden, (hidden, 3, 3, hidden))
+            for _ in range(num_convs):
+                take_pair(branch_elems, hidden, (hidden, 3, 3, hidden))
+            take_pair(num_classes * hidden, num_classes, (num_classes, 1, 1, hidden))
+            take_pair(4 * hidden, 4, (4, 1, 1, hidden))
+            take_pair(hidden, 1, (1, 1, 1, hidden))
+            layers.append(_GraphLayer(spec=dict(layer), tensors=_TensorPair(), tensor_pairs=pairs))
+            channels = 4 + 1 + num_classes
+        elif layer_type == "yolox_pafpn_multiscale":
+            H = int(layer["hidden_dim"])
+            c3 = int(layer["c3_channels"])
+            c4 = int(layer["c4_channels"])
+            c5 = int(layer["c5_channels"])
+            num_classes = int(layer["num_classes"])
+            num_convs = int(layer["num_convs"])
+            pairs = []
+
+            def take_pair(w_elems: int, b_elems: int, w_shape: tuple[int, ...]) -> None:
+                nonlocal offset
+                w = weights[offset : offset + w_elems].reshape(w_shape).copy()
+                offset += w_elems
+                b = weights[offset : offset + b_elems].copy()
+                offset += b_elems
+                pairs.append((w, b))
+
+            for in_c in (c3, c4, c5):
+                take_pair(H * in_c, H, (H, 1, 1, in_c))
+            for _ in range(4):
+                take_pair(H * 9, H, (H, 3, 3))
+                take_pair(H * H, H, (H, 1, 1, H))
+            for _ in range(3):
+                take_pair(H * H, H, (H, 1, 1, H))
+                branch_elems = H * H * 9
+                for _b in range(num_convs):
+                    take_pair(branch_elems, H, (H, 3, 3, H))
+                for _b in range(num_convs):
+                    take_pair(branch_elems, H, (H, 3, 3, H))
+                take_pair(num_classes * H, num_classes, (num_classes, 1, 1, H))
+                take_pair(4 * H, 4, (4, 1, 1, H))
+                take_pair(H, 1, (1, 1, 1, H))
+            out_c = 4 + 1 + num_classes
+            h3, w3 = height * 4, width * 4
+            h4, w4 = height * 2, width * 2
+            out_elems = (h3 * w3 + h4 * w4 + height * width) * out_c
+            layers.append(_GraphLayer(spec=dict(layer), tensors=_TensorPair(), tensor_pairs=pairs))
+            height, width, channels = 1, 1, out_elems
+            dense_in = out_elems
         elif layer_type == "flatten":
             layers.append(_GraphLayer(spec=dict(layer), tensors=_TensorPair()))
             dense_in = height * width * channels
@@ -503,7 +570,14 @@ def _optimization_passes_enabled(opts: OptimizeOptions) -> bool:
 
 
 _COMPOSITE_LAYER_TYPES = frozenset(
-    {"mobilenetv4_uib", "resnet_basic_block", "convnextv2_block"}
+    {
+        "mobilenetv4_uib",
+        "resnet_basic_block",
+        "convnextv2_block",
+        "feature_tap",
+        "yolox_pafpn_multiscale",
+        "yolox_decoupled_head",
+    }
 )
 
 

@@ -256,12 +256,19 @@ class TestAotCompile(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp = Path(tmpdir)
             cpp = compile_aot(nk_path, tmp / "cpp", language=AotLanguage.CPP)
-            c = compile_aot(nk_path, tmp / "c", language=AotLanguage.C)
+            c_lowered = compile_aot(nk_path, tmp / "c_lowered", language=AotLanguage.C)
+            c_embed = compile_aot(
+                nk_path, tmp / "c_embed", language=AotLanguage.C, lower=False
+            )
             self.assertTrue(cpp.header_path.name.endswith("_aot.hpp"))
             self.assertTrue(cpp.source_path.name.endswith("_aot.cpp"))
-            self.assertTrue(c.header_path.name.endswith("_aot.h"))
-            self.assertTrue(c.source_path.name.endswith("_aot.c"))
-            self.assertGreater(cpp.nk_bytes, 0)
+            self.assertTrue(cpp.lowered)
+            self.assertEqual(cpp.nk_bytes, 0)
+            self.assertTrue(c_lowered.header_path.name.endswith("_aot.h"))
+            self.assertTrue(c_lowered.source_path.name.endswith("_aot.cpp"))
+            self.assertTrue(c_lowered.lowered)
+            self.assertTrue(c_embed.source_path.name.endswith("_aot.c"))
+            self.assertFalse(c_embed.lowered)
             self.assertEqual(cpp.input_elements, 2)
             self.assertEqual(cpp.output_elements, 2)
 
@@ -289,13 +296,13 @@ class TestAotCompile(unittest.TestCase):
             self.assertIn(f"{cpp.model_name}_aot_init_arena", c_header)
 
             self.assertGreaterEqual(cpp.arena_bytes_recommended, cpp.arena_bytes_after_forward)
-            self.assertGreater(cpp.arena_bytes_after_forward, 0)
             self.assertEqual(cpp.arena_bytes_recommended % 64, 0)
 
             cpp_source = cpp.source_path.read_text(encoding="utf-8")
             self.assertIn("NETKIT_AOT_FLASH_CONST", cpp_source)
             self.assertIn('section(".rodata")', cpp_source)
             self.assertIn("defined(__ELF__)", cpp_source)
+            self.assertIn("NETKIT_AOT_FLASH_CONST static", cpp_source)
             self.assertTrue(cpp.lowered)
             self.assertIn("kLowered = true", cpp_header)
             self.assertIn("Kernels::FullyConnectedWithBias", cpp_source)
@@ -337,8 +344,10 @@ class TestAotCompile(unittest.TestCase):
                         _compile_and_run_cpp,
                     ),
                     (
-                        "c",
-                        lambda out: compile_aot(nk_path, out, language=AotLanguage.C),
+                        "c_embed",
+                        lambda out: compile_aot(
+                            nk_path, out, language=AotLanguage.C, lower=False
+                        ),
                         _write_c_harness,
                         _compile_and_run_c,
                     ),
@@ -403,6 +412,92 @@ class TestAotCompile(unittest.TestCase):
             self.assertFalse(result.lowered)
             self.assertIn("LoadMLPFromBuffer", source)
             self.assertIn("kNkBlob", source)
+
+    def test_quant_lowered_cnn_and_dscnn(self) -> None:
+        for model_file in ("mnist_cnn_int8.nk", "mnist_cnn_dw_int8.nk", "mnist_mlp_int8.nk"):
+            nk_path = MODELS / model_file
+            with self.subTest(model=model_file):
+                with tempfile.TemporaryDirectory() as tmpdir:
+                    tmp = Path(tmpdir)
+                    result = compile_aot(
+                        nk_path,
+                        tmp / "q",
+                        language=AotLanguage.CPP,
+                        omit_final_softmax=True,
+                        strict_lower=True,
+                    )
+                    self.assertTrue(result.lowered)
+                    self.assertTrue(result.quant_fast)
+                    self.assertEqual(result.nk_bytes, 0)
+                    header = result.header_path.read_text(encoding="utf-8")
+                    source = result.source_path.read_text(encoding="utf-8")
+                    self.assertIn("kQuantLowered = true", header)
+                    self.assertIn("kNkBytes = 0u", header)
+                    self.assertNotIn("kNkBlob", source)
+                    self.assertNotIn("LoadCNNFromBuffer", source)
+                    self.assertNotIn("LoadMLPFromBuffer", source)
+                    self.assertIn("NETKIT_AOT_FLASH_CONST", source)
+                    if "dw" in model_file:
+                        self.assertIn("TryDepthwiseConv2dNhwcQuantPlan", source)
+
+    def test_yolox_float_lower_matches_reference(self) -> None:
+        """YOLOX feature_tap + PAFPN lower to YoloxPafpnMultiscale (no .nk blob)."""
+        nk_path = MODELS / "yolox_pafpn_taps.nk"
+        if not nk_path.is_file():
+            self.skipTest("yolox_pafpn_taps.nk missing")
+        _require_tool("c++")
+        _require_lib()
+        arch, weights = read_nk(nk_path)
+        suite = read_test_suite(nk_path)
+        case = suite.cases[0]
+        expected = _reference_output(arch, weights, np.asarray(case.input, dtype=np.float32))
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            result = compile_aot(
+                nk_path,
+                tmp / "yolox",
+                language=AotLanguage.CPP,
+                strict_lower=True,
+            )
+            self.assertTrue(result.lowered)
+            self.assertEqual(result.nk_bytes, 0)
+            source = result.source_path.read_text(encoding="utf-8")
+            self.assertIn("YoloxPafpnMultiscale", source)
+            self.assertIn("g_feature_tap_0", source)
+            self.assertIn("g_feature_tap_1", source)
+            self.assertNotIn("kNkBlob", source)
+            harness = _write_cpp_harness(tmp / "yolox", result.model_name, case.input)
+            stdout = _compile_and_run_cpp(
+                tmp / "yolox",
+                result.source_path,
+                harness,
+                tmp / "yolox" / "aot_runner",
+            )
+            actual = np.array([float(v) for v in stdout.split(",")], dtype=np.float32)
+            np.testing.assert_allclose(
+                actual,
+                expected,
+                rtol=0.0,
+                atol=suite.tolerance,
+                err_msg="YOLOX lowered AOT mismatch for yolox_pafpn_taps.nk",
+            )
+
+    def test_yolox_mnv4_strict_lower_succeeds(self) -> None:
+        nk_path = MODELS / "yolox_mnv4_small.nk"
+        if not nk_path.is_file():
+            self.skipTest("yolox_mnv4_small.nk missing")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = compile_aot(
+                nk_path,
+                Path(tmpdir) / "y",
+                language=AotLanguage.CPP,
+                strict_lower=True,
+            )
+            self.assertTrue(result.lowered)
+            source = result.source_path.read_text(encoding="utf-8")
+            self.assertIn("YoloxPafpnMultiscale", source)
+            self.assertIn("MobileNetV4Uib", source)
 
     def test_aot_optimize_matches_reference(self) -> None:
         nk_path = MODELS / "cnn_extended_ops.nk"

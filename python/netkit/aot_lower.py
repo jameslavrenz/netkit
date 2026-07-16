@@ -24,6 +24,9 @@ LOWERABLE_LAYER_TYPES = frozenset(
         "mobilenetv4_uib",
         "resnet_basic_block",
         "convnextv2_block",
+        "feature_tap",
+        "yolox_pafpn_multiscale",
+        "yolox_decoupled_head",
     }
 )
 
@@ -51,8 +54,18 @@ class LoweredPlan:
     includes: tuple[str, ...] = ()
 
 
+def unsupported_lower_layers(arch: dict[str, Any]) -> list[str]:
+    """Return layer types that block float AOT lowering (unique, stable order)."""
+    seen: list[str] = []
+    for layer in arch["layers"]:
+        layer_type = layer["type"]
+        if layer_type not in LOWERABLE_LAYER_TYPES and layer_type not in seen:
+            seen.append(layer_type)
+    return seen
+
+
 def can_lower_arch(arch: dict[str, Any]) -> bool:
-    return all(layer["type"] in LOWERABLE_LAYER_TYPES for layer in arch["layers"])
+    return not unsupported_lower_layers(arch)
 
 
 def _out_dim(in_dim: int, kernel: int, stride: int, pad_before: int, pad_after: int) -> int:
@@ -78,7 +91,10 @@ def _build_load_body() -> str:
 def _format_float_array(name: str, values: np.ndarray, *, const: bool = True) -> str:
     flat = np.asarray(values, dtype=np.float32).reshape(-1)
     row: list[str] = []
-    lines = [f"alignas(16) static {'const ' if const else ''}float {name}[{flat.size}] = {{"]
+    qual = "const " if const else ""
+    lines = [
+        f"alignas(16) NETKIT_AOT_FLASH_CONST static {qual}float {name}[{flat.size}] = {{"
+    ]
     for index, value in enumerate(flat):
         row.append(f"{float(value):.8f}f")
         if len(row) == 8:
@@ -121,6 +137,16 @@ def _view3d(data: str, h: int, w: int, c: int, var: str) -> str:
         f"    {{\n"
         f"        const std::array<std::uint32_t, 3> shape = {{{h}u, {w}u, {c}u}};\n"
         f"        {var} = TensorFactory::ViewND({data}, 3, shape);\n"
+        f"    }}\n"
+        f"    if (!{var}.data)\n        return false;\n"
+    )
+
+
+def _view1d(data: str, elems: int, var: str) -> str:
+    return (
+        f"    {{\n"
+        f"        const std::array<std::uint32_t, 1> shape = {{{elems}u}};\n"
+        f"        {var} = TensorFactory::ViewND({data}, 1, shape);\n"
         f"    }}\n"
         f"    if (!{var}.data)\n        return false;\n"
     )
@@ -440,6 +466,224 @@ def _plan_convnext_layer(
     return height, width, ch
 
 
+def _plan_feature_tap_layer(
+    layer: _GraphLayer,
+    *,
+    height: int,
+    width: int,
+    channels: int,
+    dest: str,
+    forward_lines: list[str],
+    composite_scratch: list[tuple[str, int]],
+    feature_taps: dict[int, tuple[int, int, int]],
+) -> None:
+    tap_id = int(layer.spec["tap_id"])
+    tap_c = int(layer.spec["channels"])
+    if tap_c != channels:
+        raise ValueError(
+            f"feature_tap tap_id={tap_id} channels={tap_c} != current channels={channels}"
+        )
+    elems = height * width * channels
+    tap_name = f"g_feature_tap_{tap_id}"
+    composite_scratch.append((tap_name, elems))
+    feature_taps[tap_id] = (height, width, channels)
+    forward_lines.append(_view3d(dest, height, width, channels, "layer_out"))
+    forward_lines.append(
+        f"    std::memcpy(layer_out.data, current.data, "
+        f"static_cast<std::size_t>({elems}) * sizeof(float));\n"
+        f"    std::memcpy({tap_name}, current.data, "
+        f"static_cast<std::size_t>({elems}) * sizeof(float));\n"
+    )
+
+
+def _emit_yolox_head_fields(
+    *,
+    head_var: str,
+    exprs: list[tuple[str, str]],
+    start: int,
+    in_channels: int,
+    hidden_dim: int,
+    num_classes: int,
+    num_convs: int,
+) -> tuple[list[str], int]:
+    """Emit YoloxDecoupledHead field assignments; return (lines, next_pair_index)."""
+    lines: list[str] = [
+        f"        {head_var}.in_channels = {in_channels};\n",
+        f"        {head_var}.hidden_dim = {hidden_dim};\n",
+        f"        {head_var}.num_classes = {num_classes};\n",
+        f"        {head_var}.num_convs = {num_convs};\n",
+        f"        {head_var}.stem_weights = {exprs[start][0]};\n",
+        f"        {head_var}.stem_bias = {exprs[start][1]};\n",
+    ]
+    idx = start + 1
+    for ci in range(num_convs):
+        lines.append(f"        {head_var}.cls_conv_weights[{ci}] = {exprs[idx][0]};\n")
+        lines.append(f"        {head_var}.cls_conv_bias[{ci}] = {exprs[idx][1]};\n")
+        idx += 1
+    for ri in range(num_convs):
+        lines.append(f"        {head_var}.reg_conv_weights[{ri}] = {exprs[idx][0]};\n")
+        lines.append(f"        {head_var}.reg_conv_bias[{ri}] = {exprs[idx][1]};\n")
+        idx += 1
+    lines.extend(
+        [
+            f"        {head_var}.cls_pred_weights = {exprs[idx][0]};\n",
+            f"        {head_var}.cls_pred_bias = {exprs[idx][1]};\n",
+            f"        {head_var}.reg_pred_weights = {exprs[idx + 1][0]};\n",
+            f"        {head_var}.reg_pred_bias = {exprs[idx + 1][1]};\n",
+            f"        {head_var}.obj_pred_weights = {exprs[idx + 2][0]};\n",
+            f"        {head_var}.obj_pred_bias = {exprs[idx + 2][1]};\n",
+        ]
+    )
+    return lines, idx + 3
+
+
+def _plan_yolox_decoupled_head_layer(
+    layer: _GraphLayer,
+    *,
+    height: int,
+    width: int,
+    dest: str,
+    layer_index: int,
+    weight_arrays: list[tuple[str, np.ndarray]],
+    forward_lines: list[str],
+    composite_scratch: list[tuple[str, int]],
+) -> tuple[int, int, int]:
+    spec = layer.spec
+    in_c = int(spec["in_channels"])
+    hidden = int(spec["hidden_dim"])
+    num_classes = int(spec["num_classes"])
+    num_convs = int(spec["num_convs"])
+    out_c = 4 + 1 + num_classes
+    pairs = layer.tensor_pairs
+    names = _emit_pair_arrays(weight_arrays, pairs, f"kYoloxHead{layer_index}")
+    exprs = [(_weight_data_expr(w), _weight_data_expr(b)) for w, b in names]
+    scratch_elems = height * width * hidden * 3
+    scratch_name = f"g_yolox_head_scratch_{layer_index}"
+    composite_scratch.append((scratch_name, scratch_elems))
+    head_lines, _ = _emit_yolox_head_fields(
+        head_var="head",
+        exprs=exprs,
+        start=0,
+        in_channels=in_c,
+        hidden_dim=hidden,
+        num_classes=num_classes,
+        num_convs=num_convs,
+    )
+    forward_lines.append(_view3d(dest, height, width, out_c, "layer_out"))
+    forward_lines.append("    {\n        YoloxDecoupledHead head{};\n")
+    forward_lines.extend(head_lines)
+    forward_lines.append(
+        f"        head.scratch = {scratch_name};\n"
+        f"        head.scratch_elems = {scratch_elems}u;\n"
+        f"        head.forward(current, layer_out);\n"
+        f"    }}\n"
+    )
+    return height, width, out_c
+
+
+def _plan_yolox_pafpn_layer(
+    layer: _GraphLayer,
+    *,
+    height: int,
+    width: int,
+    dest: str,
+    layer_index: int,
+    weight_arrays: list[tuple[str, np.ndarray]],
+    forward_lines: list[str],
+    composite_scratch: list[tuple[str, int]],
+    feature_taps: dict[int, tuple[int, int, int]],
+) -> tuple[int, int, int]:
+    spec = layer.spec
+    c3 = int(spec["c3_channels"])
+    c4 = int(spec["c4_channels"])
+    c5 = int(spec["c5_channels"])
+    H = int(spec["hidden_dim"])
+    num_classes = int(spec["num_classes"])
+    num_convs = int(spec["num_convs"])
+    if 0 not in feature_taps or 1 not in feature_taps:
+        raise ValueError("yolox_pafpn_multiscale requires feature_tap ids 0 and 1 beforehand")
+    c3_h, c3_w, c3_tap_c = feature_taps[0]
+    c4_h, c4_w, c4_tap_c = feature_taps[1]
+    if c3_tap_c != c3 or c4_tap_c != c4:
+        raise ValueError(
+            f"yolox_pafpn tap channel mismatch: tap0={c3_tap_c}/{c3} tap1={c4_tap_c}/{c4}"
+        )
+    h5, w5 = height, width
+    if c3_h != h5 * 4 or c3_w != w5 * 4 or c4_h != h5 * 2 or c4_w != w5 * 2:
+        raise ValueError(
+            f"yolox_pafpn tap spatial mismatch vs C5={h5}x{w5}: "
+            f"C3={c3_h}x{c3_w} C4={c4_h}x{c4_w}"
+        )
+
+    pairs = layer.tensor_pairs
+    names = _emit_pair_arrays(weight_arrays, pairs, f"kPafpn{layer_index}")
+    exprs = [(_weight_data_expr(w), _weight_data_expr(b)) for w, b in names]
+
+    e3 = c3_h * c3_w * H
+    e4 = c4_h * c4_w * H
+    e5 = h5 * w5 * H
+    scratch_elems = e3 + e4 + e5 + e3 + e3 + 3 * e3
+    scratch_name = f"g_pafpn_scratch_{layer_index}"
+    composite_scratch.append((scratch_name, scratch_elems))
+
+    out_c = 4 + 1 + num_classes
+    out_elems = (c3_h * c3_w + c4_h * c4_w + h5 * w5) * out_c
+
+    # Pair order: lat3, lat4, lat5, td_p4 dw/pw, td_p3 dw/pw, bu_n4 dw/pw, bu_n5 dw/pw, heads×3
+    neck_fields = [
+        ("lat3_weights", "lat3_bias", 0),
+        ("lat4_weights", "lat4_bias", 1),
+        ("lat5_weights", "lat5_bias", 2),
+        ("td_p4_dw_weights", "td_p4_dw_bias", 3),
+        ("td_p4_pw_weights", "td_p4_pw_bias", 4),
+        ("td_p3_dw_weights", "td_p3_dw_bias", 5),
+        ("td_p3_pw_weights", "td_p3_pw_bias", 6),
+        ("bu_n4_dw_weights", "bu_n4_dw_bias", 7),
+        ("bu_n4_pw_weights", "bu_n4_pw_bias", 8),
+        ("bu_n5_dw_weights", "bu_n5_dw_bias", 9),
+        ("bu_n5_pw_weights", "bu_n5_pw_bias", 10),
+    ]
+
+    forward_lines.append(_view1d(dest, out_elems, "layer_out"))
+    forward_lines.append(
+        f"    {{\n"
+        f"        YoloxPafpnMultiscale neck{{}};\n"
+        f"        neck.c3_channels = {c3};\n"
+        f"        neck.c4_channels = {c4};\n"
+        f"        neck.c5_channels = {c5};\n"
+        f"        neck.hidden_dim = {H};\n"
+        f"        neck.num_classes = {num_classes};\n"
+        f"        neck.num_convs = {num_convs};\n"
+    )
+    for field_w, field_b, pair_i in neck_fields:
+        forward_lines.append(f"        neck.{field_w} = {exprs[pair_i][0]};\n")
+        forward_lines.append(f"        neck.{field_b} = {exprs[pair_i][1]};\n")
+    forward_lines.append(
+        f"        neck.c3_data = g_feature_tap_0;\n"
+        f"        neck.c3_h = {c3_h}u;\n"
+        f"        neck.c3_w = {c3_w}u;\n"
+        f"        neck.c4_data = g_feature_tap_1;\n"
+        f"        neck.c4_h = {c4_h}u;\n"
+        f"        neck.c4_w = {c4_w}u;\n"
+        f"        neck.scratch = {scratch_name};\n"
+        f"        neck.scratch_elems = {scratch_elems}u;\n"
+    )
+    pair_idx = 11
+    for scale in range(3):
+        head_lines, pair_idx = _emit_yolox_head_fields(
+            head_var=f"neck.heads[{scale}]",
+            exprs=exprs,
+            start=pair_idx,
+            in_channels=H,
+            hidden_dim=H,
+            num_classes=num_classes,
+            num_convs=num_convs,
+        )
+        forward_lines.extend(head_lines)
+    forward_lines.append("        neck.forward(current, layer_out);\n    }\n")
+    return 1, 1, out_elems
+
+
 def _plan_cnn(
     arch: dict[str, Any],
     layers: list[_GraphLayer],
@@ -451,6 +695,7 @@ def _plan_cnn(
     weight_arrays: list[tuple[str, np.ndarray]] = []
     composite_scratch: list[tuple[str, int]] = []
     includes: set[str] = set()
+    feature_taps: dict[int, tuple[int, int, int]] = {}
     forward_lines: list[str] = [
         "    float* read_buffer = const_cast<float*>(input);\n",
         "    float* write_buffer = scratch_a;\n",
@@ -749,7 +994,7 @@ def _plan_cnn(
                 width=width,
                 dest=dest,
                 layer_index=layer_index,
-                                weight_arrays=weight_arrays,
+                weight_arrays=weight_arrays,
                 forward_lines=forward_lines,
                 composite_scratch=composite_scratch,
             )
@@ -761,6 +1006,76 @@ def _plan_cnn(
                     width=out_w,
                     channels=out_c,
                     features=0,
+                )
+            height, width, channels = out_h, out_w, out_c
+            layer_index += 1
+        elif layer_type == "feature_tap":
+            _plan_feature_tap_layer(
+                layer,
+                height=height,
+                width=width,
+                channels=channels,
+                dest=dest,
+                forward_lines=forward_lines,
+                composite_scratch=composite_scratch,
+                feature_taps=feature_taps,
+            )
+            if not is_last:
+                _append_ping_pong(
+                    forward_lines,
+                    rank2=False,
+                    height=height,
+                    width=width,
+                    channels=channels,
+                    features=0,
+                )
+            layer_index += 1
+        elif layer_type == "yolox_decoupled_head":
+            includes.add("yolox_decoupled_head.hpp")
+            out_h, out_w, out_c = _plan_yolox_decoupled_head_layer(
+                layer,
+                height=height,
+                width=width,
+                dest=dest,
+                layer_index=layer_index,
+                weight_arrays=weight_arrays,
+                forward_lines=forward_lines,
+                composite_scratch=composite_scratch,
+            )
+            if not is_last:
+                _append_ping_pong(
+                    forward_lines,
+                    rank2=False,
+                    height=out_h,
+                    width=out_w,
+                    channels=out_c,
+                    features=0,
+                )
+            height, width, channels = out_h, out_w, out_c
+            layer_index += 1
+        elif layer_type == "yolox_pafpn_multiscale":
+            includes.add("yolox_pafpn.hpp")
+            out_h, out_w, out_c = _plan_yolox_pafpn_layer(
+                layer,
+                height=height,
+                width=width,
+                dest=dest,
+                layer_index=layer_index,
+                weight_arrays=weight_arrays,
+                forward_lines=forward_lines,
+                composite_scratch=composite_scratch,
+                feature_taps=feature_taps,
+            )
+            # Flat concat tensor; treat as rank-2 for any follow-on dense.
+            dense_in = out_c
+            if not is_last:
+                _append_ping_pong(
+                    forward_lines,
+                    rank2=True,
+                    height=1,
+                    width=out_c,
+                    channels=1,
+                    features=out_c,
                 )
             height, width, channels = out_h, out_w, out_c
             layer_index += 1

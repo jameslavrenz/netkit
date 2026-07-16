@@ -173,6 +173,7 @@ Boards: `nucleo-f446re-cnn-int8` / `nucleo-f446re-tflm-cnn-int8`; DS-CNN twins `
 ## Open / next
 
 - **YOLOX detection accuracy** — runtime and host latency path land; more training / calibration needed for mAP
+- **Deeper float AOT specialization** (optional) — fused/specialized codegen beyond calling shared `Kernels` / composite `::forward` APIs; not required for correctness
 - RISC-V MCU NN kernels (CMSIS-NN–class accelerator; optional — generic path stays the default until it lands)
 - Broader int8 model coverage beyond MNIST + ImageNet MNv4 fixtures
 - float16 / int16 / int4 (Phase 2)

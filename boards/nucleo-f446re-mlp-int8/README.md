@@ -4,7 +4,7 @@ Bare-metal firmware for the **STM32 NUCLEO-F446RE** (STM32F446RET6, Cortex-M4F, 
 
 Runs the **same MNIST MLP benchmark** as `benchmark/netkit/` and `benchmark/tflm/` (10 test images, 10 runs), using **int8** weights, activations, and prequantized inputs end-to-end.
 
-**Default build = interpreter embed** (embedded `.nk` + runtime loader) for a fair comparison with TFLM `MicroInterpreter`.
+**Default build = quant lowered** (static FC `CmsisQuantPlan` + weight arrays). Use `NETKIT_EMBED=1` for interpreter embed (TFLM-fair A/B). `make deploy-lowered` forces a clean lowered rebuild.
 
 ## netkit build profile (default)
 
@@ -13,8 +13,8 @@ Runs the **same MNIST MLP benchmark** as `benchmark/netkit/` and `benchmark/tflm
 | Target | `NETKIT_TARGET_MCU_ARM` |
 | Arch | `NETKIT_ARCH=CM4` (Cortex-M4F) |
 | CMSIS | **CMSIS-NN** (int8 FC; Softmax omitted — classify via argmax on logits) |
-| Weights | **Flash** — embedded `.nk` blob in `.rodata` |
-| Deployment | **Interpreter embed** — `NkLoader` + quantized MLP forward |
+| Weights | **Flash** — static int8 arrays (`NETKIT_AOT_FLASH_CONST`) |
+| Deployment | **Quant lowered** — static plan chain (no `.nk` loader) |
 | Dtype | int8 weights / activations; prequantized int8 test inputs; output = logits (Softmax omitted) |
 
 Set `NETKIT_REFERENCE_QUANT_LOOPS=1` to benchmark reference quant loops instead of CMSIS-NN kernels.
@@ -36,7 +36,9 @@ make export-mnist-mlp-int8
 ../nucleo-f446re/scripts/setup-toolchain.sh
 
 cd boards/nucleo-f446re-mlp-int8
-make                                    # CMSIS-NN (default)
+make                                    # quant lowered + CMSIS-NN (default)
+make NETKIT_EMBED=1                     # interpreter embed (TFLM-fair)
+make deploy-lowered                     # clean + lowered rebuild
 make NETKIT_REFERENCE_QUANT_LOOPS=1     # reference quant loops
 ./scripts/flash.sh
 ./scripts/monitor.sh   # press RESET on board

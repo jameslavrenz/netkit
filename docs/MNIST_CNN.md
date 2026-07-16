@@ -72,9 +72,9 @@ make -C boards/nucleo-f446re-cnn-int8
 cd boards/nucleo-f446re-cnn-int8 && ./scripts/flash.sh && ./scripts/monitor.sh
 ```
 
-Verified: **10/10** accuracy, **~95 ms** mean invoke (typical **94.9–97.0 ms** across captures; interpreter embed, default `make`). See [boards/nucleo-f446re-cnn-int8/README.md](../boards/nucleo-f446re-cnn-int8/README.md).
+Verified (interpreter embed A/B): **10/10** accuracy, **~95 ms** mean invoke (typical **94.9–97.0 ms** across captures; `NETKIT_EMBED=1`). Board default is **quant lowered** (`make` / `make deploy-lowered`). See [boards/nucleo-f446re-cnn-int8/README.md](../boards/nucleo-f446re-cnn-int8/README.md).
 
-On-device memory (interpreter embed): **~334 KiB flash**, **~75 KiB SRAM** (64 KiB arena + ~53 KiB headroom on 128 KiB SRAM). Optional quant lowered deployment: `make NETKIT_LOWERED=1` (static ping-pong BSS instead of a large arena — [ARENA.md](ARENA.md#quant-lowered-vs-interpreter-embed-on-mcu)).
+On-device memory (interpreter embed): **~334 KiB flash**, **~75 KiB SRAM** (64 KiB arena + ~53 KiB headroom on 128 KiB SRAM). Quant lowered uses static ping-pong BSS instead of a large arena — [ARENA.md](ARENA.md#quant-lowered-vs-interpreter-embed-on-mcu).
 
 UART captures `DIGIT_SUMMARY` lines with raw int8 softmax (`pred_i8`, `out_i8=...`). Dequantized per-digit confidence is computed offline — not on device:
 

@@ -76,9 +76,11 @@ extern "C" int main(void)
     dwt_time_init();
 
     uart_write("\r\nnetkit NUCLEO-F446RE MNIST MLP int8 benchmark\r\n");
-    uart_printf("  backend:     %s int8 (MCU CM4, .nk loader)\r\n",
-                NETKIT_REFERENCE_QUANT_LOOPS ? "netkit reference" : "cmsis-nn");
-    uart_printf("  weights:     flash (embedded .nk blob)\r\n");
+    uart_printf("  backend:     %s int8 (MCU CM4%s)\r\n",
+                NETKIT_REFERENCE_QUANT_LOOPS ? "netkit reference" : "cmsis-nn",
+                aot::kQuantLowered ? ", quant lowered AOT" : ", .nk loader");
+    uart_printf("  weights:     %s\r\n",
+                aot::kQuantLowered ? "flash (static .rodata)" : "flash (embedded .nk blob)");
     uart_write("  dtype:       int8 end-to-end (weights, activations, inputs; logits out)\r\n");
     uart_write("  classify:    argmax(logits) — final Softmax omitted\r\n");
     uart_printf("  images:      %d per run\r\n", kImageCount);

@@ -9,6 +9,7 @@ from typing import Any
 import numpy as np
 
 from .arch_writer import _make_divisible, _uib_output_spatial
+from .cnn_layers import depthwise_kernel_hw
 from .quantize import _quantize_multiplier, _softmax_s8_params
 from .quant_nk_reader import QuantNkBundle, read_quant_nk
 from .reference_forward import _out_dim
@@ -16,6 +17,7 @@ from .reference_forward import _out_dim
 LOWERABLE_QUANT_LAYER_TYPES = frozenset(
     {
         "conv2d",
+        "depthwise_conv2d",
         "max_pool2d",
         "avg_pool2d",
         "flatten",
@@ -43,15 +45,46 @@ class QuantLoweredPlan:
     quant_desc_arrays: list[tuple[str, Any]] = field(default_factory=list)
 
 
-def can_lower_quantized_arch(arch: dict[str, Any]) -> bool:
+def unsupported_quant_lower_layers(arch: dict[str, Any]) -> list[str]:
+    """Return layer types that block quantized AOT lowering (unique, stable order)."""
     network = arch.get("network")
     if network not in {"cnn", "mlp"}:
-        return False
-    return all(layer["type"] in LOWERABLE_QUANT_LAYER_TYPES for layer in arch["layers"])
+        return [f"network:{network}"]
+    seen: list[str] = []
+    for layer in arch["layers"]:
+        layer_type = layer["type"]
+        if layer_type not in LOWERABLE_QUANT_LAYER_TYPES and layer_type not in seen:
+            seen.append(layer_type)
+        if layer_type == "depthwise_conv2d":
+            pad_h = int(layer.get("pad_h", 0) or 0)
+            pad_w = int(layer.get("pad_w", 0) or 0)
+            pad_h_end = int(layer.get("pad_h_end", pad_h) or pad_h)
+            pad_w_end = int(layer.get("pad_w_end", pad_w) or pad_w)
+            if pad_h != pad_h_end or pad_w != pad_w_end:
+                tag = "depthwise_conv2d(asymmetric_pad)"
+                if tag not in seen:
+                    seen.append(tag)
+    return seen
+
+
+def can_lower_quantized_arch(arch: dict[str, Any]) -> bool:
+    return not unsupported_quant_lower_layers(arch)
 
 
 def _round_up(value: int, alignment: int) -> int:
     return ((value + alignment - 1) // alignment) * alignment
+
+
+def _repack_depthwise_chw_to_hwc(weights: np.ndarray, channels: int, kh: int, kw: int) -> np.ndarray:
+    """Netkit depthwise [C,Kh,Kw] → CMSIS/XNNPACK HWC [Kh,Kw,C]."""
+    chw = np.asarray(weights, dtype=np.int8).reshape(channels, kh, kw)
+    return np.transpose(chw, (1, 2, 0)).reshape(-1).astype(np.int8, copy=False)
+
+
+def _cmsis_depthwise_s8_workspace(in_h: int, in_w: int, kh: int, kw: int, channels: int) -> int:
+    # Host/MCU CM4 often reports 0 from CMSIS; keep a small aligned scratch for safety.
+    (in_h, in_w, kh, kw, channels)
+    return 0
 
 
 def _plan_output_shape(layer: dict[str, Any], h: int, w: int, c: int) -> tuple[int, int, int, int]:
@@ -59,14 +92,24 @@ def _plan_output_shape(layer: dict[str, Any], h: int, w: int, c: int) -> tuple[i
     if layer_type == "conv2d":
         k = layer["kernel_size"]
         stride = layer.get("stride", 1)
-        pad_h = layer.get("pad_h", 0)
-        pad_w = layer.get("pad_w", 0)
-        pad_h_end = layer.get("pad_h_end", pad_h)
-        pad_w_end = layer.get("pad_w_end", pad_w)
+        pad_h = layer.get("pad_h", 0) or 0
+        pad_w = layer.get("pad_w", 0) or 0
+        pad_h_end = layer.get("pad_h_end", pad_h) or pad_h
+        pad_w_end = layer.get("pad_w_end", pad_w) or pad_w
         oh = _out_dim(h, k, stride, pad_h, pad_h_end)
         ow = _out_dim(w, k, stride, pad_w, pad_w_end)
         oc = layer["filters"]
         return oh * ow * oc, oh, ow, oc
+    if layer_type == "depthwise_conv2d":
+        kh, kw = depthwise_kernel_hw(layer)
+        stride = layer.get("stride", 1)
+        pad_h = layer.get("pad_h", 0) or 0
+        pad_w = layer.get("pad_w", 0) or 0
+        pad_h_end = layer.get("pad_h_end", pad_h) or pad_h
+        pad_w_end = layer.get("pad_w_end", pad_w) or pad_w
+        oh = _out_dim(h, kh, stride, pad_h, pad_h_end)
+        ow = _out_dim(w, kw, stride, pad_w, pad_w_end)
+        return oh * ow * c, oh, ow, c
     if layer_type == "max_pool2d":
         pool_h = layer["pool_size"]
         pool_w = layer.get("pool_w", pool_h)
@@ -248,6 +291,43 @@ def plan_lowered_quant(
                     "    } else {",
                     f"        if (!CmsisNnQuant::TryConv2dNhwcQuantPlan(",
                     f"                {plan_name}, current, {w_name}, {b_name}, slot_b))",
+                    "            return false;",
+                    "        current = slot_b;",
+                    "    }",
+                    "    use_a = !use_a;",
+                    "",
+                ]
+            )
+            quant_idx += 1
+            weight_idx += 1
+            act_scale = bundle.quant_layers[quant_idx - 1].output_scale
+            act_zp = bundle.quant_layers[quant_idx - 1].output_zero_point
+
+        elif layer_type == "depthwise_conv2d":
+            kh, kw = depthwise_kernel_hw(layer)
+            w_arr = bundle.weight_tensors[weight_idx]
+            b_arr = bundle.bias_tensors[weight_idx]
+            w_name = f"kW{weight_idx}"
+            w_hwc_name = f"kW{weight_idx}Hwc"
+            b_name = f"kB{weight_idx}"
+            plan_name = f"kDw{weight_idx}Plan"
+            hwc = _repack_depthwise_chw_to_hwc(w_arr, in_c, kh, kw)
+            weight_arrays.append((w_name, w_arr))
+            weight_arrays.append((w_hwc_name, hwc))
+            bias_arrays.append((b_name, b_arr))
+            dw_ws = _cmsis_depthwise_s8_workspace(in_h, in_w, kh, kw, in_c)
+            workspace_bytes = max(workspace_bytes, dw_ws)
+            layer_workspace.append((plan_name, dw_ws))
+            forward_lines.extend(
+                [
+                    "    if (use_a) {",
+                    f"        if (!CmsisNnQuant::TryDepthwiseConv2dNhwcQuantPlan(",
+                    f"                {plan_name}, current, {w_hwc_name}, {b_name}, slot_a))",
+                    "            return false;",
+                    "        current = slot_a;",
+                    "    } else {",
+                    f"        if (!CmsisNnQuant::TryDepthwiseConv2dNhwcQuantPlan(",
+                    f"                {plan_name}, current, {w_hwc_name}, {b_name}, slot_b))",
                     "            return false;",
                     "        current = slot_b;",
                     "    }",
@@ -482,6 +562,9 @@ def plan_lowered_quant(
         if layer["type"] == "conv2d":
             load_lines.append(f"CmsisNnQuant::FinalizeConv2DPlan(kConv{w_idx}Plan);")
             w_idx += 1
+        elif layer["type"] == "depthwise_conv2d":
+            load_lines.append(f"CmsisNnQuant::FinalizeDepthwiseConv2DPlan(kDw{w_idx}Plan);")
+            w_idx += 1
         elif layer["type"] == "max_pool2d":
             load_lines.append(f"CmsisNnQuant::FinalizePool2DPlan(kPool{layer_index}Plan);")
         elif layer["type"] == "avg_pool2d":
@@ -513,7 +596,7 @@ def plan_lowered_quant(
         logits_elements=logits_elements,
         weight_arrays=weight_arrays,
         bias_arrays=bias_arrays,
-        forward_body="".join(forward_lines),
+        forward_body="\n".join(forward_lines) + ("\n" if forward_lines else ""),
         load_body=load_body,
         arena_after_load=0,
         arena_after_forward=0,
@@ -565,6 +648,48 @@ def _emit_plan_structs(bundle: QuantNkBundle, *, omit_final_softmax: bool = Fals
     .workspace_bytes = {ws},
     .multipliers = const_cast<int32_t*>(kConv{weight_idx}Mult),
     .shifts = const_cast<int32_t*>(kConv{weight_idx}Shift),
+    .ready = true,
+}};"""
+            )
+            quant_idx += 1
+            weight_idx += 1
+
+        elif layer_type == "depthwise_conv2d":
+            quant = bundle.quant_layers[quant_idx]
+            kh, kw = depthwise_kernel_hw(layer)
+            pad_h = int(layer.get("pad_h", 0) or 0)
+            pad_w = int(layer.get("pad_w", 0) or 0)
+            stride = int(layer.get("stride", 1))
+            ws = _cmsis_depthwise_s8_workspace(in_h, in_w, kh, kw, in_c)
+            act = layer.get("activation", "none")
+            if act == "relu":
+                clamp = "QuantInteger::QuantClamp::ReLU"
+            elif act == "relu6":
+                clamp = "QuantInteger::QuantClamp::ReLU6"
+            else:
+                clamp = "QuantInteger::QuantClamp::None"
+            lines.append(
+                f"""static CmsisQuantPlan::DepthwiseConv2DPlan kDw{weight_idx}Plan = {{
+    .input_offset = {-quant.input_zero_point},
+    .output_offset = {quant.output_zero_point},
+    .stride = {stride},
+    .pad_h = {pad_h},
+    .pad_w = {pad_w},
+    .clamp = {clamp},
+    .input_scale = {quant.input_scale:.8f}f,
+    .weight_scale = {quant.weight_scale:.8f}f,
+    .output_scale = {quant.output_scale:.8f}f,
+    .in_h = {in_h},
+    .in_w = {in_w},
+    .channels = {in_c},
+    .out_h = {h},
+    .out_w = {w},
+    .kernel_h = {kh},
+    .kernel_w = {kw},
+    .workspace_bytes = {ws},
+    .multipliers = const_cast<int32_t*>(kDw{weight_idx}Mult),
+    .shifts = const_cast<int32_t*>(kDw{weight_idx}Shift),
+    .weights_hwc = const_cast<int8_t*>(kW{weight_idx}Hwc),
     .ready = true,
 }};"""
             )
@@ -731,6 +856,17 @@ def render_lowered_quant_cpp_source(
             shifts = np.full(channels, shift, dtype=np.int32)
             weight_blocks.append(_format_int32_array(f"kConv{weight_idx}Mult", mults))
             weight_blocks.append(_format_int32_array(f"kConv{weight_idx}Shift", shifts))
+            quant_idx += 1
+            weight_idx += 1
+        elif layer["type"] == "depthwise_conv2d":
+            quant = bundle.quant_layers[quant_idx]
+            effective = quant.input_scale * quant.weight_scale / quant.output_scale
+            mult, shift = _quantize_multiplier(effective)
+            channels = int(layer["filters"])
+            mults = np.full(channels, mult, dtype=np.int32)
+            shifts = np.full(channels, shift, dtype=np.int32)
+            weight_blocks.append(_format_int32_array(f"kDw{weight_idx}Mult", mults))
+            weight_blocks.append(_format_int32_array(f"kDw{weight_idx}Shift", shifts))
             quant_idx += 1
             weight_idx += 1
         elif layer["type"] == "mobilenetv4_uib":

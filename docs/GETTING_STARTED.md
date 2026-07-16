@@ -2,7 +2,7 @@
 
 Welcome to netkit — a **multi-modal inference engine** (voice, image, vision) with an **embedded-first** design for **MCUs, MPUs, and NPUs**, implemented in **C++26** with a **C23** API. **Float32** and **int8** inference are complete on **Arm and RISC** MCU/MPU targets and host cpu: RISC MPU uses **XNNPACK**; RISC MCU uses **fast generic** kernels (a CMSIS-NN–class RISC MCU NN path is planned) — [STATUS.md](STATUS.md).
 
-**Two ways to run inference:** load a `.nk` and execute through the **`NkOpsResolver` interpreter** (flexible — swap models, use the CLI), or **compile for maximum speed** with `python -m netkit aot` (embed the model in flash, apply packager graph optimizations, trim linked ops, optional CMSIS / XNNPACK kernels). Both paths share the same kernels — see [PHILOSOPHY.md](PHILOSOPHY.md#deployment-modes-interpreter-or-compiled).
+**Two ways to run inference:** load a `.nk` and execute through the **`NkOpsResolver` interpreter** (flexible — swap models, use the CLI), or **AOT lower** with `python -m netkit aot` (static kernel / CmsisQuantPlan call chain + weight arrays in flash — default). Use `--no-lower` only for interpreter embed (TFLM-fair). Both paths share the same kernels — see [PHILOSOPHY.md](PHILOSOPHY.md#terminology-embed-vs-lowered).
 
 This guide takes you from clone to your first inference in a few minutes.
 
@@ -207,25 +207,25 @@ Format spec: [NK_FORMAT.md](NK_FORMAT.md). Python details: [python/README.md](..
 
 ---
 
-## 5. Embed `.nk` in firmware (`netkit aot`)
+## 5. AOT compile for firmware (`netkit aot`)
 
-The Python **`netkit aot`** command **packages** a `.nk` into C/C++ sources. That packaging step is required for both interpreter and lowered firmware — it is not the same as “compiled / no interpreter.” See [PHILOSOPHY.md — embed vs lowered](PHILOSOPHY.md#terminology-embed-vs-lowered).
+The Python **`netkit aot`** command turns a `.nk` into C/C++ firmware sources. **Default is real lowering** (static call chain + weight arrays). Interpreter embed is opt-in. See [PHILOSOPHY.md — embed vs lowered](PHILOSOPHY.md#terminology-embed-vs-lowered).
 
 | Goal | Command |
 |------|---------|
-| **Interpreter embed** (TFLM-fair, swap graph without re-lowering) | `python -m netkit aot model.nk -o out --no-lower` |
-| **Lowered / compiled** (C++ default — static kernel chain) | `python -m netkit aot model.nk -o out` |
-
-After you have a validated `.nk`, embed it as a static byte array and generate load/run wrappers:
+| **Lowered / compiled** (default — static kernel / plan chain) | `python -m netkit aot model.nk -o out` |
+| **Fail if not lowerable** | `python -m netkit aot model.nk -o out --strict-lower` |
+| **Interpreter embed** (TFLM-fair) | `python -m netkit aot model.nk -o out --no-lower` |
 
 ```bash
-# Default: C++26 lowered static Kernels:: chain (.hpp + .cpp)
+# Default: C++26 lowered static Kernels:: / CmsisQuantPlan chain (.hpp + .cpp)
 python -m netkit aot models/test_mlp.nk -o build/aot
+python -m netkit aot models/mnist_cnn_dw_int8.nk -o build/aot --strict-lower --omit-final-softmax
 
 # Embed .nk + interpreter loader instead of lowered kernels
 python -m netkit aot models/test_mlp.nk -o build/aot --no-lower
 
-# C23 (.h + .c) — interpreter path only (no lowered emitter)
+# C23 API (.h) + C++ lowered body (.cpp)
 python -m netkit aot models/test_mlp.nk -o build/aot --language c
 
 # MCU: flash-backed coefs (always), size arena without weight copy
@@ -238,14 +238,14 @@ python -m netkit aot models/test_mlp.nk -o build/aot --main
 python -m netkit aot models/cnn_extended_ops.nk -o build/aot --optimize
 ```
 
-**Lowered C++ AOT** (default for `--language cpp`) emits a static `Kernels::` call chain — no runtime `.nk` loader. **C AOT** always embeds the `.nk` blob and calls `nk_model_load_memory`. See [boards/nucleo-f446re/README.md](../boards/nucleo-f446re/README.md) for an MCU firmware example (MNIST MLP float32, flash weights, CMSIS-NN / reference).
+**Lowered AOT** emits weight arrays in `.rodata` and an unrolled forward — no runtime `.nk` loader. Int8 includes depthwise (DS-CNN). MCU int8 boards default to lowered; `make -C boards/nucleo-f446re-cnn-int8 deploy-lowered` or `NETKIT_EMBED=1` for interpreter A/B.
 
 Generated headers expose measured arena usage for static buffer allocation:
 
-- **C++ lowered** — `kArenaBytesRecommended`, `kLowered = true`, `Model::load` / `Model::forward`
+- **C++ lowered** — `kArenaBytesRecommended`, `kLowered` / `kQuantLowered`, `Model::load` / `forward` / `forwardInt8`
 - **C++ / C interpreter** — `kArenaBytesAfterLoad`, `kArenaBytesAfterForward`, `kArenaBytesRecommended`, plus `InitArena()` / `{symbol}_aot_init_arena()`
 
-The `.nk` blob is placed in flash-friendly `.rodata` by default (GCC `__attribute__((section(".rodata")))`). Pass `--no-flash-section` to omit the attribute.
+Coef arrays / `.nk` blobs are placed in flash-friendly `.rodata` by default (GCC `__attribute__((section(".rodata")))`). Pass `--no-flash-section` to omit the attribute.
 
 Typical MCU bring-up:
 

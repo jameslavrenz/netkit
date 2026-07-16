@@ -1,4 +1,4 @@
-"""Ahead-of-time compiler: embed a .nk model as C or C++ source for the netkit runtime."""
+"""Ahead-of-time compiler: lower or embed a .nk model as C/C++ firmware sources."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import os
 import re
 import shutil
 import subprocess
+import warnings
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -21,12 +22,14 @@ from .aot_lower import (
     plan_lowered,
     render_lowered_cpp_header,
     render_lowered_cpp_source,
+    unsupported_lower_layers,
 )
 from .aot_lower_quant import (
     can_lower_quantized_arch,
     plan_lowered_quant,
     render_lowered_quant_cpp_header,
     render_lowered_quant_cpp_source,
+    unsupported_quant_lower_layers,
 )
 from .reader import read_nk, read_test_suite
 from .reference_forward import forward_cnn, forward_mlp
@@ -285,25 +288,24 @@ def compile_aot(
     flash_section: bool = True,
     lower: bool = True,
     omit_final_softmax: bool = False,
+    strict_lower: bool = False,
+    target: Literal["cpu", "mpu", "mcu"] = "cpu",
 ) -> AotCompileResult:
-    """Compile a .nk model into embeddable C or C++ source files.
+    """Compile a .nk model into firmware C/C++ sources.
 
-    Default output is C++26 (.hpp + .cpp). Pass ``language="c"`` for C23 (.h + .c).
-    Set ``optimize=True`` to apply stable graph optimizations (BN folding, linear dense
-    merge) before embedding — fewer runtime layer dispatches, verified against the
-    original model numerically.
+    Default output is C++26 (.hpp + .cpp). Pass ``language="c"`` for a C23 API header
+    plus C++ implementation (``.cpp``) when lowering succeeds; otherwise C embeds the
+    ``.nk`` blob (``.h`` + ``.c``).
 
-    Emits measured arena sizing constants for MCU firmware (static buffer allocation).
-    When ``./netkit inspect --full`` is available, arena bytes come from a probe load +
-    zero-input forward (flash-backed weights). Otherwise a
-    conservative estimate is used and ``weights_bytes + biases_bytes`` are subtracted
-    when coefs stay in the embedded blob.
+    C++ / C lowering (``lower=True``, default): static ``Kernels::`` or
+    ``CmsisQuantPlan`` call chain with explicit weight arrays — no ``.nk`` loader.
+    Pass ``lower=False`` for interpreter embed. If lowering is requested but the graph
+    is unsupported, emit a warning and fall back to embed unless ``strict_lower=True``.
 
-    C++ output is lowered by default (``lower=True``): static ``Kernels::`` call chain
-    with embedded weight arrays, no ``.nk`` blob, loader, or ops resolver. Pass
-    ``lower=False`` for the legacy embed-and-interpreter path. Lowering applies only
-    to C++; C output always embeds the ``.nk`` blob.
+    ``target`` currently documents the intended deploy class (cpu/mpu/mcu); arena
+    probe behavior is unchanged.
     """
+    del target  # reserved for future target-specific emit profiles
     path = Path(nk_path)
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -336,12 +338,28 @@ def compile_aot(
     payload_bytes = weight_payload_bytes(header)
     network = arch["network"]
     input_shape = arch["input"]
-    use_lowered = (
-        lang is AotLanguage.CPP and lower and not quantized and can_lower_arch(arch)
-    )
-    use_quant_lowered = (
-        lang is AotLanguage.CPP and lower and quantized and can_lower_quantized_arch(arch)
-    )
+
+    want_lower = bool(lower)
+    can_float = (not quantized) and can_lower_arch(arch)
+    can_quant = quantized and can_lower_quantized_arch(arch)
+    if want_lower and not (can_float or can_quant):
+        blockers = (
+            unsupported_quant_lower_layers(arch)
+            if quantized
+            else unsupported_lower_layers(arch)
+        )
+        detail = ", ".join(blockers) if blockers else "unknown"
+        msg = (
+            f"AOT lower requested for {path.name} but unsupported ops remain: {detail}. "
+            "Falling back to .nk blob embed (interpreter)."
+        )
+        if strict_lower:
+            raise ValueError(msg.replace("Falling back to .nk blob embed (interpreter).", "").strip())
+        warnings.warn(msg, stacklevel=2)
+
+    # C lowered uses C API header + C++ implementation unit.
+    use_lowered = want_lower and can_float
+    use_quant_lowered = want_lower and can_quant
 
     if use_quant_lowered:
         quant_plan = plan_lowered_quant(path, omit_final_softmax=omit_final_softmax)
@@ -383,6 +401,7 @@ def compile_aot(
         joined = ", ".join(optimizations_applied)
         opt_comment = f"\n/* Optimizations: {joined} */"
 
+    lowered = use_lowered or use_quant_lowered
     if lang is AotLanguage.CPP:
         header_path = out_dir / f"{symbol}_aot.hpp"
         source_path = out_dir / f"{symbol}_aot.cpp"
@@ -467,6 +486,69 @@ def compile_aot(
                 ),
                 encoding="utf-8",
             )
+    elif lowered:
+        # C API + C++ lowered body (compile the .cpp with a C++ toolchain).
+        header_path = out_dir / f"{symbol}_aot.h"
+        source_path = out_dir / f"{symbol}_aot.cpp"
+        header_path.write_text(
+            _render_c_lowered_header(
+                symbol,
+                input_elements,
+                output_elements,
+                after_load,
+                after_forward,
+                arena_recommended,
+                quantized=use_quant_lowered,
+            ),
+            encoding="utf-8",
+        )
+        if use_quant_lowered:
+            cpp_body = render_lowered_quant_cpp_source(
+                symbol,
+                path,
+                quant_plan,
+                include_main=False,
+                flash_section=flash_section,
+                omit_final_softmax=omit_final_softmax,
+            )
+            # Quant lowered header is C++-only; emit private hpp alongside C API.
+            (out_dir / f"{symbol}_aot.hpp").write_text(
+                render_lowered_quant_cpp_header(
+                    symbol,
+                    network,
+                    input_elements,
+                    output_elements,
+                    input_shape,
+                    quant_plan,
+                    arena_recommended,
+                ),
+                encoding="utf-8",
+            )
+        else:
+            cpp_body = render_lowered_cpp_source(
+                symbol,
+                plan,
+                include_main=False,
+                flash_section=flash_section,
+            )
+            (out_dir / f"{symbol}_aot.hpp").write_text(
+                render_lowered_cpp_header(
+                    symbol,
+                    network,
+                    input_elements,
+                    output_elements,
+                    input_shape,
+                    plan,
+                    arena_recommended,
+                ),
+                encoding="utf-8",
+            )
+        source_path.write_text(
+            opt_comment
+            + cpp_body
+            + _render_c_lowered_extern_bridge(symbol, quantized=use_quant_lowered),
+            encoding="utf-8",
+        )
     else:
         header_path = out_dir / f"{symbol}_aot.h"
         source_path = out_dir / f"{symbol}_aot.c"
@@ -503,13 +585,13 @@ def compile_aot(
         input_elements=input_elements,
         output_elements=output_elements,
         network=network,
-        nk_bytes=len(nk_bytes),
+        nk_bytes=0 if lowered else len(nk_bytes),
         arena_bytes_after_load=after_load,
         arena_bytes_after_forward=after_forward,
         arena_bytes_recommended=arena_recommended,
         optimized=bool(optimizations_applied),
         optimizations_applied=optimizations_applied,
-        lowered=use_lowered or use_quant_lowered,
+        lowered=lowered,
         quant_fast=use_quant_lowered,
     )
 
@@ -808,6 +890,116 @@ bool Model::load(Arena& arena)
 """
 
 
+def _render_c_lowered_header(
+    symbol: str,
+    input_elements: int,
+    output_elements: int,
+    arena_after_load: int,
+    arena_after_forward: int,
+    arena_recommended: int,
+    *,
+    quantized: bool,
+) -> str:
+    guard = f"NETKIT_{symbol.upper()}_AOT_H"
+    prefix = symbol.upper()
+    run_decl = (
+        f"nk_status_t {symbol}_aot_run_int8(nk_arena_t* arena,\n"
+        f"                                  const int8_t* input,\n"
+        f"                                  int8_t* output);"
+        if quantized
+        else (
+            f"nk_status_t {symbol}_aot_run(nk_arena_t* arena,\n"
+            f"                             const float* input,\n"
+            f"                             float* output,\n"
+            f"                             uint32_t* output_count);"
+        )
+    )
+    return f"""#ifndef {guard}
+#define {guard}
+/* Generated by netkit AOT (lowered) — C23 API; implementation is C++ ({symbol}_aot.cpp) */
+
+#include <stddef.h>
+#include <stdint.h>
+
+#include "netkit.h"
+
+#define {prefix}_AOT_LOWERED 1
+#define {prefix}_AOT_QUANT_LOWERED {1 if quantized else 0}
+#define {prefix}_AOT_INPUT_ELEMENTS {input_elements}u
+#define {prefix}_AOT_OUTPUT_ELEMENTS {output_elements}u
+#define {prefix}_AOT_ARENA_BYTES_AFTER_LOAD {arena_after_load}u
+#define {prefix}_AOT_ARENA_BYTES_AFTER_FORWARD {arena_after_forward}u
+#define {prefix}_AOT_ARENA_BYTES_RECOMMENDED {arena_recommended}u
+#define {prefix}_AOT_NK_BYTES 0u
+
+static inline nk_status_t {symbol}_aot_init_arena(nk_arena_t* arena, void* memory, size_t capacity)
+{{
+    if (!arena || !memory || capacity < {prefix}_AOT_ARENA_BYTES_RECOMMENDED)
+        return NK_ERR_INVALID_ARGUMENT;
+    nk_arena_init(arena, memory, capacity);
+    return NK_OK;
+}}
+
+nk_status_t {symbol}_aot_load(nk_arena_t* arena);
+{run_decl}
+
+#endif /* {guard} */
+"""
+
+
+def _render_c_lowered_extern_bridge(symbol: str, *, quantized: bool) -> str:
+    if quantized:
+        run_body = f"""
+extern "C" nk_status_t {symbol}_aot_run_int8(nk_arena_t* arena,
+                                             const int8_t* input,
+                                             int8_t* output)
+{{
+    (void)arena;
+    if (!g_c_model.isLoaded() || !input || !output)
+        return NK_ERR_MODEL_NOT_LOADED;
+    Arena unused{{}};
+    return g_c_model.forwardInt8(unused, input, output) ? NK_OK : NK_ERR_NOT_INITIALIZED;
+}}
+"""
+    else:
+        run_body = f"""
+extern "C" nk_status_t {symbol}_aot_run(nk_arena_t* arena,
+                                        const float* input,
+                                        float* output,
+                                        uint32_t* output_count)
+{{
+    (void)arena;
+    if (!g_c_model.isLoaded() || !input || !output || !output_count)
+        return NK_ERR_MODEL_NOT_LOADED;
+    Arena unused{{}};
+    if (!g_c_model.forward(unused, input, output))
+        return NK_ERR_NOT_INITIALIZED;
+    *output_count = netkit::aot::{symbol}::kOutputElements;
+    return NK_OK;
+}}
+"""
+    return f"""
+#include "netkit.h"
+
+namespace {{
+netkit::aot::{symbol}::Model g_c_model;
+
+Arena* ArenaFromNk(nk_arena_t* arena)
+{{
+    return reinterpret_cast<Arena*>(arena->storage);
+}}
+}}
+
+extern "C" nk_status_t {symbol}_aot_load(nk_arena_t* arena)
+{{
+    if (!arena)
+        return NK_ERR_INVALID_ARGUMENT;
+    return g_c_model.load(*ArenaFromNk(arena)) ? NK_OK : NK_ERR_NOT_INITIALIZED;
+}}
+{run_body}
+"""
+
+
 def _render_c_header(
     symbol: str,
     input_elements: int,
@@ -820,13 +1012,14 @@ def _render_c_header(
     prefix = symbol.upper()
     return f"""#ifndef {guard}
 #define {guard}
-/* Generated by netkit AOT compiler — C23 firmware-ready, links against libnetkit.a */
+/* Generated by netkit AOT compiler — interpreter embed (.nk blob), C23 */
 
 #include <stddef.h>
 #include <stdint.h>
 
 #include "netkit.h"
 
+#define {prefix}_AOT_LOWERED 0
 #define {prefix}_AOT_INPUT_ELEMENTS {input_elements}u
 #define {prefix}_AOT_OUTPUT_ELEMENTS {output_elements}u
 #define {prefix}_AOT_ARENA_BYTES_AFTER_LOAD {arena_after_load}u

@@ -158,6 +158,8 @@ Downloads Ultralytics **coco128**, official **COCO val2017**, or a boxed **train
 
 Layer kinds: `feature_tap` (**13**), `yolox_pafpn_multiscale` (**14**). Load and run like any CNN. Post-processing stays on the host (`python/netkit/yolox_decode.py`).
 
+**AOT:** use **float lower** on host/MPU (`python -m netkit aot models/yolox_pafpn_taps.nk -o out --strict-lower` → `g_feature_tap_*` + `YoloxPafpnMultiscale::forward`). Quant AOT is out of scope for YOLOX — detectors run float on Linux-class devices in practice.
+
 Host sanity (packed trained weights vs torch EMA, decode+NMS):
 
 ```bash

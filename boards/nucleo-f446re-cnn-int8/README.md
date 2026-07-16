@@ -4,7 +4,7 @@ Bare-metal firmware for the **STM32 NUCLEO-F446RE** (STM32F446RET6, Cortex-M4F, 
 
 Runs the **same MNIST CNN benchmark** as `benchmark/netkit/` and `benchmark/tflm/` (10 test images, 10 runs), using **int8** weights, activations, and prequantized inputs end-to-end.
 
-**Default build = interpreter embed** (embedded `.nk` + runtime loader) for a fair comparison with TFLM `MicroInterpreter`. Optional `NETKIT_LOWERED=1` switches to quant lowered deployment (static `CmsisQuantPlan` chain).
+**Default build = quant lowered** (static `CmsisQuantPlan` call chain + weight arrays in flash). Use `NETKIT_EMBED=1` for interpreter embed (TFLM-fair A/B with `MicroInterpreter`). `make deploy-lowered` forces a clean lowered rebuild.
 
 ## netkit build profile (default)
 
@@ -13,8 +13,8 @@ Runs the **same MNIST CNN benchmark** as `benchmark/netkit/` and `benchmark/tflm
 | Target | `NETKIT_TARGET_MCU_ARM` |
 | Arch | `NETKIT_ARCH=CM4` (Cortex-M4F) |
 | CMSIS | **CMSIS-NN** (layer kernels); portable `NetkitUtil` helpers |
-| Weights | **Flash** — embedded `.nk` blob in `.rodata` |
-| Deployment | **Interpreter embed** — `NkLoader` + `NkOpsResolver` (same class as TFLM blob + interpreter) |
+| Weights | **Flash** — static int8 arrays (`NETKIT_AOT_FLASH_CONST`) |
+| Deployment | **Quant lowered** — static `CmsisQuantPlan` chain (no `.nk` loader) |
 | Dtype | int8 weights / activations; prequantized int8 test inputs; output = logits (Softmax omitted) |
 
 Int8 conv/pool/dense use CMSIS-NN kernels on Cortex-M4 (`CmsisQuantPlan`). Final Softmax is omitted for classification (`--omit-final-softmax`); firmware argmaxes logits. Benchmark firmware copies each test image into SRAM (`g_input_staging`) before the timed forward pass — same pattern as TFLM’s input tensor copy.
@@ -29,21 +29,25 @@ Int8 conv/pool/dense use CMSIS-NN kernels on Cortex-M4 (`CmsisQuantPlan`). Final
 | Flash (text + data) | **~334 KiB** (of 512 KiB) |
 | SRAM (bss + data) | **~75 KiB** (of 128 KiB; ~53 KiB headroom) |
 
+Capture above is the **interpreter embed** path (`NETKIT_EMBED=1`) used for TFLM A/B. Default lowered firmware uses static ping-pong BSS instead of a large arena — re-capture after flashing `make` / `make deploy-lowered`.
+
 Compare with TFLM int8 on the same board: [nucleo-f446re-tflm-cnn-int8](../nucleo-f446re-tflm-cnn-int8/README.md).
 
-## Memory budget (STM32F446RE, interpreter embed)
+## Memory budget (STM32F446RE)
 
-The board has **512 KiB flash** and **128 KiB SRAM**. Default firmware uses **interpreter embed** with flash-backed weights.
+The board has **512 KiB flash** and **128 KiB SRAM**.
 
-| Region | Approx. size | Notes |
+**Quant lowered (default):** static ping-pong activation buffers (`g_act_a` / `g_act_b`) and CMSIS workspace in **BSS** (~28 KiB for this model), with a **tiny** bump arena (composite-block scratch only). See [ARENA.md](../../docs/ARENA.md#quant-lowered-vs-interpreter-embed-on-mcu).
+
+**Interpreter embed** (`NETKIT_EMBED=1`): flash-backed `.nk` blob + large arena.
+
+| Region (embed) | Approx. size | Notes |
 |--------|--------------|-------|
 | `.text` + `.rodata` (code + embedded `.nk`) | ~334 KiB | ~258 KiB is the embedded `mnist_cnn_int8.nk` blob |
 | `.data` + `.bss` (SRAM) | ~75 KiB | Includes **64 KiB** interpreter arena + output scratch |
 | SRAM headroom | ~53 KiB | Stack, heap (none used), ST-Link/USB buffers |
 
-**Arena sizing:** embed codegen may emit a larger `kArenaBytesRecommended` (host probe + headroom). This firmware **fixes the arena at 64 KiB** in `src/main.cpp` — enough for load + ping-pong activations on this model with ~53 KiB SRAM to spare. To add margin, bump `kArenaCapacity` (e.g. 72–80 KiB) and re-check linker RAM + on-device accuracy.
-
-**Quant lowered** (`NETKIT_LOWERED=1`) uses a different layout: static ping-pong activation buffers (`g_act_a` / `g_act_b`) and CMSIS workspace in **BSS** (~28 KiB for this model), with a **tiny** bump arena (composite-block scratch only). See [ARENA.md](../../docs/ARENA.md#quant-lowered-vs-interpreter-embed-on-mcu).
+**Arena sizing (embed):** codegen may emit a larger `kArenaBytesRecommended` (host probe + headroom). Embed firmware **fixes the arena at 64 KiB** in `src/main.cpp` — enough for load + ping-pong activations on this model with ~53 KiB SRAM to spare. To add margin, bump `kArenaCapacity` (e.g. 72–80 KiB) and re-check linker RAM + on-device accuracy.
 
 ## Prerequisites (host)
 
@@ -71,7 +75,7 @@ cd boards/nucleo-f446re-cnn-int8
 chmod +x scripts/*.sh
 
 ./scripts/deploy.sh export   # quantize from models/mnist_cnn.nk (~seconds)
-./scripts/deploy.sh build    # cross-compile + regenerate embed sources
+./scripts/deploy.sh build    # cross-compile + regenerate AOT sources (lowered by default)
 ./scripts/deploy.sh flash    # ST-Link (do not run while monitor is open)
 ./scripts/deploy.sh capture  # UART — press RESET if silent
 
@@ -86,7 +90,9 @@ When `benchmark/tflm/generated/mnist_cnn_int8.tflite` exists, export aligns **la
 
 ```bash
 cd boards/nucleo-f446re-cnn-int8
-make                    # interpreter embed (default)
+make                    # quant lowered (default)
+make NETKIT_EMBED=1     # interpreter embed (TFLM-fair)
+make deploy-lowered     # clean + lowered rebuild
 ```
 
 Outputs:
@@ -94,7 +100,7 @@ Outputs:
 - `build/mnist_cnn_int8_nucleo_f446re.elf`
 - `build/mnist_cnn_int8_nucleo_f446re.bin`
 
-Generated embed sources: `generated/mnist_cnn_int8_aot.{hpp,cpp}` (historical `*_aot` filename; see [PHILOSOPHY.md](../../docs/PHILOSOPHY.md#terminology-embed-vs-lowered)).
+Generated sources: `generated/mnist_cnn_int8_aot.{hpp,cpp}` (historical `*_aot` filename; see [PHILOSOPHY.md](../../docs/PHILOSOPHY.md#terminology-embed-vs-lowered)).
 
 ## Flash + collect results
 
@@ -117,8 +123,8 @@ make flash-mnist-cnn-int8
 
 | Mode | Command | Deployment |
 |------|---------|------------|
-| **Interpreter embed** (default) | `make` | Embedded `.nk` blob + runtime loader (fair vs TFLM `MicroInterpreter`) |
-| **Quant lowered** (deployment) | `make NETKIT_LOWERED=1` | Static `CmsisQuantPlan` call chain; activations in static BSS, tiny arena |
+| **Quant lowered** (default) | `make` / `make deploy-lowered` | Static `CmsisQuantPlan` call chain; activations in static BSS, tiny arena |
+| **Interpreter embed** (TFLM-fair) | `make NETKIT_EMBED=1` | Embedded `.nk` blob + runtime loader |
 
 Compiler/linker flags match TFLM kernel speed via `boards/nucleo-f446re/mcu_tflm_toolchain.mk` (CORE / KERNEL / THIRD_PARTY all `-O2`, `-flto` link with `--gc-sections`). `NETKIT_CPPFLAGS` is passed on the final link so CMSIS macros survive LTO.
 
@@ -126,11 +132,11 @@ Compiler/linker flags match TFLM kernel speed via `boards/nucleo-f446re/mcu_tflm
 
 **Optional kernel trace (bring-up only):** `make NETKIT_QUANT_TRACE=1` links `quant_trace.cpp` and prints a CMSIS vs reference summary over UART after the probe forward. Default `make` uses zero-cost inline stubs — no trace overhead on the hot path.
 
-Regenerate embed sources after changing mode:
+Regenerate AOT sources after changing mode:
 
 ```bash
-rm -f generated/.embed_stamp && make              # interpreter
-rm -f generated/.embed_stamp && make NETKIT_LOWERED=1   # lowered
+rm -f generated/.embed_stamp && make                 # lowered
+rm -f generated/.embed_stamp && make NETKIT_EMBED=1  # interpreter
 ```
 
 ## Example UART output (interpreter embed)
