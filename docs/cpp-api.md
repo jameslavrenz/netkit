@@ -25,6 +25,7 @@ Derived (from `netkit_config.h`, shared by C and C++): `NETKIT_CLASS_MCU` / `NET
 | `NETKIT_HEAP_ARENA=1` (**MPU only**) | `NETKIT_ARENA_HEAP` | Optional heap on MPU; **forbidden on MCU** |
 | `NETKIT_CMSIS_NN=1` | `NETKIT_USE_CMSIS_NN` | `mcu_arm` + Cortex-M `NETKIT_ARCH` only |
 | `NETKIT_XNNPACK=1` | `NETKIT_USE_XNNPACK` | `cpu` + any MPU LayerFast; forbidden on MCU |
+| `NETKIT_MMAP=1` (default cpu/MPU on Apple/Linux/Windows) | `NETKIT_USE_MMAP` | File mmap for `.nk` loads; **forbidden on MCU**; opt out with `NETKIT_MMAP=0` |
 | *(MCU default)* | `NETKIT_DISABLE_IOSTREAM` / `NETKIT_MCU_CMSIS_ONLY` | No iostream; CMSIS-only quant when reference loops off |
 
 `Arena::kDefaultCapacity` / `NK_ARENA_DEFAULT_CAPACITY`: **64 KiB** (MCU class), **64 MiB** (CPU and MPU class).
@@ -40,11 +41,12 @@ See [BUILD_TARGETS.md](BUILD_TARGETS.md). Same macros apply to the C API — [c-
 | `arena_util.hpp` | `ArenaUtil::Init`, `Scoped`, model capacity helpers |
 | `tensor.hpp` | `Tensor`, `DataType`, `kMaxTensorRank` |
 | `tensor_factory.hpp` | Tensor creation, fill, print |
-| `tensor_access.hpp` | NHWC indexing helpers |
-| `ops.hpp` | Matrix ops and activations |
+| `tensor_access.hpp` | Typed data accessors + NHWC indexing |
+| `ops.hpp` | `Ops::` matrix ops and activations |
 | `conv2d.hpp` | Low-level 2D convolution |
+| `depthwise_conv2d.hpp` | Standalone depthwise convolution |
 | `mlp.hpp` | `MLPNetwork`, `MLPLayer`, `ActivationType` |
-| `cnn.hpp` | `CNNNetwork`, `Conv2DLayer`, `ConvActivationType` |
+| `cnn.hpp` | `CNNNetwork`, `CnnBlock`, `ConvActivationType` |
 | `nk_loader.hpp` / `nk_format.hpp` | `.nk` model loading |
 | `nk_regression.hpp` | Embedded `.nk` regression test runner |
 | `cli.hpp` | CLI dispatch (`Cli::Run`) |
@@ -61,11 +63,20 @@ See [ARENA.md](ARENA.md) for the full bump-allocator guide.
 ```cpp
 struct Arena {
     // kDefaultCapacity: 64 KiB (MCU), 64 MiB (CPU/MPU) — see netkit_config.h
+    static constexpr std::size_t kDefaultCapacity = NK_ARENA_DEFAULT_CAPACITY;
+
+    std::byte* base{};
+    std::size_t capacity = 0;
+    std::size_t offset = 0;
 
     void init(void* memory, std::size_t size);
     void* alloc(std::size_t size, std::size_t alignment);  // alignment: power of two
     void reset();
     std::size_t remaining() const;
+
+    // When NETKIT_USE_MMAP=1 (cpu/MPU): own a .nk file mapping until reset/destroy
+    void attach_mapped_file(const void* data, std::size_t size);
+    void release_mapped_file();
 };
 ```
 
@@ -73,19 +84,24 @@ struct Arena {
 
 **Why alignment matters:** weight blobs can have an odd float count, leaving the arena offset at 4 mod 8 on 64-bit platforms. Without padding, a following `MLPNetwork` or `CNNNetwork` allocation would be misaligned for `placement new`. The engine passes the correct `alignof` at every internal call site.
 
-All network and tensor allocations during load/inference draw from the arena. No `free()` — call `reset()` to reuse the buffer.
+All network and tensor allocations during load/inference draw from the arena. No `free()` — call `reset()` to reuse the buffer. File mmap regions (`attach_mapped_file`) do not consume bump capacity; they are released on `reset()`, `init()`, and `destroy_heap()`.
 
 ### ArenaUtil (`arena_util.hpp`)
 
-Target-aware helpers used by the CLI and regression harness:
+Target-aware helpers used by the CLI and regression harness. Named capacities are aliases of `Arena::kDefaultCapacity` (not separate hard-coded sizes):
 
 ```cpp
 namespace ArenaUtil {
-    constexpr std::size_t kHandCapacity = 64 * 1024;
-    constexpr std::size_t kMnistMlpCapacity = 2 * 1024 * 1024;
-    constexpr std::size_t kMnistCnnCapacity = 4 * 1024 * 1024;
+    constexpr std::size_t kHandCapacity = Arena::kDefaultCapacity;
+    constexpr std::size_t kMnistMlpCapacity = Arena::kDefaultCapacity;
+    constexpr std::size_t kMnistCnnCapacity = Arena::kDefaultCapacity;
+    constexpr std::size_t kLargeCnnCapacity = Arena::kDefaultCapacity;
+    constexpr std::size_t kXLargeCnnCapacity = Arena::kDefaultCapacity;
 
+    // Currently return Arena::kDefaultCapacity (arguments reserved for future sizing)
     std::size_t CapacityForInputElements(uint32_t input_elements, bool is_cnn);
+    std::size_t CapacityForModel(uint32_t input_elements, bool is_cnn,
+                                 uint32_t weights_bytes, uint32_t biases_bytes);
     bool Init(Arena& arena, std::size_t capacity, void* global_buffer = nullptr);
     void Release(Arena& arena);  // CPU only: frees heap backing; no-op on MPU; MCU never has heap API
     class Scoped;  // RAII — calls Release on destruction (CPU heap builds)
@@ -150,48 +166,100 @@ Returns tensors with null `data` if the arena is full.
 
 ---
 
+## Tensor access (`tensor_access.hpp`)
+
+```cpp
+float* tensor_data_f32(Tensor& t);              // nullptr if dtype ≠ Float32
+const float* tensor_data_f32(const Tensor& t);
+int8_t* tensor_data_i8(Tensor& t);              // nullptr if dtype ≠ Int8
+const int8_t* tensor_data_i8(const Tensor& t);
+int32_t* tensor_data_i32(Tensor& t);            // nullptr if dtype ≠ Int32
+const int32_t* tensor_data_i32(const Tensor& t);
+uint32_t index_nhwc(const Tensor& t, uint32_t h, uint32_t w, uint32_t c);
+```
+
+C equivalents: `nk_tensor_data_f32` / `_i8` / `_i32` (and `_const` variants), `nk_tensor_index_nhwc`.
+
+---
+
 ## Ops (`ops.hpp`)
 
-Validation helpers: `IsMatMulValid`, `CheckSameShape2D`, etc.
+All ops live in namespace `Ops`. Validation helpers: `Ops::IsMatMulValid`, `Ops::CheckSameShape2D`, etc.
 
 **Arithmetic**
 
 | Function | Description |
 |----------|-------------|
-| `MatMul(A, B, C)` | Matrix multiply |
-| `MatAdd(A, B, C)` | 2D element-wise add |
-| `MatAddND(A, B, C)` | N-D element-wise add |
-| `Mul(A, B, C)` | Element-wise multiply |
-| `MulND(A, B, C)` | N-D element-wise multiply |
-| `MulScalar(A, scalar, C)` | Scale by scalar |
+| `Ops::MatMul(A, B, C)` | Matrix multiply |
+| `Ops::MatAdd(A, B, C)` | 2D element-wise add |
+| `Ops::MatAddND(A, B, C)` | N-D element-wise add |
+| `Ops::Mul(A, B, C)` | Element-wise multiply |
+| `Ops::MulND(A, B, C)` | N-D element-wise multiply |
+| `Ops::MulScalar(A, scalar, C)` | Scale by scalar |
 
 **Activations** (in-place when `A` and `C` share storage)
 
 | Function | Description |
 |----------|-------------|
-| `ReLU(A, C)` | max(0, x) |
-| `LeakyReLU(A, C, alpha)` | Leaky ReLU |
-| `ReLU6(A, C)` | min(max(0, x), 6) |
-| `Sigmoid(A, C)` | σ(x) |
-| `Tanh(A, C)` | tanh(x) |
-| `Softmax(A, C)` | Softmax over elements |
+| `Ops::ReLU(A, C)` | max(0, x) |
+| `Ops::LeakyReLU(A, C, alpha)` | Leaky ReLU |
+| `Ops::ReLU6(A, C)` | min(max(0, x), 6) |
+| `Ops::Sigmoid(A, C)` | σ(x) |
+| `Ops::Tanh(A, C)` | tanh(x) |
+| `Ops::Softmax(A, C)` | Softmax over elements |
 
 ---
 
 ## Conv2D (`conv2d.hpp`)
 
-Low-level convolution with per-axis padding (`pad_h`, `pad_w` — same amount on both sides of each axis; values may differ between H and W).
+Low-level convolution. `pad_h` / `pad_w` are start padding; `pad_h_end` / `pad_w_end` are end padding (`-1` / `NK_PAD_MIRROR` mirrors the start for symmetric padding).
 
 ```cpp
 struct Conv2D {
-    int kernel_size, stride, pad_h, pad_w, in_channels, out_channels;
-    float* weights;  // [out][kh][kw][in]
-    float* bias;     // [out]
-    void forward(const Tensor& input, Tensor& output);
+    int kernel_size = 3;
+    int stride = 1;
+    int pad_h = 0, pad_w = 0;
+    int pad_h_end = 0, pad_w_end = 0;
+    int in_channels, out_channels;
+    float* weights;       // [out][kh][kw][in] from .nk (OIHW)
+    float* weights_hwio;  // [kh][kw][in][out] repacked at CNN load; null until then
+    float* bias;          // [out]
+    const int8_t* weights_q = nullptr;
+    const int32_t* bias_q = nullptr;
+
+    bool forward(const Tensor& input, Tensor& output,
+                 NetkitKernelActivation fuse_activation = NetkitKernelActivation::None);
 };
 ```
 
-Output spatial size: `(input + 2*pad - kernel) / stride + 1`.
+Output spatial size (per axis): `(in + pad_start + pad_end - kernel) / stride + 1`.
+
+C: `nk_conv2d_t` / `nk_conv2d_forward` (default fusion; no explicit `fuse_activation` arg).
+
+---
+
+## DepthwiseConv2D (`depthwise_conv2d.hpp`)
+
+Standalone depthwise conv (also available as a CNN block via `InitDepthwiseConvLayer`).
+
+```cpp
+struct DepthwiseConv2D {
+    int kernel_h = 3, kernel_w = 3;
+    int stride = 1;
+    int pad_h = 0, pad_w = 0;
+    int pad_h_end = -1, pad_w_end = -1;  // -1 mirrors start
+    int channels = 0;
+    float* weights;  // [ch][kh][kw]
+    float* bias;     // [ch]
+    const int8_t* weights_q = nullptr;
+    const int32_t* bias_q = nullptr;
+
+    bool forward(const Tensor& input, Tensor& output,
+                 NetkitKernelActivation fuse_activation = NetkitKernelActivation::None);
+};
+```
+
+C: `nk_depthwise_conv2d_t` / `nk_depthwise_conv2d_forward`.
 
 ---
 
@@ -204,6 +272,7 @@ class MLPNetwork {
 public:
     MLPNetwork(uint32_t num_layers, Arena& arena);
     bool IsValid() const;
+    bool IsQuantized() const;
     bool HasActivationBuffers() const;
 
     bool InitActivationBuffers(Arena& arena, uint32_t batch_rows);  // called by LoadMLP
@@ -218,7 +287,8 @@ public:
     // Hidden layers use ping-pong buffers allocated at load; final layer writes to output
     void forward(const Tensor& input, Tensor& output, Arena& arena);
 
-    // Benchmark-only: same as forward but invokes timing_fn(layer_idx, tag, elapsed_us, user_data) per layer
+    // Benchmark-only: timing_fn(tag, duration_ns, user_data) per layer
+    using LayerTimingFn = void (*)(const char* tag, uint64_t duration_ns, void* user_data);
     void forward_timed(const Tensor& input, Tensor& output, LayerTimingFn timing_fn, void* user_data);
 
     MLPLayer& GetLayer(uint32_t idx);
@@ -272,7 +342,9 @@ class CNNNetwork {
 public:
     CNNNetwork(uint32_t num_layers, Arena& arena);
     bool IsValid() const;
+    bool IsQuantized() const;
     bool HasActivationBuffers() const;
+    std::size_t KernelWorkspaceBytes() const;  // CMSIS-NN shared scratch after InitActivationBuffers
 
     bool InitActivationBuffers(Arena& arena, uint32_t in_h, uint32_t in_w, uint32_t in_c);  // LoadCNN
 
@@ -329,21 +401,30 @@ public:
     void InitYoloxDecoupledHeadLayer(uint32_t layer_idx, Arena& arena, uint32_t spatial_h, uint32_t spatial_w,
                                      int in_channels, int hidden_dim, int num_classes, int num_convs,
                                      /* stem/branch/pred weight pointers */);
+    void InitFeatureTapLayer(uint32_t layer_idx, /* tap_id + spatial */);
+    void InitYoloxPafpnLayer(uint32_t layer_idx, Arena& arena, /* multiscale PAFPN weights */);
     void InitFlattenLayer(uint32_t layer_idx);
     void InitDenseLayer(uint32_t layer_idx, const Tensor& W, const Tensor& b,
                         ActivationType activation, float leaky_alpha = 0.01f);
+
+    float* GetFeatureTapBuffer(uint8_t tap_id) const;
+    uint32_t GetFeatureTapElems(uint8_t tap_id) const;
 
     void SetOpsResolver(const NkOpsResolver& resolver);  // trim via NkOpList<...>::View()
     const NkOpsResolver& GetOpsResolver() const;
 
     // All blocks ping-pong between two load-time buffers; result in GetOutput()
     Tensor& forward(const Tensor& input, Arena& arena);
+    // Benchmark-only: timing_fn(tag, duration_ns, user_data) per block
+    using LayerTimingFn = void (*)(const char* tag, uint64_t duration_ns, void* user_data);
+    Tensor& forward_timed(const Tensor& input, Arena& arena, LayerTimingFn timing_fn, void* user_data);
+
     CnnBlock& GetBlock(uint32_t idx);
     Tensor& GetOutput();
 };
 ```
 
-Spatial tensors stay NHWC until flatten; dense head output is `[1, units]`. Returns null `data` on arena overflow.
+Spatial tensors stay NHWC until flatten; dense head output is `[1, units]`. Returns null `data` on arena overflow. For quantized CNNs, omit final Softmax via the quant runtime (`SetQuantRuntime` / `Runtime::omit_final_softmax`); C exposes that as `nk_cnn_set_omit_final_softmax`.
 
 `NkLoader::LoadCNN` builds full pipelines from `.nk` files (including `models/mnist_cnn.nk`).
 
@@ -362,7 +443,7 @@ Layer dispatch uses `NkOpList<Ops...>::View()` for compile-time op tables — se
 ```cpp
 CNNNetwork net(5, arena);
 net.InitConvLayer(0, 3, 1, 3, 16, conv_w, conv_b, ConvActivationType::ReLU, 0.01f, 1, 1);
-net.InitPoolLayer(1, 2, 2, 0, 0);
+net.InitPoolLayer(1, 2, 2, 2, 0, 0);  // pool_h, pool_w, stride, pad_h, pad_w
 net.InitBatchNormLayer(2, 16, bn_scale, bn_bias);
 net.InitFlattenLayer(3);
 net.InitDenseLayer(4, W, B, ActivationType::None);
@@ -380,6 +461,8 @@ Tensor& output = net.forward(input, arena);
 | MobileNetV4 UIB | `InitMobilenetV4UibLayer(idx, arena, h, w, …)` | |
 | ResNet BasicBlock | `InitResNetBasicBlockLayer(idx, arena, h, w, …)` | |
 | YOLOX decoupled head | `InitYoloxDecoupledHeadLayer(idx, arena, h, w, …)` | See [YOLOX.md](YOLOX.md#manual-construction) |
+| Feature tap | `InitFeatureTapLayer(idx, …)` | Read via `GetFeatureTapBuffer` / `GetFeatureTapElems` after forward |
+| YOLOX PAFPN | `InitYoloxPafpnLayer(idx, arena, …)` | Multiscale neck |
 
 **YOLOX head only** (single fused layer on backbone features):
 
@@ -426,11 +509,21 @@ struct LoadResult {
     const char* message;
 };
 
-struct ParsedModel { /* header, layers, tensor catalog */ };
-struct ArchInfo { /* version, kind, input/output counts, weight_floats */ };
+struct ParsedModel { /* header, layers, tensor catalog, optional quant */ };
+struct ArchInfo {
+    uint32_t version;
+    NetworkKind kind;
+    std::array<uint32_t, kMaxTensorRank> input_shape;
+    uint32_t input_rank, num_layers;
+    uint32_t input_elements, output_elements;
+    std::size_t weight_floats;  // C nk_arch_info_t also exposes weights_bytes / biases_bytes
+};
 
 LoadResult ParseFile(const char* nk_path, ParsedModel& out);
 LoadResult ParseBuffer(const uint8_t* data, std::size_t size, ParsedModel& out);
+void FreeParsedModelExtras(ParsedModel& parsed);  // heap scale blob from ParseFile
+LoadResult ReadTestSuite(const char* nk_path, TestSuite& out);
+std::size_t ModelPayloadBytes(const ParsedModel& model);
 void FillArchInfo(const ParsedModel& model, ArchInfo& info);
 uint32_t InputElements(const ParsedModel& model);
 uint32_t OutputElements(const ParsedModel& model);
@@ -458,7 +551,7 @@ LoadResult Load(const char* nk_path, Arena& arena, NetworkKind& kind,
 }
 ```
 
-**C equivalents:** `nk_parse_architecture` / `nk_parse_architecture_memory` fill `nk_arch_info_t`. `PrintNetworkSummary` → `nk_arch_print`. Embedded firmware uses `LoadMLPFromBuffer` / `LoadCNNFromBuffer` (C: `nk_mlp_load_memory` / `nk_cnn_load_memory`, or `nk_model_load_memory` for the combined handle). `IsQuantized()` → `nk_mlp_is_quantized` / `nk_cnn_is_quantized` / `nk_model_is_quantized`. Int8 run → `nk_model_run_int8`; int8 / int32 views → `nk_tensor_view_2d_int8` / `nk_tensor_view_3d_int8` / `nk_tensor_view_1d_int32`; omit Softmax → `nk_mlp_*` / `nk_cnn_*` / `nk_model_set_omit_final_softmax`; standalone depthwise → `nk_depthwise_conv2d_forward`.
+**C equivalents:** `nk_parse_architecture` / `nk_parse_architecture_memory` fill `nk_arch_info_t` (includes `weights_bytes` / `biases_bytes` from the `.nk` header; C++ `ArchInfo` exposes `weight_floats` only). `PrintNetworkSummary` → `nk_arch_print`. Embedded firmware uses `LoadMLPFromBuffer` / `LoadCNNFromBuffer` (C: `nk_mlp_load_memory` / `nk_cnn_load_memory`, or `nk_model_load_memory` for the combined handle). `IsQuantized()` → `nk_mlp_is_quantized` / `nk_cnn_is_quantized` / `nk_model_is_quantized`. Int8 run → `nk_model_run_int8`; int8 / int32 views → `nk_tensor_view_2d_int8` / `nk_tensor_view_3d_int8` / `nk_tensor_view_1d_int32`; omit Softmax → `nk_mlp_*` / `nk_cnn_*` / `nk_model_set_omit_final_softmax`; standalone depthwise → `nk_depthwise_conv2d_forward`. `nk_recommended_arena_bytes(path)` probes load+forward peaks on CPU heap builds.
 
 **High-level C++ usage** loads with `Load` / `LoadMLP` / `LoadCNN` (file) or `LoadMLPFromBuffer` / `LoadCNNFromBuffer` (embedded `.nk` bytes) and calls `forward` directly — the **interpreter path** via `NkOpsResolver`. The C API adds `nk_model_t` + `nk_model_run` (float32) / `nk_model_run_int8` (int8) as convenience wrappers, plus typed `nk_mlp_load_memory` / `nk_cnn_load_memory` — see [c-api.md](c-api.md).
 
@@ -531,6 +624,6 @@ Exclude `main.cpp`, `cli.cpp`, and `test.cpp` from your link if you provide your
 - Inference only (no training, no autodiff)
 - Single-threaded
 - No heap allocation in `MLPNetwork` / `CNNNetwork` layer paths
-- Conv and pool layers support independent `pad_h` / `pad_w` per axis (`.nk` v3+); depthwise conv supports non-square `kernel_h` × `kernel_w`
+- Conv and pool layers support independent start/end padding per axis (`pad_h`/`pad_w`/`pad_h_end`/`pad_w_end`; `.nk` v3+); depthwise conv supports non-square `kernel_h` × `kernel_w`
 
 See [DATATYPES.md](DATATYPES.md) for float32/int8 I/O rules and the [roadmap](../README.md#roadmap) for remaining types and broader ONNX import.

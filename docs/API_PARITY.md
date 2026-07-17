@@ -42,8 +42,21 @@ Both suites exercise the same **89 embedded `.nk` inference cases**; `nk_run_all
 | C++ | C |
 |-----|---|
 | (constants in headers) | `NK_VERSION_*`, `nk_version_string()` |
-| `NkLoader::LoadStatus` | `nk_status_t`, `nk_status_string()` |
+| `NkLoader::LoadStatus` | `nk_status_t` via many-to-one map (below), `nk_status_string()` |
 | `LoadResult::message` | `nk_last_error()` |
+
+`NkLoader::LoadStatus` → `nk_status_t` (in `netkit_api.cpp`):
+
+| `LoadStatus` | `nk_status_t` |
+|--------------|---------------|
+| `Ok` | `NK_OK` |
+| `FileOpenFailed` | `NK_ERR_MODEL_OPEN` |
+| `ReadFailed` | `NK_ERR_MODEL_READ` |
+| `InvalidMagic`, `TruncatedFile` | `NK_ERR_MODEL_PARSE` |
+| `UnsupportedVersion` | `NK_ERR_VERSION_MISMATCH` |
+| `UnsupportedLayer` | `NK_ERR_LAYER_CONFIG` |
+| `SizeMismatch` | `NK_ERR_WEIGHT_MISMATCH` |
+| `ArenaOverflow` | `NK_ERR_ARENA_OVERFLOW` |
 
 ### Arena (`arena.hpp`)
 
@@ -53,8 +66,9 @@ Both suites exercise the same **89 embedded `.nk` inference cases**; `nk_run_all
 | `Arena::init_heap` / `destroy_heap` (`NETKIT_ARENA_HEAP`) | `nk_arena_init_heap` / `nk_arena_destroy_heap` — **CPU default**; **MPU** via `NETKIT_HEAP_ARENA=1`; **MCU forbidden** (`#error`) |
 | `Arena::alloc` | `nk_arena_alloc` (size + alignment) |
 | `Arena::reset` | `nk_arena_reset` |
-| `Arena::capacity` / `offset` / `remaining` | `nk_arena_capacity`, `nk_arena_used`, `nk_arena_remaining` |
+| `Arena::capacity` / `offset` (fields) / `remaining()` | `nk_arena_capacity`, `nk_arena_used` (maps to `offset`), `nk_arena_remaining` |
 | `Arena::kDefaultCapacity` | `NK_ARENA_DEFAULT_CAPACITY` |
+| `Arena::attach_mapped_file` / `release_mapped_file` | Transparent inside `nk_*_load` when `NETKIT_USE_MMAP=1` |
 
 ### Tensor (`tensor.hpp`)
 
@@ -87,28 +101,28 @@ Both suites exercise the same **89 embedded `.nk` inference cases**; `nk_run_all
 | `tensor_data_i32` | `nk_tensor_data_i32`, `nk_tensor_data_i32_const` (nullptr if dtype ≠ int32) |
 | `index_nhwc` | `nk_tensor_index_nhwc` |
 
-### Ops (`ops.hpp`)
+### Ops (`ops.hpp` — namespace `Ops`)
 
 | C++ | C |
 |-----|---|
-| `IsElementwiseValid` | `nk_ops_is_elementwise_valid` |
-| `CheckSameShape2D` | `nk_ops_check_same_shape_2d` |
-| `CheckSameShapeND` | `nk_ops_check_same_shape_nd` |
-| `IsMatMulValid` | `nk_ops_is_matmul_valid` |
-| `IsElementwiseValidND` | `nk_ops_is_elementwise_valid_nd` |
-| `IsUnaryOpValid` | `nk_ops_is_unary_op_valid` |
-| `Mul` | `nk_ops_mul` |
-| `MulScalar` | `nk_ops_mul_scalar` |
-| `MatAdd` | `nk_ops_mat_add` |
-| `MatAddND` | `nk_ops_mat_add_nd` |
-| `MatMul` | `nk_ops_mat_mul` |
-| `MulND` | `nk_ops_mul_nd` |
-| `ReLU` | `nk_ops_relu` |
-| `Sigmoid` | `nk_ops_sigmoid` |
-| `Tanh` | `nk_ops_tanh` |
-| `LeakyReLU` | `nk_ops_leaky_relu` |
-| `ReLU6` | `nk_ops_relu6` |
-| `Softmax` | `nk_ops_softmax` |
+| `Ops::IsElementwiseValid` | `nk_ops_is_elementwise_valid` |
+| `Ops::CheckSameShape2D` | `nk_ops_check_same_shape_2d` |
+| `Ops::CheckSameShapeND` | `nk_ops_check_same_shape_nd` |
+| `Ops::IsMatMulValid` | `nk_ops_is_matmul_valid` |
+| `Ops::IsElementwiseValidND` | `nk_ops_is_elementwise_valid_nd` |
+| `Ops::IsUnaryOpValid` | `nk_ops_is_unary_op_valid` |
+| `Ops::Mul` | `nk_ops_mul` |
+| `Ops::MulScalar` | `nk_ops_mul_scalar` |
+| `Ops::MatAdd` | `nk_ops_mat_add` |
+| `Ops::MatAddND` | `nk_ops_mat_add_nd` |
+| `Ops::MatMul` | `nk_ops_mat_mul` |
+| `Ops::MulND` | `nk_ops_mul_nd` |
+| `Ops::ReLU` | `nk_ops_relu` |
+| `Ops::Sigmoid` | `nk_ops_sigmoid` |
+| `Ops::Tanh` | `nk_ops_tanh` |
+| `Ops::LeakyReLU` | `nk_ops_leaky_relu` |
+| `Ops::ReLU6` | `nk_ops_relu6` |
+| `Ops::Softmax` | `nk_ops_softmax` |
 
 ### Conv2D (`conv2d.hpp`)
 
@@ -187,7 +201,7 @@ Both suites exercise the same **89 embedded `.nk` inference cases**; `nk_run_all
 | `LoadCNNFromBuffer` | `nk_cnn_load_memory` |
 | `LoadCNNFromBuffer` (high-level) | `nk_model_load_memory` (CNN) |
 | `Load` | `nk_model_load_auto` |
-| `ArchInfo` | `nk_arch_info_t` (`weights_bytes`, `biases_bytes` from `.nk` header) |
+| `ArchInfo` (`weight_floats` only) | `nk_arch_info_t` (`expected_weight_floats` plus `weights_bytes` / `biases_bytes` from `.nk` header) |
 | `inspect --full` (flash-aware buffer load) | `nk_inspect_model`, `nk_inspect_model_memory` |
 
 High-level combined handle (C convenience):
@@ -242,7 +256,6 @@ Lowered AOT keeps coef arrays in flash `.rodata` (no SRAM copy at load). See `bo
 | `CNNNetwork::forward_timed`, `MLPNetwork::forward_timed` | Benchmark-only profilers |
 | `CmsisQuantPlan::Runtime` other fields | C exposes `omit_final_softmax` via `nk_cnn_*` / `nk_model_*`; remaining plan fields stay C++ |
 | `NkLoader::ReadTestSuite`, `ModelPayloadBytes`, `NetworkKindName`, `FreeParsedModelExtras` | Loader utilities; C uses `nk_parse_architecture` / `nk_model_*` instead |
-| `Arena::attach_mapped_file` / `release_mapped_file` | File mmap is transparent inside `nk_*_load` when `NETKIT_USE_MMAP=1` |
 | `Conv2D::forward(..., fuse_activation)` / `DepthwiseConv2D::forward(..., fuse_activation)` | C forwards use default activation fusion |
 | `TensorFactory::PrintLabeled(..., max_values)` | C `nk_tensor_print_labeled` omits truncation control |
 

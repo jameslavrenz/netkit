@@ -30,6 +30,7 @@ Derived (from `netkit_config.h`, shared by C and C++): `NETKIT_CLASS_MCU` / `NET
 | `NETKIT_HEAP_ARENA=1` (**MPU only**) | `NETKIT_HEAP_ARENA` → `NETKIT_ARENA_HEAP` | Optional heap API on MPU; **forbidden on MCU** |
 | `NETKIT_CMSIS_NN=1` | `NETKIT_USE_CMSIS_NN` | `mcu_arm` + Cortex-M `NETKIT_ARCH` only |
 | `NETKIT_XNNPACK=1` | `NETKIT_USE_XNNPACK` | `cpu` + any MPU LayerFast; forbidden on MCU |
+| `NETKIT_MMAP=1` (default cpu/MPU on Apple/Linux/Windows) | `NETKIT_USE_MMAP` | File mmap for `.nk` loads; **forbidden on MCU**; opt out with `NETKIT_MMAP=0` |
 | *(MCU default)* | `NETKIT_DISABLE_IOSTREAM` | No iostream; `nk_arch_print` is a no-op |
 | *(MCU + CMSIS production)* | `NETKIT_MCU_CMSIS_ONLY` | QuantOps reference loops omitted (flash) |
 
@@ -76,6 +77,8 @@ const char* nk_version_string(void);  // "0.1.0"
 | `NK_MAX_LAYERS` | 100 | Max layers in `.nk` files (matches `NkFormat::kMaxLayers`) |
 | `NK_MAX_PATH_LEN` | 256 | Path buffer size used internally |
 | `NK_MAX_MESSAGE_LEN` | 128 | Max length of last error message |
+| `NK_MAX_CASE_FLOATS` | 16384 | Max floats / int8 elems per embedded TCAS case |
+| `NK_PAD_MIRROR` | `-1` | End pad mirrors start (symmetric) for conv/pool |
 | `NK_ARENA_DEFAULT_CAPACITY` | 64 KiB (MCU) / 64 MiB (CPU, MPU) | Default static arena size by build target |
 | `NK_ARENA_STORAGE_BYTES` | 64 | Size of `nk_arena_t.storage` |
 | `NK_MODEL_STORAGE_BYTES` | 96 | Size of `nk_model_t.storage` |
@@ -104,7 +107,7 @@ const char* nk_version_string(void);  // "0.1.0"
 
 ```c
 const char* nk_status_string(nk_status_t status);
-const char* nk_last_error(void);  // detail after failed call; thread-local
+const char* nk_last_error(void);  // detail after failed call (thread-local on desktop; global on MCU/MPU)
 ```
 
 ### `nk_dtype_t`, `nk_activation_t`, `nk_conv_activation_t`
@@ -134,11 +137,13 @@ Numeric values match C++ `CnnBlockType` member order (starting at 0).
 
 Used when building CNN pipelines manually. File-loaded models (`nk_cnn_load`) configure blocks from the `.nk` layer list. After `nk_cnn_forward`, YOLOX feature maps are available via `nk_cnn_get_feature_tap_buffer` / `nk_cnn_get_feature_tap_elems`.
 
-### `nk_tensor_t`, `nk_conv2d_t`
+### `nk_tensor_t`, `nk_conv2d_t`, `nk_depthwise_conv2d_t`
 
-Mirror C++ `Tensor` and `Conv2D` layouts. Safe to pass by pointer to all `nk_tensor_*` and `nk_ops_*` functions.
+Mirror C++ `Tensor`, `Conv2D`, and `DepthwiseConv2D`. Safe to pass by pointer to `nk_tensor_*` / `nk_ops_*` / standalone conv forwards.
 
 `nk_conv2d_t` mirrors C++ `Conv2D`: `pad_h`/`pad_w` are start padding; `pad_h_end`/`pad_w_end` are end padding. Pass `NK_PAD_MIRROR` (`-1`) for end padding to mirror the start (symmetric). Set all four explicitly for asymmetric padding.
+
+`nk_depthwise_conv2d_t` mirrors C++ `DepthwiseConv2D`: `kernel_h`/`kernel_w`, same pad fields, `channels`, weights `[ch][kh][kw]`. Forward: `nk_depthwise_conv2d_forward`.
 
 ### `nk_mlp_t`, `nk_cnn_t`
 
@@ -178,7 +183,7 @@ Architecture metadata parsed from a `.nk` file (no full weight load required).
 
 ```c
 typedef struct nk_arch_info {
-    uint32_t version;  /* .nk format version (currently 2) */
+    uint32_t version;  /* .nk format version (v3–v4; NkFormat::kVersion = 4) */
     nk_network_kind_t kind;
     uint32_t input_shape[NK_MAX_TENSOR_RANK];
     uint32_t input_rank;
@@ -204,6 +209,17 @@ typedef struct nk_inspect_info {
     size_t arena_remaining;
     size_t flash_payload_bytes;  /* weight+bias payload kept in flash/blob */
 } nk_inspect_info_t;
+```
+
+### `nk_test_summary_t`
+
+Result of `nk_run_model_tests` / `nk_run_all_tests` (desktop builds only).
+
+```c
+typedef struct nk_test_summary {
+    uint32_t passed;
+    uint32_t failed;
+} nk_test_summary_t;
 ```
 
 ## Arena functions
@@ -270,28 +286,28 @@ Full signatures are in [`netkit.h`](../include/netkit.h). Each group mirrors the
 | `nk_tensor_data_i32_const` | `tensor_data_i32` (const; nullptr if not int32) |
 | `nk_tensor_index_nhwc` | `index_nhwc` |
 
-### Ops (`ops.hpp`)
+### Ops (`ops.hpp` — namespace `Ops`)
 
 | C function | C++ equivalent |
 |------------|----------------|
-| `nk_ops_is_elementwise_valid` | `IsElementwiseValid` |
-| `nk_ops_check_same_shape_2d` | `CheckSameShape2D` |
-| `nk_ops_check_same_shape_nd` | `CheckSameShapeND` |
-| `nk_ops_is_matmul_valid` | `IsMatMulValid` |
-| `nk_ops_is_elementwise_valid_nd` | `IsElementwiseValidND` |
-| `nk_ops_is_unary_op_valid` | `IsUnaryOpValid` |
-| `nk_ops_mul` | `Mul` |
-| `nk_ops_mul_scalar` | `MulScalar` |
-| `nk_ops_mat_add` | `MatAdd` |
-| `nk_ops_mat_add_nd` | `MatAddND` |
-| `nk_ops_mat_mul` | `MatMul` |
-| `nk_ops_mul_nd` | `MulND` |
-| `nk_ops_relu` | `ReLU` |
-| `nk_ops_sigmoid` | `Sigmoid` |
-| `nk_ops_tanh` | `Tanh` |
-| `nk_ops_leaky_relu` | `LeakyReLU` |
-| `nk_ops_relu6` | `ReLU6` |
-| `nk_ops_softmax` | `Softmax` |
+| `nk_ops_is_elementwise_valid` | `Ops::IsElementwiseValid` |
+| `nk_ops_check_same_shape_2d` | `Ops::CheckSameShape2D` |
+| `nk_ops_check_same_shape_nd` | `Ops::CheckSameShapeND` |
+| `nk_ops_is_matmul_valid` | `Ops::IsMatMulValid` |
+| `nk_ops_is_elementwise_valid_nd` | `Ops::IsElementwiseValidND` |
+| `nk_ops_is_unary_op_valid` | `Ops::IsUnaryOpValid` |
+| `nk_ops_mul` | `Ops::Mul` |
+| `nk_ops_mul_scalar` | `Ops::MulScalar` |
+| `nk_ops_mat_add` | `Ops::MatAdd` |
+| `nk_ops_mat_add_nd` | `Ops::MatAddND` |
+| `nk_ops_mat_mul` | `Ops::MatMul` |
+| `nk_ops_mul_nd` | `Ops::MulND` |
+| `nk_ops_relu` | `Ops::ReLU` |
+| `nk_ops_sigmoid` | `Ops::Sigmoid` |
+| `nk_ops_tanh` | `Ops::Tanh` |
+| `nk_ops_leaky_relu` | `Ops::LeakyReLU` |
+| `nk_ops_relu6` | `Ops::ReLU6` |
+| `nk_ops_softmax` | `Ops::Softmax` |
 
 ### MLP (`mlp.hpp`)
 
@@ -472,6 +488,7 @@ For **embedded** models (AOT firmware), pass the static `.nk` byte array to `nk_
 ```c
 nk_status_t nk_parse_architecture(const char* nk_path, nk_arch_info_t* info);
 nk_status_t nk_parse_architecture_memory(const uint8_t* data, size_t size, nk_arch_info_t* info);
+size_t nk_recommended_arena_bytes(const char* nk_path);  /* 0 on failure / non-CPU */
 nk_status_t nk_arch_print(const char* nk_path);
 nk_status_t nk_mlp_load(const char* nk_path, nk_arena_t* arena, nk_mlp_t* mlp, nk_arch_info_t* info);
 nk_status_t nk_mlp_load_memory(const uint8_t* data, size_t size, nk_arena_t* arena, nk_mlp_t* mlp, nk_arch_info_t* info);
@@ -507,10 +524,12 @@ nk_status_t nk_inspect_model_memory(const uint8_t* data, size_t size, nk_arena_t
 Available when `NETKIT_DESKTOP` is defined (`NETKIT_TARGET=cpu`):
 
 ```c
-nk_test_summary_t nk_run_model_tests(const char* nk_path);
+nk_test_summary_t nk_run_model_tests(const char* nk_path);  /* {passed, failed} */
 nk_test_summary_t nk_run_all_tests(void);
 int nk_cli_run(int argc, char** argv);
 ```
+
+`nk_run_model_tests` runs the embedded `TCAS` suite in one `.nk` file. `nk_run_all_tests` runs the full desktop regression set (same cases as `./netkit test`).
 
 Embedded test format: [NK_FORMAT.md](NK_FORMAT.md). CLI commands: [CLI.md](CLI.md). Build profiles: [BUILD_TARGETS.md](BUILD_TARGETS.md).
 
