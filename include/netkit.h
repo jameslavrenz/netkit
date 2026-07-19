@@ -7,7 +7,7 @@
  * Documentation:
  *   docs/PHILOSOPHY.md       — product vision, Phase 1/2, roadmap
  *   docs/GETTING_STARTED.md  — build, test, first inference
- *   docs/BUILD_TARGETS.md    — NETKIT_TARGET (cpu/mcu_arm/mpu_arm/mcu_risc/mpu_risc), arena, backends
+ *   docs/BUILD_TARGETS.md    — NETKIT_TARGET (cpu/mcu_arm/mpu_arm/mcu_risc/mpu_risc/mcu_esp), arena, backends
  *   docs/DATATYPES.md        — float32 and int8 today; more dtypes roadmap
  *   docs/ARENA.md            — bump allocator memory model
  *   docs/c-api.md            — full C API reference

@@ -17,7 +17,7 @@ ops.cpp / conv2d.cpp / cnn.cpp / mlp.cpp
         │
    ┌────┴────┐
    ▼         ▼
-VectorFast  LayerFast        ← ReferenceKernel, CmsisNnKernel, or XnnpackKernel
+VectorFast  LayerFast        ← ReferenceKernel, CmsisNnKernel, EspNnKernel, or XnnpackKernel
    │         │
    └────┬────┘
         ▼
@@ -32,49 +32,52 @@ VectorFast  LayerFast        ← ReferenceKernel, CmsisNnKernel, or XnnpackKerne
 | `netkit_loop_unroll.hpp` | Compile-time loop unroll helpers for reference kernels only |
 | `netkit_util.hpp` / `netkit_util.cpp` | Portable vector helpers (`NetkitUtil::`; CMSIS-DSP is not used) |
 | `cmsis_nn_kernel.hpp` / `cmsis_nn_backend.cpp` | CMSIS-NN `Try*` for layer ops (conv, depthwise conv, pool, FC, batch norm, activations, GELU, softmax) |
+| `esp_nn_kernel.hpp` / `esp_nn_backend.cpp` | ESP-NN float LayerFast slot (all `Try*` miss → reference; int8 via `EspNnQuant`) |
+| `esp_nn_quant.hpp` / `esp_nn_quant_backend.cpp` | ESP-NN int8 `Try*` (conv, depthwise, pool, FC, softmax, add) |
 | `kernel_dispatch.hpp` | `ComposedKernel<VectorFast, LayerFast>` and `Try*` helpers |
 | `active_kernel.hpp` | `using Kernels = …` alias for the current build |
 | `fused_kernel_ops.hpp` | Inline helpers for fused blocks (BN, ReLU, MatAdd, FC 1×1, GELU, GRN) → `Kernels::` |
 | `activation_followup.hpp` | Shared post-kernel activation when not fused in CMSIS-NN |
 
-Backend `.cpp` files **must** include `netkit_config.h` so `NETKIT_CMSIS_NN_ALLOWED` and related macros match the active build profile.
+Backend `.cpp` files **must** include `netkit_config.h` so `NETKIT_CMSIS_NN_ALLOWED` / `NETKIT_ESP_NN_ALLOWED` and related macros match the active build profile.
 
 ## Active backend aliases
 
-Selected in `active_kernel.hpp` from `NETKIT_USE_CMSIS_NN`, `NETKIT_USE_XNNPACK`, and allow macros:
+Selected in `active_kernel.hpp` from `NETKIT_USE_CMSIS_NN`, `NETKIT_USE_ESP_NN`, `NETKIT_USE_XNNPACK`, and allow macros:
 
 | Build profile | `Kernels` alias |
 |---------------|-----------------|
 | Reference only (incl. **`mcu_risc`**, float32 MCU) | `ReferenceKernel` — portable generic kernels |
 | CMSIS-NN (Arm MCU + Cortex-M, production int8) | `ComposedKernel<ReferenceKernel, CmsisNnKernel>` |
+| ESP-NN (Espressif MCU, production int8) | `ComposedKernel<ReferenceKernel, EspNnKernel>` (float `Try*` always miss) |
 | XNNPACK LayerFast (`cpu` / any MPU) | `XnnpackKernel` |
 
-**CMSIS-DSP is not used.** CMSIS-NN is **forbidden** on RISC targets. XNNPACK is **forbidden** on all MCU targets.
+**CMSIS-DSP is not used.** CMSIS-NN is **forbidden** on RISC and ESP targets. ESP-NN is **forbidden** outside `mcu_esp`. XNNPACK is **forbidden** on all MCU targets.
 
 ### Role split in `ComposedKernel<VectorFast, LayerFast>`
 
 | Role | Typical backend | Ops |
 |------|-----------------|-----|
 | **VectorFast** | Reference (portable) | `Mul`, `MatMul`, `MulScalar`, `MatAdd`/`MatAddND`, clip, LayerNorm, GRN |
-| **LayerFast** | CMSIS-NN or XNNPACK when enabled | `Conv2d`, depthwise conv, pool, batch norm, FC, NN activations, softmax |
+| **LayerFast** | CMSIS-NN, ESP-NN slot, or XNNPACK when enabled | `Conv2d`, depthwise conv, pool, batch norm, FC, NN activations, softmax |
 | **Reference** | Always | Fallback when `Try*` returns false or backend is `ReferenceKernel` |
 
 **GEMM:** there is no separate `Gemm` symbol. General matrix multiply is `Kernels::MatMul` (`Ops::MatMul`); linear layers use `Kernels::FullyConnectedWithBias` (internally matmul + bias). ONNX `Gemm` is lowered to packed dense weights at export time.
 
-On **MCU with CMSIS-NN**, CMSIS-NN owns layer kernels; vector ops and ops without NN float APIs use reference / `NetkitUtil`.
+On **MCU with CMSIS-NN**, CMSIS-NN owns layer kernels; vector ops and ops without NN float APIs use reference / `NetkitUtil`. On **MCU with ESP-NN**, int8 uses `EspNnQuant`; float LayerFast always falls to reference.
 
 ### Float32 op coverage
 
-| Op | Reference | CMSIS-NN | XNNPACK |
-|----|-----------|----------|---------|
-| Conv2D, depthwise conv, pool, batch norm, FC, activations, softmax | ✓ | ✓ (`Try*` + fallback) | ✓ (cpu/MPU) |
-| MatMul, elementwise mul/add/scale | ✓ | add (elementwise) | — |
-| LayerNorm2d | ✓ | — | — |
-| GELU | ✓ | ✓ (tanh on inner polynomial) | — |
-| GRN | ✓ | — | — |
-| Residual / skip merge | ✓ | add (`MatAddND`) | — |
+| Op | Reference | CMSIS-NN | ESP-NN | XNNPACK |
+|----|-----------|----------|--------|---------|
+| Conv2D, depthwise conv, pool, batch norm, FC, activations, softmax | ✓ | ✓ (`Try*` + fallback) | — (slot miss → reference) | ✓ (cpu/MPU) |
+| MatMul, elementwise mul/add/scale | ✓ | add (elementwise) | — | — |
+| LayerNorm2d | ✓ | — | — | — |
+| GELU | ✓ | ✓ (tanh on inner polynomial) | — | — |
+| GRN | ✓ | — | — | — |
+| Residual / skip merge | ✓ | add (`MatAddND`) | — | — |
 
-**Float32 on MCU:** supported via reference kernels only. There is **no plan** for an optimized float32 MCU path; production MCU is int8 + CMSIS-NN.
+**Float32 on MCU:** supported via reference kernels (CMSIS may accelerate some float LayerFast ops on Arm; ESP-NN has no float API). Production MCU paths are **int8 + CMSIS-NN** (Arm) or **int8 + ESP-NN** (Espressif).
 
 **Host CPU:** production accel is XNNPACK. With XNNPACK ON, TF Lite’s optimized builtins and ORT **MLAS** are moot — netkit ≈ TF Lite there. **MLAS is not needed for netkit** (ORT OFF keeps MLAS on; that is not a slow-reference peer). See [STATUS.md](STATUS.md#host-three-way-suite-netkit-vs-tf-lite-vs-onnx-runtime).
 
@@ -86,7 +89,7 @@ On **MCU with CMSIS-NN**, CMSIS-NN owns layer kernels; vector ops and ops withou
 
 **Portable helpers:** `netkit_util.cpp` (`NetkitUtil::`) provides contiguous f32/int8 copy, argmax, and related helpers used by reference fallbacks and board firmware staging. Asymmetric pool layers route through `Kernels::MaxPool2dForwardPadded` / `AvgPool2dForwardPadded`.
 
-**Int8 quant path:** layer compute is CMSIS-NN (`arm_convolve_wrapper_s8`, pool, FC, softmax) on MCU. MCU firmware should stage int8 inputs in SRAM before the first conv (TFLM copies into the tensor arena; netkit benchmark firmware uses `g_input_staging` in `main.cpp`) so the conv kernel reads activations from SRAM, not flash-resident test vectors.
+**Int8 quant path:** layer compute is CMSIS-NN (`arm_convolve_wrapper_s8`, pool, FC, softmax) on Arm MCU, or ESP-NN (`esp_nn_*` int8 APIs) on Espressif MCU — both tried ahead of QuantOps reference in the shared plan path. MCU firmware should stage int8 inputs in SRAM before the first conv (TFLM copies into the tensor arena; netkit benchmark firmware uses `g_input_staging` in `main.cpp`) so the conv kernel reads activations from SRAM, not flash-resident test vectors.
 
 ### CMSIS kernel workspace
 

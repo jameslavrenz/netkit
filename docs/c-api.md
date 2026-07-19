@@ -22,7 +22,9 @@ Set the deployment target when building or integrating netkit:
 | `NETKIT_TARGET=mpu_risc` | `NETKIT_TARGET_MPU_RISC` | RISC-V MPU | XNNPACK on; CMSIS-NN forbidden |
 | `NETKIT_TARGET=mcu_esp` | `NETKIT_TARGET_MCU_ESP` | Espressif MCU | ESP-NN (int8); float32 reference; XNNPACK forbidden |
 
-Derived (from `netkit_config.h`, shared by C and C++): `NETKIT_CLASS_MCU` / `NETKIT_CLASS_MPU`, `NETKIT_ISA_ARM` / `NETKIT_ISA_RISC`.
+Derived (from `netkit_config.h`, shared by C and C++): `NETKIT_CLASS_MCU` / `NETKIT_CLASS_MPU`, `NETKIT_ISA_ARM` / `NETKIT_ISA_RISC` / `NETKIT_ISA_ESP`.
+
+Backend selection is **compile-time only** (same binary for C and C++ callers). C firmware uses the same `nk_*` load/run path under CMSIS-NN, ESP-NN, XNNPACK, or reference — there is no separate C backend API.
 
 | Makefile flag | Macro | Effect |
 |---------------|-------|--------|
@@ -34,7 +36,7 @@ Derived (from `netkit_config.h`, shared by C and C++): `NETKIT_CLASS_MCU` / `NET
 | `NETKIT_ESP_NN=1` | `NETKIT_USE_ESP_NN` | `mcu_esp` + `NETKIT_ARCH=ESP32*` only |
 | `NETKIT_MMAP=1` (default cpu/MPU on Apple/Linux/Windows) | `NETKIT_USE_MMAP` | File mmap for `.nk` loads; **forbidden on MCU**; opt out with `NETKIT_MMAP=0` |
 | *(MCU default)* | `NETKIT_DISABLE_IOSTREAM` | No iostream; `nk_arch_print` is a no-op |
-| *(MCU + CMSIS production)* | `NETKIT_MCU_CMSIS_ONLY` | QuantOps reference loops omitted (flash) |
+| *(MCU accel production)* | `NETKIT_MCU_ACCEL_ONLY` / `NETKIT_MCU_CMSIS_ONLY` | QuantOps reference loops omitted (flash) when `REFERENCE_QUANT_LOOPS=0` — Arm CMSIS-NN **or** Espressif ESP-NN |
 
 | `NK_ARENA_DEFAULT_CAPACITY` | MCU class | CPU / MPU class |
 |-----------------------------|-----------|-----------------|

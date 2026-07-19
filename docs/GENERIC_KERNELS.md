@@ -12,7 +12,7 @@ maturity), [DATATYPES.md](DATATYPES.md) (float32 / int8).
 ## 1. What “generic” means here
 
 netkit routes numeric work through a compile-time kernel facade
-(`Kernels::…`). When CMSIS-NN and XNNPACK are off (or reject an op), execution
+(`Kernels::…`). When CMSIS-NN, ESP-NN, and XNNPACK are off (or reject an op), execution
 falls through to **`ReferenceKernel`** plus, for int8, **`QuantOps`** integer
 loops. That stack is what this document calls the **generic** path.
 
@@ -240,7 +240,7 @@ stay scalar $\mathrm{int32}$ MACs (§3.8). Workspace is arena-backed; if scratch
 does not fit, QuantOps degrades full → partial → direct.
 
 **Tradeoff.** Can help large float CNNs on reference-only MPU/MCU builds; costs
-RAM and gather bandwidth. CMSIS-NN / XNNPACK **ignore** this knob.
+RAM and gather bandwidth. CMSIS-NN / ESP-NN / XNNPACK **ignore** this knob.
 
 **Portability:** Same 32-bit types; larger models may need arena headroom that
 tiny MCUs lack — hence default $0$.
@@ -275,7 +275,7 @@ fail to link.
 **Where:** `quant_ops.cpp`, `quant_integer.hpp`, `im2col_quant.cpp`. Compiled
 on host/MPU always; on MCU class builds only when
 `NETKIT_REFERENCE_QUANT_LOOPS=1` (otherwise flash-trimmed under
-`NETKIT_MCU_CMSIS_ONLY`).
+`NETKIT_MCU_ACCEL_ONLY` / `NETKIT_MCU_CMSIS_ONLY`).
 
 **Hot path.** For filter weight $w$, activation $x$, and zero-point offset
 $z_x$ (when not folded):
@@ -383,11 +383,11 @@ fewer branches) without requiring a vector ISA.
 
 | Flag | Default | Affects generic path | Notes |
 |------|---------|----------------------|-------|
-| `NETKIT_IM2COL` | $0$ | Float ref + int8 QuantOps Conv2D | Ignored by CMSIS-NN / XNNPACK |
+| `NETKIT_IM2COL` | $0$ | Float ref + int8 QuantOps Conv2D | Ignored by CMSIS-NN / ESP-NN / XNNPACK |
 | `NETKIT_LOOP_UNROLL` | $0$ | Float elementwise / some activations | Experimental; grows `.text` |
 | `NETKIT_DW_ROW_ACCUM` | $1$ | Float depthwise cross-row ILP | — |
 | `NETKIT_REFERENCE_QUANT_LOOPS` | $0$ | Keep int8 QuantOps bodies on MCU class | Needed for RISC MCU int8 / reference A/B |
-| `NETKIT_MCU_CMSIS_ONLY` | derived | Strip QuantOps ref when loops off | Float `ReferenceKernel` still links |
+| `NETKIT_MCU_ACCEL_ONLY` (`NETKIT_MCU_CMSIS_ONLY`) | derived | Strip QuantOps ref when loops off (CMSIS or ESP production) | Float `ReferenceKernel` still links |
 
 Guidance: leave **`NETKIT_IM2COL=0`** and **`NETKIT_LOOP_UNROLL=0`** unless
 profiling a reference-only build. See
@@ -401,7 +401,8 @@ profiling a reference-only build. See
 |---------|------------------|
 | **XNNPACK** | Production LayerFast on cpu / MPU — ISA microkernels; generics are fallback |
 | **CMSIS-NN** | Production int8 on Arm MCU; generics for float MCU and CMSIS rejects |
-| **Generics** | Correctness baseline, RISC MCU production, host “XNNPACK OFF” peer, CMSIS/XNNPACK fallback |
+| **ESP-NN** | Production int8 on Espressif MCU; float always uses generics (no ESP float API) |
+| **Generics** | Correctness baseline, RISC MCU production, host “XNNPACK OFF” peer, accel fallback |
 
 Peer benches that disable XNNPACK compare against this stack (and, for TF Lite,
 often `BUILTIN_REF`). See [STATUS.md](STATUS.md).
@@ -429,8 +430,8 @@ Generic kernels are **portable C++ tuned for 32-bit+ machines**: NHWC-friendly
 loops, always-on multi-accumulator float reductions, shape specialists, optional
 im2col / unroll, and integer-only int8 MAC+requant. They intentionally avoid
 ISA-specific SIMD so the same sources serve desktop reference builds, Arm MCU
-fallback, and RISC MCU production. The cost of that portability is that peak
-host/MPU performance still belongs to **XNNPACK**, and peak Arm MCU int8
-performance to **CMSIS-NN** — with the understanding that almost every
+fallback, Espressif float, and RISC MCU production. The cost of that portability is that peak
+host/MPU performance still belongs to **XNNPACK**, peak Arm MCU int8
+to **CMSIS-NN**, and peak Espressif MCU int8 to **ESP-NN** — with the understanding that almost every
 speedup above assumes at least a 32-bit word, native or soft `float` /
 `int64` where those paths run, and little-endian model load.

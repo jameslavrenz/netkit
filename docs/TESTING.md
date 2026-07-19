@@ -18,16 +18,16 @@ make test-python-full  # ONNX parity (82) + AOT compile tests; requires libnetki
 make clean        # remove objects and binaries
 make rebuild      # clean + make
 
-# Optional CMSIS backend parity (after make cmsis-init)
+# Optional CMSIS / ESP-NN backend parity (after make cmsis-init / esp-nn-init)
 make test-cpp
-make test-embedded-smoke-matrix   # Arm + RISC MCU/MPU profiles (local only)
+make test-embedded-smoke-matrix   # Arm + RISC + Espressif MCU/MPU profiles (local only)
 
 # Optional CMake build + test
 cmake -B cmake-build && cmake --build cmake-build
 ./cmake-build/netkit test
 ```
 
-Embedded runtime-only builds: `make NETKIT_TARGET=mcu_arm lib`, `mpu_arm`, `mcu_risc`, or `mpu_risc` — see [BUILD_TARGETS.md](BUILD_TARGETS.md). Full regression requires `NETKIT_TARGET=cpu`. MCU/MPU bring-up smoke: `make test-embedded-smoke-matrix` — see [Embedded smoke](#embedded-smoke-mcupu). New users: [GETTING_STARTED.md](GETTING_STARTED.md). Platform maturity: [STATUS.md](STATUS.md).
+Embedded runtime-only builds: `make NETKIT_TARGET=mcu_arm lib`, `mpu_arm`, `mcu_risc`, `mpu_risc`, or `mcu_esp NETKIT_ARCH=ESP32S3` — see [BUILD_TARGETS.md](BUILD_TARGETS.md). Full regression requires `NETKIT_TARGET=cpu`. MCU/MPU bring-up smoke: `make test-embedded-smoke-matrix` — see [Embedded smoke](#embedded-smoke-mcupu). New users: [GETTING_STARTED.md](GETTING_STARTED.md). Platform maturity: [STATUS.md](STATUS.md).
 
 ## C++ regression (`.nk` loader + inference)
 
@@ -99,14 +99,16 @@ For **`mlp_hand.nk`** and **`cnn_hand.nk`**, use **`make test`** (embedded TCAS 
 
 ```bash
 make cmsis-init   # required for CMSIS profiles
+make esp-nn-init  # required for ESP-NN profiles
 make NETKIT_TARGET=mcu_arm NETKIT_ARCH=CM4 NETKIT_CMSIS_NN=1 embedded-smoke
+make NETKIT_TARGET=mcu_esp NETKIT_ARCH=ESP32C6 NETKIT_HOST_SMOKE=1 embedded-smoke
 ./tests/embedded_smoke
 
-# Full matrix (Arm + RISC MCU/MPU; CMSIS Arm profiles; RISC generic / XNNPACK)
+# Full matrix (Arm + RISC + Espressif MCU/MPU; CMSIS / ESP-NN; RISC generic / XNNPACK)
 make test-embedded-smoke-matrix
 ```
 
-Host execution exercises linking and inference paths before on-device bring-up. Smoke loads two bundled models: tiny MLP and CNN hand fixtures. Profiles include `mcu_arm`, `mpu_arm`, `mcu_risc`, `mpu_risc`, plus Arm CMSIS variants. The matrix sets `NETKIT_HOST_SMOKE=1` so CMSIS-NN uses the portable `__GNUC_PYTHON__` path on the host (no CMSIS-Core headers). On hardware, link with your toolchain `-mcpu` flags and `NETKIT_ARCH=...` without `NETKIT_HOST_SMOKE`.
+Host execution exercises linking and inference paths before on-device bring-up. Smoke loads two bundled models: tiny MLP and CNN hand fixtures. Profiles include `mcu_arm`, `mpu_arm`, `mcu_risc`, `mpu_risc`, `mcu_esp`, plus Arm CMSIS and Espressif ESP-NN variants. The matrix sets `NETKIT_HOST_SMOKE=1` so CMSIS-NN uses the portable `__GNUC_PYTHON__` path (no CMSIS-Core headers) and ESP-NN builds ANSI-only. On hardware, link with your toolchain flags and `NETKIT_ARCH=...` without `NETKIT_HOST_SMOKE`.
 
 | Doc | Contents |
 |-----|----------|

@@ -155,12 +155,16 @@
 #error "NETKIT_REFERENCE_QUANT_LOOPS must be 0 or 1"
 #endif
 
-/* MCU accel-only production path omits QuantOps reference loops (flash reclaim). */
+/* MCU accel-only production path omits QuantOps reference loops (flash reclaim).
+ * Applies to all CLASS_MCU targets when REFERENCE_QUANT_LOOPS=0 (CMSIS-NN Arm,
+ * ESP-NN Espressif, or generic MCU with loops stripped). Historical name
+ * NETKIT_MCU_CMSIS_ONLY; prefer NETKIT_MCU_ACCEL_ONLY in new code. */
 #if defined(NETKIT_CLASS_MCU) && !NETKIT_REFERENCE_QUANT_LOOPS
 #define NETKIT_MCU_CMSIS_ONLY 1
 #else
 #define NETKIT_MCU_CMSIS_ONLY 0
 #endif
+#define NETKIT_MCU_ACCEL_ONLY NETKIT_MCU_CMSIS_ONLY
 
 #ifndef NETKIT_LOOP_UNROLL
 #define NETKIT_LOOP_UNROLL 0
