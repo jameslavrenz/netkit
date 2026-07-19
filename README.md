@@ -1,12 +1,23 @@
 # netkit — Neural Network Kit
 
-netkit is a **multi-modal inference engine** (image / vision today; voice next) with an **embedded-first** design for **MCUs, MPUs, and NPUs**. Primary API is **C++26**; firmware and FFI use a matching **C23** API. Develop on the desktop, then deploy the lean runtime to embedded targets. Companion to [memkit](https://github.com/NetKit-Labs/memkit) for memory management.
+netkit is a **multi-modal inference engine** (image / vision today; voice next) with an **embedded-first** design for **MCUs, MPUs, and NPUs**. Primary API is **C++26**; firmware and FFI use a matching **C23** API over the same engine ([API parity](docs/API_PARITY.md)). Develop on the desktop, then deploy the lean runtime to embedded targets. Companion to [memkit](https://github.com/NetKit-Labs/memkit) for memory management. **Open source (MIT)** — optional backends are Apache/BSD open-source libraries only ([THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)).
 
-**Status:** **Float32** and **int8** inference are **complete** on **Arm MCU** (CMSIS-NN), **Arm MPU**, **Espressif MCU** (ESP-NN int8), **RISC-V MCU** (NMSIS-NN int8), **RISC MPU** (XNNPACK), and **cpu**. The inference engine is **peer-benched end-to-end** across **MCU** (NUCLEO-F446RE vs TFLM and microTVM), **MPU** (Raspberry Pi Zero 2 W vs TF Lite), and **CPU** (Apple M4 vs TF Lite) for latency and flash/RAM — see [docs/STATUS.md](docs/STATUS.md) and the gallery below. **YOLOX** detection (MobileNetV4 + PAFPN) is supported and latency-competitive on host; **detector accuracy still needs more training / calibration**. Next: voice fixtures and broader quantization.
+**Status:** **Float32** and **int8** inference are **complete** on six `NETKIT_TARGET` profiles:
 
-Models are loaded from binary **`.nk`** files (single-file architecture + weights). Convert from ONNX with `python -m netkit convert`, or embed a `.nk` in firmware with `python -m netkit aot`.
+| Target | Production kernels |
+|--------|--------------------|
+| `cpu` | XNNPACK (default) |
+| `mcu_arm` | **CMSIS-NN** int8 (Arm Cortex-M) |
+| `mpu_arm` | XNNPACK |
+| `mcu_esp` | **ESP-NN** int8 (ESP32 / S3 / C3 / C6 / P4) |
+| `mcu_risc` | **NMSIS-NN** int8 (Nuclei / RISC-V MCU) |
+| `mpu_risc` | XNNPACK |
 
-Use netkit as an **`NkOpsResolver` interpreter** (load `.nk`, dispatch layers at runtime) for development and flexible deployment, or **compile for maximum speed** (AOT embed, packager graph optimizations, trimmed op tables, CMSIS / ESP-NN / NMSIS-NN backends) for production firmware. See [docs/PHILOSOPHY.md](docs/PHILOSOPHY.md#deployment-modes-interpreter-or-compiled).
+The inference engine is **peer-benched end-to-end** across **Arm MCU** (NUCLEO-F446RE vs TFLM and microTVM), **Arm MPU** (Raspberry Pi Zero 2 W vs TF Lite), and **CPU** (Apple M4 vs TF Lite + ONNX Runtime) for latency and flash/RAM — see [docs/STATUS.md](docs/STATUS.md) and the gallery below. Espressif and RISC-V MCU paths are runtime-complete with host smoke; on-device peer benches TBD. **YOLOX** detection (MobileNetV4 + PAFPN) is supported and latency-competitive on host; **detector accuracy still needs more training / calibration**. Next: voice fixtures and broader quantization.
+
+Configure any device: [docs/PLATFORMS.md](docs/PLATFORMS.md). Models load from binary **`.nk`** files (architecture + weights). Convert from ONNX with `python -m netkit convert`, or embed a `.nk` in firmware with `python -m netkit aot`.
+
+Use netkit as an **`NkOpsResolver` interpreter** (load `.nk`, dispatch layers at runtime) for development and flexible deployment, or **compile for maximum speed** (AOT embed, packager graph optimizations, trimmed op tables, CMSIS-NN / ESP-NN / NMSIS-NN backends) for production firmware. See [docs/PHILOSOPHY.md](docs/PHILOSOPHY.md#deployment-modes-interpreter-or-compiled).
 
 ## Peer benchmarks (MCU · MPU · CPU)
 
@@ -18,7 +29,7 @@ Fair A/B across **MCU** (TFLM + microTVM), **MPU** (TF Lite on Pi Zero 2 W), and
 
 ### MCU — NUCLEO-F446RE @ 180 MHz
 
-netkit embed vs TFLM vs microTVM. Methodology: 10×10; discard first invoke. Logs: [`benchmark/mcu_ab_logs/`](benchmark/mcu_ab_logs/).
+netkit embed vs TFLM vs microTVM. Methodology: 10×10; discard first invoke. Build / flash: [boards/README.md](boards/README.md#stm32-nucleo-f446re). Logs: [`benchmark/mcu_ab_logs/`](benchmark/mcu_ab_logs/).
 
 #### Int8 (all 10/10)
 
@@ -91,6 +102,30 @@ With XNNPACK ON, netkit ≈ TF Lite and beats ORT on all six — that is the pro
 
 [^host-peer]: **Why this A/B:** XNNPACK ON is the fair production peer (netkit XNNPACK vs TF Lite default vs ORT XNNPACK EP). TF Lite’s optimized (`BUILTIN`) resolver still applies default delegates — including XNNPACK — for delegated ops, so “optimized without XNNPACK” is not a clean OFF peer. This suite therefore uses `BUILTIN_REF` when XNNPACK is off. Other TF Lite resolver knobs are useful for their own path debugging; once XNNPACK is on, both stacks are production-fast and those mid-settings are moot (same idea as not chasing ORT MLAS for netkit).
 
+## Supported boards
+
+On-device firmware and peer setups live under [`boards/`](boards/). Full index (build, flash, UART/SSH): **[boards/README.md](boards/README.md)**. Software profiles without a board tree yet use [docs/PLATFORMS.md](docs/PLATFORMS.md).
+
+| Hardware | Class | Target | Setup / compile |
+|----------|-------|--------|-----------------|
+| **STM32 NUCLEO-F446RE** | Arm MCU | `mcu_arm` + `CM4` | [boards/README.md § NUCLEO](boards/README.md#stm32-nucleo-f446re) — netkit + TFLM + microTVM trees |
+| **Raspberry Pi Zero 2 W** | Arm MPU | `mpu_arm` | [boards/pi-zero-2w/README.md](boards/pi-zero-2w/README.md) — cross-build, SSH, TF Lite A/B |
+| Espressif ESP32 / S3 / C3 / C6 / P4 | MCU | `mcu_esp` | No `boards/` tree yet — [PLATFORMS.md (Espressif)](docs/PLATFORMS.md#mcu_esp--espressif-mcu) |
+| RISC-V MCU (Nuclei / RV32) | MCU | `mcu_risc` | No `boards/` tree yet — [PLATFORMS.md (RISC-V MCU)](docs/PLATFORMS.md#mcu_risc--risc-v-mcu) |
+
+### NUCLEO-F446RE (quick links)
+
+| Firmware | README |
+|----------|--------|
+| netkit MNIST MLP f32 | [nucleo-f446re](boards/nucleo-f446re/README.md) |
+| netkit MNIST MLP int8 | [nucleo-f446re-mlp-int8](boards/nucleo-f446re-mlp-int8/README.md) |
+| netkit MNIST CNN int8 | [nucleo-f446re-cnn-int8](boards/nucleo-f446re-cnn-int8/README.md) |
+| netkit MNIST DS-CNN int8 | [nucleo-f446re-cnn-dw-int8](boards/nucleo-f446re-cnn-dw-int8/README.md) |
+| TFLM peers (MLP / CNN / DS-CNN) | [tflm](boards/nucleo-f446re-tflm/README.md) · [tflm-mlp-int8](boards/nucleo-f446re-tflm-mlp-int8/README.md) · [tflm-cnn-int8](boards/nucleo-f446re-tflm-cnn-int8/README.md) · [tflm-cnn-dw-int8](boards/nucleo-f446re-tflm-cnn-dw-int8/README.md) |
+| microTVM peers (CNN / DS-CNN int8) | [tvm-cnn-int8](boards/nucleo-f446re-tvm-cnn-int8/README.md) · [tvm-cnn-dw-int8](boards/nucleo-f446re-tvm-cnn-dw-int8/README.md) |
+
+Each board README covers toolchain, `make` / flash / UART (or SSH for the Pi), memory budget, and how that tree maps to the peer tables above.
+
 ## Documentation
 
 | Guide | Description |
@@ -102,6 +137,7 @@ With XNNPACK ON, netkit ≈ TF Lite and beats ORT on all six — that is the pro
 | **[API Overview](docs/API.md)** | C vs C++ APIs, linking, memory model |
 | **[Build Targets](docs/BUILD_TARGETS.md)** | CPU / MCU / MPU flags and arena defaults |
 | **[Platforms](docs/PLATFORMS.md)** | Configure netkit for each supported device |
+| **[Boards](boards/README.md)** | On-device firmware index — NUCLEO, Pi Zero 2 W, peer baselines |
 | **[Generic kernels](docs/GENERIC_KERNELS.md)** | How reference kernels are optimized for 32-bit+ devices |
 | **[CLI Reference](docs/CLI.md)** | `test`, `run`, and `inspect` (CPU build) |
 | **[Arena Memory](docs/ARENA.md)** | Bump allocator — sizing, alignment, reset |
@@ -113,16 +149,6 @@ With XNNPACK ON, netkit ≈ TF Lite and beats ORT on all six — that is the pro
 | **[Testing](docs/TESTING.md)** | Regression suites, Make targets, CI on push/PR + manual full suite |
 | **[MNIST benchmarks](benchmark/README.md)** | Host invoke latency + per-op profiles: netkit vs TFLM |
 | **[Peer-suite infographics](benchmark/linkedin/)** | MCU / MPU / CPU float32 + int8 A/B images |
-| **[Raspberry Pi Zero 2 W (MPU)](boards/pi-zero-2w/README.md)** | Cross-build + SSH A/B vs TF Lite (float32 + int8, XNNPACK ON/OFF) |
-| **[NUCLEO-F446RE firmware](boards/nucleo-f446re/README.md)** | On-device MNIST MLP f32 benchmark (CMSIS-NN / reference, lowered AOT) |
-| **[NUCLEO-F446RE CNN int8](boards/nucleo-f446re-cnn-int8/README.md)** | On-device MNIST CNN int8 (CMSIS-NN / reference, interpreter embed) |
-| **[NUCLEO-F446RE DS-CNN int8](boards/nucleo-f446re-cnn-dw-int8/README.md)** | On-device MNIST DS-CNN int8 (CMSIS-NN / reference, interpreter embed) |
-| **[NUCLEO-F446RE MLP int8](boards/nucleo-f446re-mlp-int8/README.md)** | On-device MNIST MLP int8 benchmark (CMSIS-NN, interpreter embed) |
-| **[NUCLEO-F446RE TFLM CNN int8](boards/nucleo-f446re-tflm-cnn-int8/README.md)** | Same CNN int8 vectors via TFLite Micro (comparison baseline) |
-| **[NUCLEO-F446RE TFLM DS-CNN int8](boards/nucleo-f446re-tflm-cnn-dw-int8/README.md)** | Same DS-CNN int8 vectors via TFLite Micro |
-| **[NUCLEO-F446RE microTVM CNN int8](boards/nucleo-f446re-tvm-cnn-int8/README.md)** | Same CNN int8 via microTVM AOT (CMSIS-NN / pure C) |
-| **[NUCLEO-F446RE microTVM DS-CNN int8](boards/nucleo-f446re-tvm-cnn-dw-int8/README.md)** | Same DS-CNN int8 via microTVM AOT |
-| **[NUCLEO-F446RE TFLM MLP int8](boards/nucleo-f446re-tflm-mlp-int8/README.md)** | Same MLP int8 vectors via TFLite Micro (comparison baseline) |
 | **[C API Reference](docs/c-api.md)** | `netkit.h` (C23) |
 | **[C++ API Reference](docs/cpp-api.md)** | Headers in `include/` (C++26) |
 | **[API Parity Policy](docs/API_PARITY.md)** | C ↔ C++ symbol map and contribution rules |
@@ -146,20 +172,21 @@ Application code is C++26. C23 is limited to the C header, the `extern "C"` brid
 ## Features
 
 - **Multi-modal (image / vision first)** — classification and detection fixtures today; voice planned (embedded-first for MCU, MPU, NPU)
-- **Peer-benched inference** — float32 + int8 A/B on Arm MCU, Arm MPU, and CPU vs TFLM / TF Lite ([STATUS.md](docs/STATUS.md))
+- **Six deployment targets** — `cpu`, `mcu_arm`, `mpu_arm`, `mcu_esp`, `mcu_risc`, `mpu_risc` with per-device cookbooks ([PLATFORMS.md](docs/PLATFORMS.md))
+- **Board firmware** — NUCLEO-F446RE (CMSIS-NN peers) + Pi Zero 2 W (XNNPACK MPU); setup index ([boards/README.md](boards/README.md))
+- **Peer-benched inference** — float32 + int8 A/B on Arm MCU, Arm MPU, and CPU vs TFLM / TF Lite / ORT ([STATUS.md](docs/STATUS.md)); gallery above
 - **Interpreter or compiled** — `NkOpsResolver` + `.nk` load for flexibility; AOT embed + packager optimizations + trimmed ops for production speed ([PHILOSOPHY.md](docs/PHILOSOPHY.md#deployment-modes-interpreter-or-compiled))
-- **Dual API** — C23 (`netkit.h`) and C++26 (native headers, modern patterns and type safety)
+- **Dual API** — C23 (`netkit.h`) and C++26 headers; same load/run path on every backend ([API_PARITY.md](docs/API_PARITY.md))
 - **CLI** — `test`, `run`, and `inspect` commands for desktop development
 - **MLP & CNN** — conv (with padding), depthwise, max/avg pool, batch norm, flatten, dense; fused ResNet / MobileNetV4 / ConvNeXt / YOLOX blocks; `.nk` loading
 - **Detection** — YOLOX decoupled head + PAFPN on MobileNetV4 (latency ready; accuracy needs more training)
 - **Arena allocator** — Bump-pointer memory; **MCU: static arena only — no heap ever**
-- **Regression tests** — 88 embedded `.nk` cases (C++/C) plus Python AOT/unit tests via `make test`; full ONNX parity (82) and backbone tests via `make test-full`
+- **Regression tests** — 89 embedded `.nk` cases (C++/C) plus Python AOT/unit tests via `make test`; full ONNX parity (82) and backbone tests via `make test-full`
 - **GitHub Actions CI** — fast suite on push/PR (`make test`); full suite manual only (`gh workflow run test-full.yml`)
-- **Embedded smoke** — MCU/MPU + `NETKIT_ARCH` + CMSIS / ESP-NN / NMSIS-NN bring-up harness on host (`test_mlp`, `cnn_4x4_single`; `make test-embedded-smoke-matrix`; local only)
-- **Float32 inference** — complete on cpu / MCU / MPU
-- **Int8 inference** — complete end-to-end int8 I/O (MNIST CNN / DS-CNN / MLP Arm MCU CMSIS-NN; Espressif MCU ESP-NN; RISC-V MCU NMSIS-NN; host/MPU XNNPACK qs8 or QuantOps; ImageNet MNv4 int8)
-- **Optional backends** — CMSIS-NN (Arm MCU int8); ESP-NN (Espressif MCU int8); NMSIS-NN (RISC-V MCU int8); XNNPACK (cpu + any MPU, forbidden on MCU); reference everywhere else. CMSIS-DSP is not used. ([STATUS.md](docs/STATUS.md), [KERNELS.md](docs/KERNELS.md))
-- **C / C++ API parity** — shared `netkit_config.h` backends; same `nk_*` load/run for every target ([API_PARITY.md](docs/API_PARITY.md))
+- **Embedded smoke** — MCU/MPU + `NETKIT_ARCH` + CMSIS-NN / ESP-NN / NMSIS-NN bring-up on host (`test_mlp`, `cnn_4x4_single`; `make test-embedded-smoke-matrix`; local only)
+- **Float32 inference** — complete on cpu / MCU / MPU (MCU float uses reference; ESP-NN / NMSIS-NN are int8-only)
+- **Int8 inference** — end-to-end int8 I/O (Arm CMSIS-NN; Espressif ESP-NN; RISC-V NMSIS-NN; host/MPU XNNPACK qs8 or QuantOps; ImageNet MNv4 int8)
+- **Optional OSS backends** — CMSIS-NN · ESP-NN · NMSIS-NN · XNNPACK (+ reference). CMSIS-DSP is not used. ([KERNELS.md](docs/KERNELS.md), [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md))
 
 ## Quick start
 
@@ -200,31 +227,19 @@ Both load a `.nk` model and print input/output tensors (stack buffers up to `NK_
 ```
 netkit/
 ├── include/
-│   ├── netkit.h            # C23 public API
-│   ├── arena.hpp           # Memory management
-│   ├── tensor.hpp          # Tensor definitions
-│   ├── mlp.hpp / cnn.hpp   # Network abstractions
-│   ├── nk_loader.hpp       # .nk model loader
-│   └── ...
-├── src/                    # C++26 implementation
-├── python/netkit/          # ONNX → .nk packager
-├── examples/
-│   ├── infer_cpp.cpp       # C++26 usage example
-│   └── infer_c.c           # C23 usage example
-├── tests/
-│   ├── test_c_api.c        # C23 API regression tests
-│   └── embedded_smoke.c    # MCU/MPU lean-runtime smoke (no CLI)
-├── models/                 # bundled .nk models + matching .onnx sources
-├── tools/
-│   ├── export_mnist_mlp.py
-│   ├── export_mnist_cnn.py
-│   └── run_embedded_smoke.sh       # MCU/MPU + CMSIS host smoke (local)
-└── docs/                   # Guides and API reference
-    ├── TESTING.md
-    ├── GETTING_STARTED.md
-    ├── NK_FORMAT.md
-    ├── c-api.md / cpp-api.md
-    └── API_PARITY.md
+│   ├── netkit.h / netkit_config.h   # C23 API + shared build macros
+│   ├── arena.hpp / tensor.hpp / mlp.hpp / cnn.hpp
+│   ├── cmsis_nn_*.hpp / esp_nn_*.hpp / nmsis_nn_*.hpp / xnnpack_*.hpp
+│   └── nk_loader.hpp                # .nk model loader
+├── src/                    # C++26 engine + backend adapters
+├── python/netkit/          # ONNX → .nk packager + AOT
+├── examples/               # C23 + C++26 infer demos
+├── tests/                  # C API regression + embedded_smoke
+├── boards/                 # NUCLEO / Pi Zero 2 W peer firmware
+├── models/                 # bundled .nk + .onnx fixtures
+├── tools/                  # export, fetch_*, sync_third_party_licenses, smoke
+├── third_party/            # CMSIS / ESP-NN / NMSIS / XNNPACK (fetch or submodule)
+└── docs/                   # PLATFORMS, BUILD_TARGETS, API refs, STATUS, …
 ```
 
 ## Model files
@@ -259,7 +274,7 @@ make NETKIT_TARGET=cpu NETKIT_GLOBAL_ARENA=1 all   # desktop, static arena
 make build-all    # cpu: netkit + examples + C API test binary
 make test         # default: C++/C embedded regression + fast Python (~1 min)
 make test-full    # full suite incl. ONNX parity (82) + backbone tests (manual / pre-release)
-make test-cpp     # C++ embedded .nk cases only (88)
+make test-cpp     # C++ embedded .nk cases only (89)
 make test-c       # C API regression only
 make test-python  # fast Python subset (same as in make test)
 make test-python-full  # ONNX parity (82) + AOT compile tests (requires libnetkit.a)
@@ -308,7 +323,7 @@ make NETKIT_TARGET=mcu_risc NETKIT_ARCH=N300 lib     # mcu_risc: NMSIS-NN
 make test-embedded-smoke-matrix
 ```
 
-Set **`NETKIT_ARCH`** when cross-compiling (e.g. `CM4`, `M33`, `M55`, `NEON`, `ESP32S3`, `ESP32C6`, `N300`, `RV32IMAC`). Leave unset for native desktop builds. Full flag table: [docs/BUILD_TARGETS.md](docs/BUILD_TARGETS.md).
+Set **`NETKIT_ARCH`** when cross-compiling (e.g. `CM4`, `M33`, `M55`, `NEON`, `ESP32S3`, `ESP32C6`, `N300`, `RV32IMAC`). Leave unset for native desktop builds. Per-device cookbooks: [docs/PLATFORMS.md](docs/PLATFORMS.md). Full flag table: [docs/BUILD_TARGETS.md](docs/BUILD_TARGETS.md).
 
 ### CMake (optional)
 
@@ -338,12 +353,12 @@ make test-embedded-smoke-matrix   # lean MCU/MPU profiles (see docs/TESTING.md)
 
 | Suite | Language | Entry point | Cases |
 |-------|----------|-------------|-------|
-| C++ embedded | C++26 | `./netkit test` → `src/test.cpp` | 88 (19 hand + 20 MNIST + 17 op matrix + 27 ONNX import extensions + 1 MobileNetV4 Small + 2 YOLOX + 1 ResNet-18 + 1 ConvNeXt V2-Atto) |
-| C API | C23 | `tests/test_c_api.c` | Same 88 via `nk_run_all_tests()` + API smoke tests (`nk_run_model_tests` on composite/import fixtures) |
+| C++ embedded | C++26 | `./netkit test` → `src/test.cpp` | 89 (19 hand + 20 MNIST + 17 op matrix + 27 ONNX import extensions + 1 MNv4 + 1 MNv4 int8 + 2 YOLOX + 1 ResNet-18 + 1 ConvNeXt V2-Atto) |
+| C API | C23 | `tests/test_c_api.c` | Same 89 via `nk_run_all_tests()` + API smoke tests (`nk_run_model_tests` on composite/import fixtures) |
 | ONNX parity | Python | `python/tests/test_onnx_parity.py` | 82 (.nk vs ONNX Runtime on bundled sidecars) |
 | Timm backbone parity | Python | `test_torch_backbone_pack.py`, `test_torch_backbone_runtime_parity.py` | Pack timm ResNet-18 / ConvNeXt V2-Atto / MobileNetV4 Small; C++ runtime vs PyTorch (see [TESTING.md](docs/TESTING.md)) |
 | AOT compile | Python | `python/tests/test_aot_compile.py` | Generates C/C++ from `.nk`, builds, runs vs reference |
-| Embedded smoke | C23 | `tests/embedded_smoke.c` | `test_mlp`, `cnn_4x4_single` load/run on 7 MCU/MPU host profiles (`make test-embedded-smoke-matrix`; local only) |
+| Embedded smoke | C23 | `tests/embedded_smoke.c` | `test_mlp`, `cnn_4x4_single` load/run on Arm / RISC / Espressif MCU+MPU host profiles incl. CMSIS / ESP-NN / NMSIS-NN (`make test-embedded-smoke-matrix`; local only) |
 
 CI runs the fast suite on **push to `main`** and **pull requests**; full regression is manual (`gh workflow run test-full.yml`). See [TESTING.md](docs/TESTING.md).
 
@@ -355,19 +370,20 @@ MNIST MLP: [MNIST.md](docs/MNIST.md). MNIST CNN: [MNIST_CNN.md](docs/MNIST_CNN.m
 See [PHILOSOPHY.md](docs/PHILOSOPHY.md) for the full narrative — including [interpreter vs compiled deployment](docs/PHILOSOPHY.md#deployment-modes-interpreter-or-compiled). In brief:
 
 - **Interpreter or compiled** — `NkOpsResolver` + `.nk` load for flexibility; AOT embed + packager optimizations + trimmed ops for production speed
-- **Phase 1 (today)** — Float32 and int8 inference complete; MCU/MPU/CPU peer benches done; ONNX → `.nk` packager; desktop CLI; CMSIS-NN / ESP-NN / NMSIS-NN MCU int8; YOLOX path in (accuracy training open)
-- **Phase 2 (planned)** — Broader quantization (float16, int16, int4), fusion, layout, NPU offload; YOLOX accuracy / voice fixtures
-- **Lightweight** — Standard C/C++ only, no external dependencies in the engine
+- **Phase 1 (today)** — Float32 and int8 complete on six targets; Arm MCU/MPU/CPU peer benches done; CMSIS-NN / ESP-NN / NMSIS-NN / XNNPACK; ONNX → `.nk` + AOT; YOLOX path in (accuracy training open)
+- **Phase 2 (planned)** — Broader quantization (float16, int16, int4), fusion, layout, NPU offload; Espressif / RISC-V on-device peers; YOLOX accuracy / voice fixtures
+- **Open-source stack** — MIT engine; optional OSS backends only (no proprietary SDKs). Reference kernels always available
 - **Memory-conscious** — Arena bump allocator; target-specific defaults (MCU 64 KiB / MPU·CPU 64 MiB; overridable)
 - **Single-threaded** — Sequential forward pass
 - **Inference-only** — No training
 
 ## Roadmap
 
-**Phase 1 (today):** **Float32** and **int8** inference are **complete** for image/vision — `.nk` load or AOT embed, MLP/CNN + fused blocks (ResNet, MobileNetV4, ConvNeXt), depthwise conv, asymmetric padding, and **YOLOX** detection (PAFPN). **Peer A/B benchmarking of the inference engine is finished** across **Arm MCU** (NUCLEO-F446RE vs TFLM), **Arm MPU** (Pi Zero 2 W vs TF Lite), and **CPU** (vs TF Lite). **Arm MCU** uses CMSIS-NN for int8 (no heap; static arena); **Espressif MCU** uses ESP-NN for int8; **RISC-V MCU** uses NMSIS-NN for int8; **MPU / cpu** use XNNPACK — [STATUS.md](docs/STATUS.md), [KERNELS.md](docs/KERNELS.md).
+**Phase 1 (today):** **Float32** and **int8** inference are **complete** for image/vision — `.nk` load or AOT embed, MLP/CNN + fused blocks (ResNet, MobileNetV4, ConvNeXt), depthwise conv, asymmetric padding, and **YOLOX** detection (PAFPN). **Peer A/B of the inference engine is finished** on **Arm MCU** (NUCLEO-F446RE vs TFLM / microTVM), **Arm MPU** (Pi Zero 2 W vs TF Lite), and **CPU** (vs TF Lite / ORT). Production int8 kernels: **CMSIS-NN** (Arm MCU), **ESP-NN** (Espressif), **NMSIS-NN** (RISC-V MCU), **XNNPACK** (cpu / MPU). Espressif and RISC-V MCU on-device peer benches are next — [STATUS.md](docs/STATUS.md), [PLATFORMS.md](docs/PLATFORMS.md), [KERNELS.md](docs/KERNELS.md).
 
 **Phase 2 (next):**
 
+- **Espressif / RISC-V MCU on-device peers** (vs TFLM / vendor NN stacks)
 - **YOLOX / detection accuracy** — more training and calibration (runtime and latency path already land)
 - **Voice modality** fixtures
 - **Numeric types:** float16, int16, int4; broader **int8** model coverage ([DATATYPES.md](docs/DATATYPES.md))
@@ -376,7 +392,7 @@ See [PHILOSOPHY.md](docs/PHILOSOPHY.md) for the full narrative — including [in
 
 ## Repository topics
 
-GitHub topics for discoverability: `embedded`, `embedded-systems`, `inference`, `multimodal`, `computer-vision`, `edge-ai`, `machine-learning`, `neural-network`, `onnx`, `firmware`, `aot`, `cmsis`, `mcu`, `mpu`, `cpp26`, `c23`.
+GitHub topics for discoverability: `embedded`, `embedded-systems`, `inference`, `edge-ai`, `machine-learning`, `neural-network`, `computer-vision`, `multimodal`, `onnx`, `firmware`, `aot`, `cmsis-nn`, `esp-nn`, `nmsis`, `xnnpack`, `riscv`, `esp32`, `mcu`, `cpp26`, `c23`.
 
 ## License
 

@@ -91,7 +91,7 @@ make NETKIT_TARGET=mcu_arm NETKIT_ARCH=CM4 lib
 
 **CMake:** `-DNETKIT_TARGET=mcu_arm -DNETKIT_ARCH=CM4 -DNETKIT_CMSIS_NN=ON`
 
-**On-device:** NUCLEO-F446RE boards under `boards/nucleo-f446re*` (int8 peers vs TFLM / microTVM). Stage int8 inputs in SRAM before timed inference.
+**On-device:** NUCLEO-F446RE boards — setup index [boards/README.md](../boards/README.md#stm32-nucleo-f446re) (int8 peers vs TFLM / microTVM). Stage int8 inputs in SRAM before timed inference.
 
 **Override:** `NETKIT_CMSIS_NN=0` → reference QuantOps / float reference only.
 
@@ -116,7 +116,7 @@ make NETKIT_TARGET=mpu_arm NETKIT_HEAP_ARENA=1 lib
 
 **CMake:** `-DNETKIT_TARGET=mpu_arm -DNETKIT_XNNPACK=ON`
 
-**On-device example:** `boards/pi-zero-2w/` (Raspberry Pi Zero 2 W peer benches).
+**On-device example:** [boards/pi-zero-2w/README.md](../boards/pi-zero-2w/README.md) (cross-build + SSH A/B); index [boards/README.md](../boards/README.md#raspberry-pi-zero-2-w).
 
 ---
 
