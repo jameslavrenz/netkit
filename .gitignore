@@ -98,3 +98,6 @@ benchmark/mpu_pi/stage/.netkit_pi_pass
 
 # Espressif ESP-NN (fetched via tools/fetch_esp_nn.sh)
 third_party/ESP-NN/
+
+# Nuclei NMSIS (fetched via tools/fetch_nmsis.sh)
+third_party/NMSIS/

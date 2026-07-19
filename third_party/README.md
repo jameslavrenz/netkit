@@ -2,8 +2,10 @@
 
 **Licenses / attribution:** see repo-root
 [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md) and vendored texts in
-[`licenses/`](licenses/) (CMSIS, XNNPACK, ONNX/ORT, TFLM, **Apache TVM /
-microTVM**, …). netkit is MIT; each dependency keeps its own license.
+[`licenses/`](licenses/) (CMSIS, ESP-NN, NMSIS, XNNPACK, ONNX/ORT, NumPy,
+LiteRT, TFLM, **Apache TVM / microTVM**, …). netkit is MIT; each dependency
+keeps its own license. Refresh runtime copies with
+`../tools/sync_third_party_licenses.sh` (also run by `tools/fetch_*.sh`).
 **CMSIS-DSP is not used.**
 
 ## CMSIS-Core (MCU firmware)
@@ -47,6 +49,23 @@ make NETKIT_TARGET=mcu_esp NETKIT_ARCH=ESP32S3 lib
 make NETKIT_TARGET=mcu_esp NETKIT_ARCH=ESP32C6 NETKIT_HOST_SMOKE=1 lib
 ```
 
+## NMSIS-NN (optional)
+
+[Nuclei NMSIS](https://github.com/Nuclei-Software/NMSIS) (Apache-2.0) includes **NMSIS-NN**, a
+CMSIS-NN API twin for RISC-V (`riscv_*` / `nmsis_nn_*`).
+
+When enabled on **`NETKIT_TARGET=mcu_risc`** with `NETKIT_ARCH=N300|N600|NX900|RV32IMAC|…`,
+netkit uses NMSIS-NN for quantized conv, depthwise, pool, FC, softmax, and elementwise add
+(`NmsisNnQuant`, same Try* shape as CMSIS-NN). **NMSIS-NN has no float32 API** — float LayerFast
+falls through to reference kernels (`NmsisNnKernel` Try* always miss).
+
+```bash
+make nmsis-init
+make NETKIT_TARGET=mcu_risc NETKIT_ARCH=N300 lib
+# Host smoke (portable path + nmsis_host_compat.h):
+make NETKIT_TARGET=mcu_risc NETKIT_ARCH=RV32IMAC NETKIT_HOST_SMOKE=1 lib
+```
+
 ## XNNPACK (optional)
 
 [Google XNNPACK](https://github.com/google/XNNPACK) is BSD-3 licensed and provides highly optimized neural-network operators for desktop/server CPUs and Cortex-A (x86 AVX, Arm NEON, WASM SIMD, …).
@@ -65,15 +84,20 @@ MCU builds force `NETKIT_XNNPACK=0`. Forcing `=1` on MCU is rejected (Make overr
 ```bash
 make cmsis-init
 make esp-nn-init
+make nmsis-init
 make xnnpack-init
 # or individually:
 ./tools/fetch_cmsis_core.sh
 ./tools/fetch_cmsis_nn.sh
 ./tools/fetch_esp_nn.sh
+./tools/fetch_nmsis.sh
 ./tools/fetch_xnnpack.sh
 ```
 
-CMSIS and ESP-NN packages are **git submodule pins**. XNNPACK is fetched + CMake-built into `third_party/XNNPACK/` (gitignored build tree) with a stable `netkit_lib/libXNNPACK.a` for linking.
+CMSIS-Core and CMSIS-NN are **git submodule pins**. ESP-NN, NMSIS, and XNNPACK
+are fetched into gitignored trees (`third_party/ESP-NN/`, `third_party/NMSIS/`,
+`third_party/XNNPACK/`); XNNPACK is CMake-built with a stable
+`netkit_lib/libXNNPACK.a` for linking.
 
 **Peer-bench pin:** `tools/fetch_xnnpack.sh` defaults to the same XNNPACK commit LiteRT embeds (`ai_edge_litert` 2.1.6 → TF `b8a17154` → `c2e81f01…`). Override with `NETKIT_XNNPACK_PIN=<sha>` when bumping the LiteRT wheel.
 
@@ -90,10 +114,13 @@ Leave `NETKIT_ARCH` unset for native desktop builds (`__GNUC_PYTHON__` host path
 |------|------|
 | `third_party/cmsis_nn.mk` | Minimal CMSIS-NN source set linked into `libnetkit.a` |
 | `third_party/esp_nn.mk` | ESP-NN ANSI / chip sources for `mcu_esp` |
+| `third_party/nmsis_nn.mk` | NMSIS-NN s8 sources for `mcu_risc` |
+| `third_party/nmsis_host_compat.h` | Host-smoke `__SSAT` / `__RESTRICT` / `__CLZ` for NMSIS |
 | `third_party/xnnpack.mk` | XNNPACK link flags for cpu / MPU |
-| `third_party/netkit_arch.mk` | `NETKIT_ARCH` → `ARM_MATH_*` or ESP chip flags (Make) |
+| `third_party/netkit_arch.mk` | `NETKIT_ARCH` → Arm / ESP / RISC-NN flags (Make) |
 | `cmake/netkit_cmsis.cmake` | CMSIS object libraries + target flags (CMake) |
 | `cmake/netkit_esp_nn.cmake` | ESP-NN object library + target flags (CMake) |
+| `cmake/netkit_nmsis_nn.cmake` | NMSIS-NN object library + target flags (CMake) |
 | `cmake/netkit_xnnpack.cmake` | XNNPACK fetch/link (CMake) |
 | `cmake/netkit_arch.cmake` | `NETKIT_ARCH` resolver (CMake) |
 
@@ -101,4 +128,4 @@ See [docs/BUILD_TARGETS.md](../docs/BUILD_TARGETS.md#cmsis-backends) and [docs/S
 
 ## Host embedded smoke
 
-`make test-embedded-smoke-matrix` (or `./tools/run_embedded_smoke.sh`) rebuilds `libnetkit.a` for Arm + RISC MCU/MPU profiles and runs `tests/embedded_smoke` against `test_mlp.nk` and `cnn_4x4_single.nk`. CMSIS profiles pass `NETKIT_HOST_SMOKE=1` so object code compiles on Linux/macOS hosts without CMSIS-Core.
+`make test-embedded-smoke-matrix` (or `./tools/run_embedded_smoke.sh`) rebuilds `libnetkit.a` for Arm + RISC + Espressif MCU/MPU profiles and runs `tests/embedded_smoke` against `test_mlp.nk` and `cnn_4x4_single.nk`. CMSIS / NMSIS profiles pass `NETKIT_HOST_SMOKE=1` so object code compiles on Linux/macOS hosts without device Core headers.

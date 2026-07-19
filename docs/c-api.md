@@ -18,13 +18,13 @@ Set the deployment target when building or integrating netkit:
 | `NETKIT_TARGET=cpu` (default) | `NETKIT_TARGET_CPU` (+ `NETKIT_DESKTOP`) | Desktop — CLI, regression | XNNPACK on (any host ISA); CMSIS-NN off |
 | `NETKIT_TARGET=mcu_arm` | `NETKIT_TARGET_MCU_ARM` | Arm MCU lean firmware | CMSIS-NN (int8); float32 reference; XNNPACK forbidden |
 | `NETKIT_TARGET=mpu_arm` | `NETKIT_TARGET_MPU_ARM` | Arm MPU lean firmware | XNNPACK |
-| `NETKIT_TARGET=mcu_risc` | `NETKIT_TARGET_MCU_RISC` | RISC-V MCU | generic only (CMSIS + XNNPACK forbidden) |
+| `NETKIT_TARGET=mcu_risc` | `NETKIT_TARGET_MCU_RISC` | RISC-V MCU | NMSIS-NN (int8); float32 reference; XNNPACK forbidden |
 | `NETKIT_TARGET=mpu_risc` | `NETKIT_TARGET_MPU_RISC` | RISC-V MPU | XNNPACK on; CMSIS-NN forbidden |
 | `NETKIT_TARGET=mcu_esp` | `NETKIT_TARGET_MCU_ESP` | Espressif MCU | ESP-NN (int8); float32 reference; XNNPACK forbidden |
 
 Derived (from `netkit_config.h`, shared by C and C++): `NETKIT_CLASS_MCU` / `NETKIT_CLASS_MPU`, `NETKIT_ISA_ARM` / `NETKIT_ISA_RISC` / `NETKIT_ISA_ESP`.
 
-Backend selection is **compile-time only** (same binary for C and C++ callers). C firmware uses the same `nk_*` load/run path under CMSIS-NN, ESP-NN, XNNPACK, or reference — there is no separate C backend API.
+Backend selection is **compile-time only** (same binary for C and C++ callers). C firmware uses the same `nk_*` load/run path under CMSIS-NN, ESP-NN, NMSIS-NN, XNNPACK, or reference — there is no separate C backend API.
 
 | Makefile flag | Macro | Effect |
 |---------------|-------|--------|
@@ -34,15 +34,16 @@ Backend selection is **compile-time only** (same binary for C and C++ callers). 
 | `NETKIT_CMSIS_NN=1` | `NETKIT_USE_CMSIS_NN` | `mcu_arm` + Cortex-M `NETKIT_ARCH` only |
 | `NETKIT_XNNPACK=1` | `NETKIT_USE_XNNPACK` | `cpu` + any MPU LayerFast; forbidden on MCU |
 | `NETKIT_ESP_NN=1` | `NETKIT_USE_ESP_NN` | `mcu_esp` + `NETKIT_ARCH=ESP32*` only |
+| `NETKIT_NMSIS_NN=1` | `NETKIT_USE_NMSIS_NN` | `mcu_risc` + Nuclei/RV32 `NETKIT_ARCH` only |
 | `NETKIT_MMAP=1` (default cpu/MPU on Apple/Linux/Windows) | `NETKIT_USE_MMAP` | File mmap for `.nk` loads; **forbidden on MCU**; opt out with `NETKIT_MMAP=0` |
 | *(MCU default)* | `NETKIT_DISABLE_IOSTREAM` | No iostream; `nk_arch_print` is a no-op |
-| *(MCU accel production)* | `NETKIT_MCU_ACCEL_ONLY` / `NETKIT_MCU_CMSIS_ONLY` | QuantOps reference loops omitted (flash) when `REFERENCE_QUANT_LOOPS=0` — Arm CMSIS-NN **or** Espressif ESP-NN |
+| *(MCU accel production)* | `NETKIT_MCU_ACCEL_ONLY` / `NETKIT_MCU_CMSIS_ONLY` | QuantOps reference loops omitted (flash) when `REFERENCE_QUANT_LOOPS=0` — CMSIS-NN / ESP-NN / NMSIS-NN |
 
 | `NK_ARENA_DEFAULT_CAPACITY` | MCU class | CPU / MPU class |
 |-----------------------------|-----------|-----------------|
 | Value | **64 KiB** | **64 MiB** |
 
-Full guide: [BUILD_TARGETS.md](BUILD_TARGETS.md). Same macros apply to the C++ API — [cpp-api.md](cpp-api.md#build-configuration).
+Full guide: [BUILD_TARGETS.md](BUILD_TARGETS.md). Per-device cookbooks: [PLATFORMS.md](PLATFORMS.md). Same macros apply to the C++ API — [cpp-api.md](cpp-api.md#build-configuration).
 
 ### Desktop-only symbols (`NETKIT_DESKTOP`)
 
@@ -579,7 +580,7 @@ Float32 and int8 are separate I/O paths — there is no runtime float↔int8 con
 | `nk_model_run_int8` | int8 models only; prequantized `int8_t` in → `int8_t` out |
 | `nk_model_set_omit_final_softmax` | Skip final Dense Softmax and write logits (MLP + quantized CNN) |
 
-Prequantize inputs in Python at export / fixture time. Host backends: XNNPACK qs8 when `NETKIT_XNNPACK=1`, else integer reference; MCU uses CMSIS-NN.
+Prequantize inputs in Python at export / fixture time. Then call `nk_model_run_int8` (or C++ `forward_quantized` / `nk_model_run_int8`). Host: XNNPACK qs8 when `NETKIT_XNNPACK=1`, else QuantOps reference. MCU: CMSIS-NN (`mcu_arm`), ESP-NN (`mcu_esp`), or NMSIS-NN (`mcu_risc`) — same C entry point on every target; backend is compile-time only ([PLATFORMS.md](PLATFORMS.md)).
 
 ### `nk_model_run` / `nk_model_run_int8`
 

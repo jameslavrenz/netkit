@@ -12,15 +12,22 @@ files when present.
 **CMSIS-DSP is not used** by netkit (not fetched, not linked). See
 [third_party/README.md](third_party/README.md).
 
+Refresh vendored runtime license copies after bumping pins:
+
+```bash
+./tools/sync_third_party_licenses.sh   # also invoked by tools/fetch_*.sh
+```
+
 ---
 
 ## Summary
 
 | Component | Role in netkit | SPDX / license | Texts / upstream |
 |-----------|----------------|----------------|------------------|
-| **CMSIS-Core** (ARM CMSIS_6) | MCU device headers (`NETKIT_ARCH`) | Apache-2.0 | [`CMSIS-Core.Apache-2.0.txt`](third_party/licenses/CMSIS-Core.Apache-2.0.txt); submodule `third_party/CMSIS-Core` |
-| **CMSIS-NN** | Optional Arm MCU int8 kernels | Apache-2.0 | [`CMSIS-NN.Apache-2.0.txt`](third_party/licenses/CMSIS-NN.Apache-2.0.txt); submodule `third_party/CMSIS-NN` |
-| **ESP-NN** | Optional Espressif MCU int8 kernels | Apache-2.0 | [`ESP-NN.Apache-2.0.txt`](third_party/licenses/ESP-NN.Apache-2.0.txt); submodule `third_party/ESP-NN` |
+| **CMSIS-Core** (ARM CMSIS_6) | MCU device headers (`NETKIT_ARCH`) | Apache-2.0 | [`CMSIS-Core.Apache-2.0.txt`](third_party/licenses/CMSIS-Core.Apache-2.0.txt); git submodule `third_party/CMSIS-Core` |
+| **CMSIS-NN** | Optional Arm MCU int8 kernels | Apache-2.0 | [`CMSIS-NN.Apache-2.0.txt`](third_party/licenses/CMSIS-NN.Apache-2.0.txt); git submodule `third_party/CMSIS-NN` |
+| **ESP-NN** | Optional Espressif MCU int8 kernels | Apache-2.0 | [`ESP-NN.Apache-2.0.txt`](third_party/licenses/ESP-NN.Apache-2.0.txt); fetch `third_party/ESP-NN` (`make esp-nn-init`) |
+| **NMSIS** (NMSIS-NN) | Optional RISC-V MCU int8 kernels | Apache-2.0 | [`NMSIS.Apache-2.0.txt`](third_party/licenses/NMSIS.Apache-2.0.txt); fetch `third_party/NMSIS` (`make nmsis-init`) |
 | **CMSIS-DSP** | **Not used** | — | — |
 | **XNNPACK** | Optional cpu / MPU LayerFast (float32 + int8) | BSD-3-Clause | [`XNNPACK.BSD-3-Clause.txt`](third_party/licenses/XNNPACK.BSD-3-Clause.txt); fetch `third_party/XNNPACK/` |
 | **pthreadpool** | XNNPACK dependency | BSD-style | [`pthreadpool.BSD.txt`](third_party/licenses/pthreadpool.BSD.txt) |
@@ -28,9 +35,13 @@ files when present.
 | **clog** | cpuinfo dependency | BSD-style | [`clog.BSD.txt`](third_party/licenses/clog.BSD.txt) |
 | **FXdiv** | XNNPACK dependency | MIT | [`FXdiv.MIT.txt`](third_party/licenses/FXdiv.MIT.txt) |
 | **KleidiAI** | XNNPACK dependency (Arm) | Apache-2.0 (+ BSD-3 files) | [`KleidiAI.Apache-2.0.txt`](third_party/licenses/KleidiAI.Apache-2.0.txt), [`KleidiAI.BSD-3-Clause.txt`](third_party/licenses/KleidiAI.BSD-3-Clause.txt) |
+| **NumPy** | Python packager / tooling | BSD-3-Clause | [`numpy.BSD-3-Clause.txt`](third_party/licenses/numpy.BSD-3-Clause.txt); https://github.com/numpy/numpy |
 | **ONNX** (Python package) | Packager / model IR (`pip` / `python/`) | Apache-2.0 | [`onnx.Apache-2.0.txt`](third_party/licenses/onnx.Apache-2.0.txt); https://github.com/onnx/onnx |
 | **ONNX Runtime** | Python parity + host peer bench | MIT | [`onnxruntime.MIT.txt`](third_party/licenses/onnxruntime.MIT.txt); https://github.com/microsoft/onnxruntime — also see upstream `ThirdPartyNotices.txt` in an ORT checkout for ORT’s own transitive deps |
-| **TensorFlow Lite / LiteRT** | Host peer bench (Python wheel) | Apache-2.0 | https://github.com/google-ai-edge/LiteRT (and/or TensorFlow) — same Apache-2.0 family as TFLM |
+| **PyTorch** | Optional train extra (`python[train]`) | BSD-style | [`torch.BSD-style.txt`](third_party/licenses/torch.BSD-style.txt); https://github.com/pytorch/pytorch |
+| **timm** | Optional train extra | Apache-2.0 | [`timm.Apache-2.0.txt`](third_party/licenses/timm.Apache-2.0.txt); https://github.com/huggingface/pytorch-image-models |
+| **onnxscript** | Optional train extra | MIT | [`onnxscript.MIT.txt`](third_party/licenses/onnxscript.MIT.txt); https://github.com/microsoft/onnxscript |
+| **TensorFlow Lite / LiteRT** | Host peer bench (Python wheel) | Apache-2.0 | [`LiteRT.Apache-2.0.txt`](third_party/licenses/LiteRT.Apache-2.0.txt); https://github.com/google-ai-edge/LiteRT |
 | **TensorFlow Lite Micro (TFLM)** | MCU / host peer bench | Apache-2.0 | [`tflite-micro.Apache-2.0.txt`](third_party/licenses/tflite-micro.Apache-2.0.txt); fetch `benchmark/tflm/third_party/tflite-micro` |
 | **flatbuffers / gemmlowp / ruy** | TFLM make downloads (peer only) | Apache-2.0 | [`flatbuffers`](third_party/licenses/flatbuffers.Apache-2.0.txt), [`gemmlowp`](third_party/licenses/gemmlowp.Apache-2.0.txt), [`ruy`](third_party/licenses/ruy.Apache-2.0.txt) |
 | **Apache TVM** | MCU peer bench (external `TVM_HOME`) | Apache-2.0 | [`apache-tvm.Apache-2.0.txt`](third_party/licenses/apache-tvm.Apache-2.0.txt), [`apache-tvm.NOTICE.txt`](third_party/licenses/apache-tvm.NOTICE.txt); https://github.com/apache/tvm |
@@ -63,14 +74,29 @@ License text: [third_party/licenses/CMSIS-NN.Apache-2.0.txt](third_party/license
 
 ### ESP-NN — Apache License 2.0
 
-Copyright © Espressif Systems (Shanghai) CO LTD.
+Copyright © Espressif Systems (Shanghai) PTE LTD.
 
-Fetched as git submodule `third_party/ESP-NN` from
+Fetched by `./tools/fetch_esp_nn.sh` (`make esp-nn-init`) into
+`third_party/ESP-NN/` (gitignored tree) from
 [espressif/esp-nn](https://github.com/espressif/esp-nn). Optional
 (`NETKIT_ESP_NN=1`) on `NETKIT_TARGET=mcu_esp` + `NETKIT_ARCH=ESP32*` (S3 / P4 / C3 / C6 / classic).
 Int8 production path; float32 uses portable reference kernels (ESP-NN is int8-only).
 
 License text: [third_party/licenses/ESP-NN.Apache-2.0.txt](third_party/licenses/ESP-NN.Apache-2.0.txt).
+
+### NMSIS / NMSIS-NN — Apache License 2.0
+
+Copyright © Arm Limited and/or its affiliates (CMSIS-NN heritage).  
+Copyright © Nuclei Limited.
+
+Fetched by `./tools/fetch_nmsis.sh` (`make nmsis-init`) into
+`third_party/NMSIS/` (gitignored tree) from
+[Nuclei-Software/NMSIS](https://github.com/Nuclei-Software/NMSIS). Optional
+(`NETKIT_NMSIS_NN=1`) on `NETKIT_TARGET=mcu_risc` + Nuclei/RV32 `NETKIT_ARCH`.
+Int8 production path (CMSIS-NN API twin); float32 uses portable reference kernels
+(NMSIS-NN is int8-only). Upstream headers retain Arm + Nuclei SPDX copyright lines.
+
+License text: [third_party/licenses/NMSIS.Apache-2.0.txt](third_party/licenses/NMSIS.Apache-2.0.txt).
 
 ### CMSIS-DSP — not used
 
@@ -106,16 +132,25 @@ Pulled by XNNPACK’s CMake build (typical desktop/MPU pin used by netkit):
 
 Exact dependency set can vary by XNNPACK commit / target ISA; after
 `make xnnpack-init`, also inspect `LICENSE` / `LICENSES` under
-`third_party/XNNPACK/build/*-source/`.
+`third_party/XNNPACK/build/*-source/`. `./tools/sync_third_party_licenses.sh`
+copies the pin’s texts into `third_party/licenses/`.
 
 ---
 
 ## Python tooling (not linked into firmware)
 
+Declared in `python/pyproject.toml` (`pip install -e python`).
+
+### NumPy — BSD 3-Clause
+
+Copyright (c) 2005–present, NumPy Developers.
+
+License text: [third_party/licenses/numpy.BSD-3-Clause.txt](third_party/licenses/numpy.BSD-3-Clause.txt)
+(includes NumPy’s bundled third-party notices from the wheel `LICENSE.txt`).
+
 ### ONNX — Apache License 2.0
 
-[onnx/onnx](https://github.com/onnx/onnx). Declared in `python/pyproject.toml`
-(`pip install -e python`). Used to import/convert graphs to `.nk`.
+[onnx/onnx](https://github.com/onnx/onnx). Used to import/convert graphs to `.nk`.
 
 License text: [third_party/licenses/onnx.Apache-2.0.txt](third_party/licenses/onnx.Apache-2.0.txt).
 
@@ -133,8 +168,16 @@ ORT itself vendors additional third-party code (e.g. MLAS and other EPs). Those
 notices ship in the ORT tree as `ThirdPartyNotices.txt` when you build or
 install ORT; they apply to the ORT binary/wheel, not to netkit’s own library.
 
-Optional train extras (`torch`, `timm`, …) are separate PyPI packages with their
-own licenses; install only if you use `pip install -e "python[train]"`.
+### Optional train extras (`pip install -e "python[train]"`)
+
+| Package | License | Text |
+|---------|---------|------|
+| PyTorch (`torch`) | BSD-style | [torch.BSD-style.txt](third_party/licenses/torch.BSD-style.txt) |
+| timm | Apache-2.0 | [timm.Apache-2.0.txt](third_party/licenses/timm.Apache-2.0.txt) |
+| onnxscript | MIT | [onnxscript.MIT.txt](third_party/licenses/onnxscript.MIT.txt) |
+
+Install only if you use the train extra. Each package may ship additional
+third-party notices inside its own distribution.
 
 ---
 
@@ -150,7 +193,9 @@ redistribute those peer builds.
 Host peer Python benches under `benchmark/tflite/` (LiteRT / TF Lite wheel).
 Upstream: [google-ai-edge/LiteRT](https://github.com/google-ai-edge/LiteRT)
 (and historically TensorFlow Lite under
-[tensorflow/tensorflow](https://github.com/tensorflow/tensorflow)). Apache-2.0.
+[tensorflow/tensorflow](https://github.com/tensorflow/tensorflow)).
+
+License text: [third_party/licenses/LiteRT.Apache-2.0.txt](third_party/licenses/LiteRT.Apache-2.0.txt).
 
 ### TensorFlow Lite Micro — Apache License 2.0
 
@@ -161,8 +206,9 @@ License text: [third_party/licenses/tflite-micro.Apache-2.0.txt](third_party/lic
 
 TFLM’s make system downloads additional Apache-2.0 components (examples copied
 here for convenience): flatbuffers, gemmlowp, ruy, and a bundled CMSIS-NN pin —
-see [`third_party/licenses/`](third_party/licenses/). Further TFLM downloads
-(e.g. pigweed) keep their licenses inside the TFLM tree after fetch.
+see [`third_party/licenses/`](third_party/licenses/) (`tflm-bundled-CMSIS-NN.Apache-2.0.txt`).
+Further TFLM downloads (e.g. pigweed) keep their licenses inside the TFLM tree
+after fetch.
 
 ### Apache TVM / microTVM — Apache License 2.0
 
@@ -197,16 +243,22 @@ Texts above were mirrored from a local Apache TVM **v0.14** tree
 
 ## Redistribution notes
 
-- **Shipping `libnetkit` with CMSIS-NN and/or XNNPACK enabled:** include this
+- **Shipping `libnetkit` with CMSIS-NN, ESP-NN, NMSIS-NN, and/or XNNPACK enabled:** include this
   file (or equivalent attribution) and the matching texts under
   `third_party/licenses/` for every backend you actually link. Apache-2.0
-  requires providing a copy of the Apache license; BSD-3 / MIT require
-  retaining copyright notices and disclaimers.
+  requires providing a copy of the Apache license and retaining copyright /
+  attribution notices from the upstream sources; BSD-3 / MIT require retaining
+  copyright notices and disclaimers in binary distributions.
+- **Python tooling / train extras:** not linked into firmware; if you redistribute
+  an environment or wheels that include them, follow each package’s license
+  (texts mirrored under `third_party/licenses/`).
 - **Peer-only tools** (TFLM, LiteRT, ORT, TVM): include their notices if you
   redistribute those peer binaries or wheels; they are not required solely
   because this repo documents how to run A/B benches.
 - **Submodules / fetch trees** are the source of truth for the exact pin; the
   copies under `third_party/licenses/` are mirrored for offline attribution when
-  the large trees are not checked out.
+  the large trees are not checked out. Keep them current with
+  `./tools/sync_third_party_licenses.sh` after pin bumps.
 
 Integration overview: [third_party/README.md](third_party/README.md).
+Index of license files: [third_party/licenses/README.md](third_party/licenses/README.md).

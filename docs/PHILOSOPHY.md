@@ -2,7 +2,7 @@
 
 netkit is a **multi-modal inference engine** (voice, image, vision) with an **embedded-first** design optimized for **MCUs, MPUs, and NPUs**. Models ship as single **`.nk`** files. You develop and validate on the desktop (**CPU** build), then link the lean runtime into firmware (**MCU** / **MPU** builds). The engine is written in **C++26** (modern patterns, type-safe primary API) with a **C23** mirror for C-only firmware.
 
-**Status:** Active development. **Float32** and **int8** inference are complete ([DATATYPES.md](DATATYPES.md), [STATUS.md](STATUS.md)). Arm MCU/MPU and host cpu paths are done; Espressif MCU uses ESP-NN for int8; RISC MPU uses XNNPACK; RISC MCU runs on fast generic kernels (no RISC-optimized microkernels yet). float16, int16, and int4 are on the roadmap.
+**Status:** Active development. **Float32** and **int8** inference are complete ([DATATYPES.md](DATATYPES.md), [STATUS.md](STATUS.md)). Arm MCU/MPU and host cpu paths are done; Espressif MCU uses ESP-NN for int8; RISC-V MCU uses NMSIS-NN for int8; RISC MPU uses XNNPACK. float16, int16, and int4 are on the roadmap.
 
 Companion project: [memkit](https://github.com/NetKit-Labs/memkit) for general-purpose embedded memory management. netkit owns the **inference arena and tensor lifecycle** inside a caller-provided buffer.
 
@@ -38,7 +38,7 @@ For production firmware with a **fixed model**, compile as much work as possible
 | AOT lower | `python -m netkit aot` (default) | Static `Kernels::` / `CmsisQuantPlan` call chain + weight arrays in `.rodata` (no `.nk` loader) |
 | Interpreter embed | `aot --no-lower` | Optional: bake `.nk` blob for TFLM-fair A/B |
 | Lean link | `NkOpList` + trimmed `libnetkit.a` | Only op TUs and kernels your model uses |
-| Kernel backends | `NETKIT_CMSIS_NN` / `NETKIT_ESP_NN` / `NETKIT_XNNPACK` | Hardware-accelerated matmul, conv, pool, FC where available |
+| Kernel backends | `NETKIT_CMSIS_NN` / `NETKIT_ESP_NN` / `NETKIT_NMSIS_NN` / `NETKIT_XNNPACK` | Hardware-accelerated matmul, conv, pool, FC where available |
 
 **Best for:** shipping firmware — minimum RAM, predictable latency, no filesystem, coefs in flash.
 
@@ -74,7 +74,7 @@ The C++ engine supports both an **interpreter-style** forward executor and **AOT
 
 1. Load a `.nk` file **or** link AOT-generated weight arrays + static call chain.
 2. Interpreter: walk the layer list at runtime. Lowered: unrolled `Kernels::` / `CmsisQuantPlan` calls (float + int8, including depthwise / DS-CNN).
-3. Execute via the `Kernels` facade — reference with optional CMSIS-NN / ESP-NN / XNNPACK backends ([KERNELS.md](KERNELS.md)).
+3. Execute via the `Kernels` facade — reference with optional CMSIS-NN / ESP-NN / NMSIS-NN / XNNPACK backends ([KERNELS.md](KERNELS.md)).
 4. Arena for activations (MCU: static buffer only; lowered int8 uses static act ping-pong).
 
 **Goals:** correctness, predictable memory, small firmware surface, dual C/C++ API, desktop CLI, real AOT lower for deploy.
@@ -85,7 +85,7 @@ The C++ engine supports both an **interpreter-style** forward executor and **AOT
 |------|-----|---------|--------------|
 | **Interpreter embed** | `aot --no-lower` | `.nk` blob + loader / plan build | TFLM-fair A/B, flexible |
 | **Lower (plan chain)** | `aot` (default) | Static `Kernels::` / `CmsisQuantPlan` + `Try*` | Default deploy; same kernels, less flash |
-| **Specialize** | `aot --specialize` | Shape-specialized **direct CMSIS-NN** (constexpr H/W/C; no plan/Try wrappers) | Fastest int8 MCU path (EI/TVM-class codegen style) |
+| **Specialize** | `aot --specialize` | Shape-specialized **direct CMSIS-NN** calls (constexpr H/W/C; no plan/Try wrappers) — **Arm MCU / CMSIS-NN today**; ESP-NN / NMSIS-NN use plan lower + accel `Try*` | Fastest int8 Arm MCU path (EI/TVM-class codegen style) |
 
 MCU boards: `make` / `deploy-lowered` = plan lower; `make NETKIT_SPECIALIZE=1` / `deploy-specialize` = specialize; `NETKIT_EMBED=1` = interpreter.
 

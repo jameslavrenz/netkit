@@ -1,6 +1,6 @@
 # API Overview
 
-netkit is a **multi-modal inference engine** (voice, image, vision) with an **embedded-first** design for **MCUs, MPUs, and NPUs**. It exposes two language interfaces over the same **C++26** engine — a type-safe **C++26 API** and a **C23** mirror. **Float32** and **int8** inference are complete on Arm MCU/MPU and host cpu; RISC MPU uses XNNPACK; RISC MCU uses fast generic kernels — [STATUS.md](STATUS.md).
+netkit is a **multi-modal inference engine** (voice, image, vision) with an **embedded-first** design for **MCUs, MPUs, and NPUs**. It exposes two language interfaces over the same **C++26** engine — a type-safe **C++26 API** and a **C23** mirror. **Float32** and **int8** inference are complete on Arm MCU/MPU, Espressif MCU, RISC-V MCU (NMSIS-NN), RISC MPU (XNNPACK), and host cpu — [STATUS.md](STATUS.md).
 
 **Deployment:** use the **`NkOpsResolver` interpreter** (load `.nk`, runtime layer dispatch) or the **compiled path** (AOT **lower** by default — static kernel / plan chain + weight arrays; `--no-lower` for interpreter embed). Both share the same kernels — [PHILOSOPHY.md](PHILOSOPHY.md#deployment-modes-interpreter-or-compiled). New users start with [GETTING_STARTED.md](GETTING_STARTED.md).
 
@@ -28,7 +28,8 @@ Core inference, loading, tensor/ops, MLP/CNN construction (including FeatureTap 
 | [PHILOSOPHY.md](PHILOSOPHY.md) | Interpreter vs compiled deployment; Phase 1 runtime vs Phase 2 packager; memory and roadmap |
 | [STATUS.md](STATUS.md) | Dtype + platform maturity; recent peer-bench results |
 | [GETTING_STARTED.md](GETTING_STARTED.md) | Clone, build, CLI, integrate C/C++ |
-| [BUILD_TARGETS.md](BUILD_TARGETS.md) | `NETKIT_TARGET=cpu\|mcu_arm\|mpu_arm\|mcu_risc\|mpu_risc`, arena flags, backend defaults |
+| [BUILD_TARGETS.md](BUILD_TARGETS.md) | `NETKIT_TARGET` profiles, arena flags, backend defaults |
+| [PLATFORMS.md](PLATFORMS.md) | Per-device configuration (cpu / Arm / RISC / Espressif) |
 | [CLI.md](CLI.md) | `netkit test`, `run`, `inspect`, help |
 | [ARENA.md](ARENA.md) | Bump allocator, sizing, alignment |
 | [DATATYPES.md](DATATYPES.md) | Float32 + int8 today; float16/int16/int4 roadmap |
@@ -37,7 +38,7 @@ Core inference, loading, tensor/ops, MLP/CNN construction (including FeatureTap 
 | [TESTING.md](TESTING.md) | Regression suites, Make targets, manual CI |
 | [MNIST.md](MNIST.md) / [MNIST_CNN.md](MNIST_CNN.md) | Trained MNIST bundles |
 | [API_PARITY.md](API_PARITY.md) | C ↔ C++ symbol map |
-| [KERNELS.md](KERNELS.md) | CRTP kernel backends and CMSIS dispatch |
+| [KERNELS.md](KERNELS.md) | CRTP kernel backends (CMSIS / ESP / NMSIS / XNNPACK) |
 | [c-api.md](c-api.md) | Full C23 reference |
 | [cpp-api.md](cpp-api.md) | Full C++26 reference |
 
@@ -48,7 +49,9 @@ Core inference, loading, tensor/ops, MLP/CNN construction (including FeatureTap 
 | CPU | `make` | Yes | **64 MiB** |
 | MCU_ARM | `make NETKIT_TARGET=mcu_arm lib` | No | **64 KiB** |
 | MPU_ARM | `make NETKIT_TARGET=mpu_arm lib` | No | **64 MiB** |
-| MCU_RISC / MPU_RISC | `make NETKIT_TARGET=mcu_risc\|mpu_risc lib` | No | **64 KiB** / **64 MiB** |
+| MCU_RISC | `make NETKIT_TARGET=mcu_risc NETKIT_ARCH=N300 lib` | No | **64 KiB** |
+| MPU_RISC | `make NETKIT_TARGET=mpu_risc lib` | No | **64 MiB** |
+| MCU_ESP | `make NETKIT_TARGET=mcu_esp NETKIT_ARCH=ESP32S3 lib` | No | **64 KiB** |
 
 **Arena backing flags** (see [BUILD_TARGETS.md](BUILD_TARGETS.md)):
 
@@ -142,17 +145,19 @@ Runtime models are **`.nk` v3** single files — [NK_FORMAT.md](NK_FORMAT.md).
 
 Convert ONNX → `.nk` with `python -m netkit convert` or `make export-nk`. Supported ONNX ops: [ONNX.md](ONNX.md).
 
-## Optional CMSIS / XNNPACK backends
+## Optional CMSIS / ESP-NN / NMSIS-NN / XNNPACK backends
 
-Backends are **not** inferred from `NETKIT_ARCH` alone — set flags explicitly or use **profile defaults** (`cpu`: XNNPACK on; `mcu_arm`: DSP + NN; `mpu_arm` / `mpu_risc`: XNNPACK; `mcu_risc`: generic only). Platform maturity: [STATUS.md](STATUS.md).
+Backends are **not** inferred from `NETKIT_ARCH` alone — set flags explicitly or use **profile defaults** (`cpu`: XNNPACK on; `mcu_arm`: CMSIS-NN; `mcu_esp`: ESP-NN; `mcu_risc`: NMSIS-NN; `mpu_arm` / `mpu_risc`: XNNPACK). Platform maturity: [STATUS.md](STATUS.md).
 
 | Backend | When enabled | Targets |
 |---------|----------------|---------|
 | **CMSIS-NN** | `NETKIT_CMSIS_NN=1` + `NETKIT_TARGET=mcu_arm` + Cortex-M `NETKIT_ARCH` | Arm MCU firmware (CM4, M33, …) |
+| **ESP-NN** | `NETKIT_ESP_NN=1` + `NETKIT_TARGET=mcu_esp` + `NETKIT_ARCH=ESP32*` | Espressif MCU (ESP32 / S3 / C3 / C6 / P4) |
+| **NMSIS-NN** | `NETKIT_NMSIS_NN=1` + `NETKIT_TARGET=mcu_risc` + Nuclei/RV32 `NETKIT_ARCH` | RISC-V MCU firmware (N300, RV32IMAC, …) |
 | **XNNPACK** | `NETKIT_XNNPACK=1` | `cpu` + any MPU LayerFast (**forbidden on MCU**) |
-| **Generic / reference** | always linked | Fallback everywhere; **sole** LayerFast path on `mcu_risc` (fast portable kernels) |
+| **Generic / reference** | always linked | Fallback everywhere; float LayerFast on ESP/NMSIS MCU; int8 when accel off |
 
-On **cpu** or **mpu_arm**, `NETKIT_CMSIS_NN=1` is ignored (Make warning). CMSIS-DSP is not used. Backend selection is compile-time CRTP — see [KERNELS.md](KERNELS.md) and [BUILD_TARGETS.md](BUILD_TARGETS.md#cmsis-backends).
+CMSIS-DSP is not used. Backend selection is compile-time CRTP — see [KERNELS.md](KERNELS.md), [BUILD_TARGETS.md](BUILD_TARGETS.md#cmsis-backends), and [PLATFORMS.md](PLATFORMS.md).
 
 ## Testing
 

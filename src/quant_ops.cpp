@@ -2,6 +2,7 @@
 
 #include "cmsis_nn_quant.hpp"
 #include "esp_nn_quant.hpp"
+#include "nmsis_nn_quant.hpp"
 #include "netkit_util.hpp"
 #include "conv_im2col_policy.hpp"
 #include "im2col_quant.hpp"
@@ -998,6 +999,21 @@ namespace
             return;
         }
 #endif
+#if defined(NETKIT_USE_NMSIS_NN) && NETKIT_USE_NMSIS_NN && NETKIT_NMSIS_NN_ALLOWED
+        if (NmsisNnQuant::TryFullyConnectedQuant(input,
+                                               batch,
+                                               in_features,
+                                               weights,
+                                               bias,
+                                               out_features,
+                                               quant,
+                                               clamp == QuantInteger::QuantClamp::ReLU ||
+                                                   clamp == QuantInteger::QuantClamp::ReLU6,
+                                               output_int8))
+        {
+            return;
+        }
+#endif
 #if defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN && NETKIT_CMSIS_NN_ALLOWED
         if (CmsisNnQuant::TryFullyConnectedQuant(input,
                                                  batch,
@@ -1163,6 +1179,28 @@ namespace
 #endif
 #if defined(NETKIT_USE_ESP_NN) && NETKIT_USE_ESP_NN && NETKIT_ESP_NN_ALLOWED
         if (!wrote && EspNnQuant::TryConv2dNhwcQuant(input,
+                                                     in_h,
+                                                     in_w,
+                                                     in_c,
+                                                     weights,
+                                                     bias,
+                                                     kernel_size,
+                                                     stride,
+                                                     pad_h,
+                                                     pad_w,
+                                                     pad_h_end,
+                                                     pad_w_end,
+                                                     out_channels,
+                                                     quant,
+                                                     clamp == QuantInteger::QuantClamp::ReLU ||
+                                                         clamp == QuantInteger::QuantClamp::ReLU6,
+                                                     output))
+        {
+            wrote = true;
+        }
+#endif
+#if defined(NETKIT_USE_NMSIS_NN) && NETKIT_USE_NMSIS_NN && NETKIT_NMSIS_NN_ALLOWED
+        if (!wrote && NmsisNnQuant::TryConv2dNhwcQuant(input,
                                                      in_h,
                                                      in_w,
                                                      in_c,
@@ -1361,6 +1399,28 @@ namespace
             return;
         }
 #endif
+#if defined(NETKIT_USE_NMSIS_NN) && NETKIT_USE_NMSIS_NN && NETKIT_NMSIS_NN_ALLOWED
+        if (NmsisNnQuant::TryDepthwiseConv2dNhwcQuant(input,
+                                                    in_h,
+                                                    in_w,
+                                                    channels,
+                                                    weights,
+                                                    bias,
+                                                    kernel_h,
+                                                    kernel_w,
+                                                    stride,
+                                                    pad_h,
+                                                    pad_w,
+                                                    pad_h_end,
+                                                    pad_w_end,
+                                                    quant,
+                                                    clamp == QuantInteger::QuantClamp::ReLU ||
+                                                        clamp == QuantInteger::QuantClamp::ReLU6,
+                                                    output))
+        {
+            return;
+        }
+#endif
 #if defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN && NETKIT_CMSIS_NN_ALLOWED
         if (CmsisNnQuant::TryDepthwiseConv2dNhwcQuant(input,
                                                       in_h,
@@ -1476,6 +1536,23 @@ namespace
 #endif
 #if defined(NETKIT_USE_ESP_NN) && NETKIT_USE_ESP_NN && NETKIT_ESP_NN_ALLOWED
         if (EspNnQuant::TryMaxPool2dNhwcQuant(input,
+                                              in_h,
+                                              in_w,
+                                              in_c,
+                                              pool_h,
+                                              pool_w,
+                                              stride,
+                                              pad_h,
+                                              pad_w,
+                                              pad_h_end,
+                                              pad_w_end,
+                                              output))
+        {
+            return;
+        }
+#endif
+#if defined(NETKIT_USE_NMSIS_NN) && NETKIT_USE_NMSIS_NN && NETKIT_NMSIS_NN_ALLOWED
+        if (NmsisNnQuant::TryMaxPool2dNhwcQuant(input,
                                               in_h,
                                               in_w,
                                               in_c,
@@ -1608,6 +1685,21 @@ namespace
     {
 #if defined(NETKIT_USE_ESP_NN) && NETKIT_USE_ESP_NN && NETKIT_ESP_NN_ALLOWED
         if (EspNnQuant::TryElementwiseAddS8(input1,
+                                            input2,
+                                            count,
+                                            input1_scale,
+                                            input1_zero_point,
+                                            input2_scale,
+                                            input2_zero_point,
+                                            output_scale,
+                                            output_zero_point,
+                                            output))
+        {
+            return;
+        }
+#endif
+#if defined(NETKIT_USE_NMSIS_NN) && NETKIT_USE_NMSIS_NN && NETKIT_NMSIS_NN_ALLOWED
+        if (NmsisNnQuant::TryElementwiseAddS8(input1,
                                             input2,
                                             count,
                                             input1_scale,

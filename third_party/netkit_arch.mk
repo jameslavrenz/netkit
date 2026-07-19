@@ -17,6 +17,7 @@ NETKIT_ARCH_CFLAGS :=
 NETKIT_ARCH_IS_ESP := 0
 NETKIT_ARCH_IS_ESP32S3 := 0
 NETKIT_ARCH_IS_ESP32P4 := 0
+NETKIT_ARCH_IS_RISC_NN := 0
 
 ifneq ($(NETKIT_ARCH),)
   ifeq ($(NETKIT_ARCH_UPPER),ESP32)
@@ -36,6 +37,10 @@ ifneq ($(NETKIT_ARCH),)
     NETKIT_ARCH_IS_ESP := 1
     NETKIT_ARCH_IS_ESP32P4 := 1
     NETKIT_ARCH_CFLAGS += -DCONFIG_IDF_TARGET_ESP32P4=1 -DCONFIG_NN_OPTIMIZED=1
+  else ifneq ($(filter $(NETKIT_ARCH_UPPER),N300 N600 N900 NX600 NX900 UX900 RV32IMAC RV32IMC RV32IMF RV32IMAFDC RV32IMAFC RV64IMAFDC RISC RISCV),)
+    # Nuclei / generic RISC-V MCU tags for NMSIS-NN (portable path under HOST_SMOKE).
+    NETKIT_ARCH_IS_RISC_NN := 1
+    NETKIT_ARCH_CFLAGS += -DRISCV_MATH_LOOPUNROLL=1
   else ifeq ($(NETKIT_ARCH_UPPER),CM0)
     NETKIT_ARCH_CFLAGS += -DARM_MATH_CM0
   else ifeq ($(NETKIT_ARCH_UPPER),M0)
@@ -85,7 +90,7 @@ ifneq ($(NETKIT_ARCH),)
   else ifeq ($(NETKIT_ARCH_UPPER),A64)
     NETKIT_ARCH_CFLAGS += -DARM_MATH_NEON
   else
-    $(error Unknown NETKIT_ARCH '$(NETKIT_ARCH)'. Use CM0, CM0PLUS, CM3, CM4, CM7, M23, M33, M55, M85, A32, NEON, ESP32, ESP32S3, ESP32C3, ESP32C6, or ESP32P4; leave unset for desktop.)
+    $(error Unknown NETKIT_ARCH '$(NETKIT_ARCH)'. Use CM0, CM0PLUS, CM3, CM4, CM7, M23, M33, M55, M85, A32, NEON, ESP32*, N300/N600/NX900/RV32IMAC/…; leave unset for desktop.)
   endif
 endif
 
@@ -103,6 +108,8 @@ NETKIT_ARCH_IS_M_PROFILE := 0
 ifneq ($(NETKIT_ARCH),)
   ifeq ($(NETKIT_ARCH_IS_ESP),1)
     NETKIT_ARCH_IS_M_PROFILE := 0
+  else ifeq ($(NETKIT_ARCH_IS_RISC_NN),1)
+    NETKIT_ARCH_IS_M_PROFILE := 0
   else ifeq ($(filter $(NETKIT_ARCH_UPPER),A32 MPU NEON CORTEXA A64),$(NETKIT_ARCH_UPPER))
     NETKIT_ARCH_IS_M_PROFILE := 0
   else
@@ -110,7 +117,7 @@ ifneq ($(NETKIT_ARCH),)
   endif
 endif
 
-# Desktop host builds use the portable GNUC_PYTHON path for CMSIS-NN host smoke.
+# Desktop host builds use the portable GNUC_PYTHON path for CMSIS-NN / NMSIS-NN host smoke.
 ifeq ($(NETKIT_ARCH),)
   ifeq ($(NETKIT_TARGET),cpu)
     NETKIT_ARCH_CFLAGS += -D__GNUC_PYTHON__
@@ -119,11 +126,17 @@ endif
 
 # Embedded Arm firmware: loop unrolling + CMSIS-Core include for CMSIS-NN.
 ifneq ($(NETKIT_ARCH),)
-  ifeq ($(NETKIT_ARCH_IS_ESP),0)
+  ifeq ($(NETKIT_ARCH_IS_M_PROFILE),1)
     NETKIT_ARCH_CFLAGS += -DARM_MATH_LOOPUNROLL
     CMSISCORE_DIR ?= third_party/CMSIS-Core/CMSIS/Core/Include
     ifneq ($(wildcard $(CMSISCORE_DIR)),)
       NETKIT_ARCH_CFLAGS += -I$(CMSISCORE_DIR)
+    endif
+  endif
+  ifeq ($(NETKIT_ARCH_IS_RISC_NN),1)
+    NMSIS_CORE_DIR ?= third_party/NMSIS/NMSIS/Core/Include
+    ifneq ($(wildcard $(NMSIS_CORE_DIR)),)
+      NETKIT_ARCH_CFLAGS += -I$(NMSIS_CORE_DIR)
     endif
   endif
 endif

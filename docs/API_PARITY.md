@@ -19,11 +19,27 @@ C source in this repository is limited to `tests/test_c_api.c` and `examples/inf
 
 When adding a feature, update this file and both [c-api.md](c-api.md) and [cpp-api.md](cpp-api.md).
 
-**Build targets / backends** are shared via `include/netkit_config.h` (included by both `netkit.h` and C++ headers). Keep the Build configuration tables in [c-api.md](c-api.md#build-configuration) and [cpp-api.md](cpp-api.md#build-configuration) in sync when changing `NETKIT_TARGET_*`, arena, or CMSIS / ESP-NN / XNNPACK defaults — [BUILD_TARGETS.md](BUILD_TARGETS.md). C and C++ callers use the same `nk_*` / engine APIs; backends (`CmsisNn*`, `EspNn*`, `Xnnpack*`) are compile-time only and need no C mirror.
+**Build targets / backends** are shared via `include/netkit_config.h` (included by both `netkit.h` and C++ headers). Keep the Build configuration tables in [c-api.md](c-api.md#build-configuration) and [cpp-api.md](cpp-api.md#build-configuration) in sync when changing `NETKIT_TARGET_*`, arena, or CMSIS / ESP-NN / NMSIS-NN / XNNPACK defaults — [BUILD_TARGETS.md](BUILD_TARGETS.md), [PLATFORMS.md](PLATFORMS.md). C and C++ callers use the same `nk_*` / engine APIs; backends (`CmsisNn*`, `EspNn*`, `NmsisNn*`, `Xnnpack*`) are compile-time only and need no C mirror.
+
+### Shared inference path (fully documented for both APIs)
+
+| Step | C23 (`netkit.h`) | C++26 | Notes |
+|------|------------------|-------|-------|
+| Configure target | Build flags only | Same | [PLATFORMS.md](PLATFORMS.md) |
+| Arena | `nk_arena_init` / `nk_arena_init_heap` | `Arena::init` / `init_heap` | MCU: static only |
+| Load float/int8 `.nk` | `nk_model_load` / `nk_model_load_memory` | `NkLoader::Load*` / `Load*FromBuffer` | MCU: buffer/flash |
+| Run float32 | `nk_model_run` | `forward` | |
+| Run int8 | `nk_model_run_int8` | `forward_quantized` / `nk_model_run_int8` | Prequantize in Python |
+| Query quantized | `nk_*_is_quantized` | `IsQuantized()` | |
+| Omit final Softmax | `nk_*_set_omit_final_softmax` | `SetOmitFinalSoftmax` | Classification logits |
+| Kernel workspace | `nk_cnn_kernel_workspace_bytes` | `KernelWorkspaceBytes()` | CMSIS-NN / NMSIS-NN |
+| Inspect / size | `nk_inspect_model` | `./netkit inspect --full` | CPU |
+
+Full symbol map below; complete references: [c-api.md](c-api.md), [cpp-api.md](cpp-api.md).
 
 **Manual network construction** (layer init call order, activation buffers, forward): [cpp-api.md](cpp-api.md#manual-construction-call-order) (MLP + CNN) and [c-api.md](c-api.md#mlp-manual-construction-call-order) (C). Composite blocks (ResNet, UIB, ConvNeXt, YOLOX head): same docs plus feature guides ([YOLOX.md](YOLOX.md#manual-construction), etc.).
 
-Related docs: [NK_FORMAT.md](NK_FORMAT.md), [CLI.md](CLI.md), [BUILD_TARGETS.md](BUILD_TARGETS.md), [PHILOSOPHY.md](PHILOSOPHY.md).
+Related docs: [NK_FORMAT.md](NK_FORMAT.md), [CLI.md](CLI.md), [BUILD_TARGETS.md](BUILD_TARGETS.md), [PLATFORMS.md](PLATFORMS.md), [PHILOSOPHY.md](PHILOSOPHY.md).
 
 ## Test suites
 
@@ -231,10 +247,11 @@ High-level combined handle (C convenience):
 | Arena | Caller-owned **static/global** buffer only — `NETKIT_HEAP_ARENA` is a compile error |
 | Heap | No `malloc` / `new` / `delete` / `free` on MCU firmware paths |
 | Weights | Stay in the flash `.nk` image (zero-copy scales); arena holds activations + metadata |
-| `NETKIT_MCU_ACCEL_ONLY` (`NETKIT_MCU_CMSIS_ONLY`) | Default on MCU class when `REFERENCE_QUANT_LOOPS=0` — QuantOps reference loops omitted (CMSIS-NN **or** ESP-NN production) |
+| `NETKIT_MCU_ACCEL_ONLY` (`NETKIT_MCU_CMSIS_ONLY`) | Default on MCU class when `REFERENCE_QUANT_LOOPS=0` — QuantOps reference loops omitted (CMSIS-NN / ESP-NN / NMSIS-NN production) |
 | `NETKIT_DISABLE_IOSTREAM` | Default on MCU — `nk_arch_print` / `PrintNetworkSummary` are no-ops |
 | NUCLEO-F446RE peers | **int8** CNN / DS-CNN vs TFLM + microTVM (CMSIS-NN and reference); float32 CNN/DS-CNN exceed 512 KiB flash — [STATUS.md](STATUS.md) |
 | Espressif MCU (`mcu_esp`) | ESP-NN int8 production (ESP32 / S3 / C3 / C6 / P4); float32 reference (ESP-NN has no float API); same C `nk_*` load/run as Arm MCU |
+| RISC-V MCU (`mcu_risc`) | NMSIS-NN int8 production (Nuclei N300 / RV32*); float32 reference (NMSIS-NN has no float API); same C `nk_*` load/run as Arm MCU |
 
 ### AOT deployment
 
@@ -256,7 +273,7 @@ Lowered AOT keeps coef arrays in flash `.rodata` (no SRAM copy at load). See `bo
 | `MLPNetwork::InitQuantizedLayer`, `CNNNetwork::InitQuantized*` (`InitQuantizedConvLayer`, `InitQuantizedDenseLayer`, `InitQuantizedActivationBuffers`), `SetQuantized`, `Set`/`GetQuantOutputFormat` (Int8 only; float↔int8 is Python-side), `CNNNetwork::SetQuantRuntime` / `forward_quantized` | Quantized manual construction + low-level runtime — C callers load `.nk` and use `nk_model_run_int8` (or typed `nk_mlp_*` / `nk_cnn_*` forward after load); query with `nk_*_is_quantized` |
 | `CNNNetwork::forward_timed`, `MLPNetwork::forward_timed` | Benchmark-only profilers |
 | `CmsisQuantPlan::Runtime` other fields | C exposes `omit_final_softmax` via `nk_cnn_*` / `nk_model_*`; remaining plan fields stay C++ |
-| `CmsisNnKernel` / `CmsisNnQuant`, `EspNnKernel` / `EspNnQuant`, `XnnpackKernel` / `XnnpackQuant` | Compile-time backends selected by `NETKIT_TARGET` + `NETKIT_*` flags; C callers share the same path via `nk_model_run` / `nk_model_run_int8` |
+| `CmsisNnKernel` / `CmsisNnQuant`, `EspNnKernel` / `EspNnQuant`, `NmsisNnKernel` / `NmsisNnQuant`, `XnnpackKernel` / `XnnpackQuant` | Compile-time backends selected by `NETKIT_TARGET` + `NETKIT_*` flags; C callers share the same path via `nk_model_run` / `nk_model_run_int8` — no C backend API |
 | `NkLoader::ReadTestSuite`, `ModelPayloadBytes`, `NetworkKindName`, `FreeParsedModelExtras` | Loader utilities; C uses `nk_parse_architecture` / `nk_model_*` instead |
 | `Conv2D::forward(..., fuse_activation)` / `DepthwiseConv2D::forward(..., fuse_activation)` | C forwards use default activation fusion |
 | `TensorFactory::PrintLabeled(..., max_values)` | C `nk_tensor_print_labeled` omits truncation control |

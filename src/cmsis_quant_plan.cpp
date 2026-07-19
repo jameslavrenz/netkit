@@ -5,6 +5,7 @@
 #include "cmsis_buffer_size.hpp"
 #include "cmsis_nn_quant.hpp"
 #include "esp_nn_quant.hpp"
+#include "nmsis_nn_quant.hpp"
 #include "im2col_quant.hpp"
 #include "kernel_workspace.hpp"
 #include "netkit_config.h"
@@ -427,6 +428,7 @@ namespace
         }
         plan.ready = true;
         CmsisNnQuant::FinalizeConv2DPlan(plan);
+        NmsisNnQuant::FinalizeConv2DPlan(plan);
         return true;
     }
 
@@ -577,6 +579,7 @@ namespace
         }
         plan.ready = true;
         CmsisNnQuant::FinalizeDepthwiseConv2DPlan(plan);
+        NmsisNnQuant::FinalizeDepthwiseConv2DPlan(plan);
         return true;
     }
 
@@ -604,6 +607,7 @@ namespace
         plan.clamp = ClampFromConvActivation(pool.activation);
         plan.ready = true;
         CmsisNnQuant::FinalizePool2DPlan(plan);
+        NmsisNnQuant::FinalizePool2DPlan(plan);
         return true;
     }
 
@@ -1132,6 +1136,7 @@ bool BuildRuntime(CNNNetwork& network, Arena& arena, uint32_t in_h, uint32_t in_
                         const int8_t* weights =
                             static_cast<const int8_t*>(block.dense.weights.data);
                         const int32_t* bias = static_cast<const int32_t*>(block.dense.bias.data);
+                        (void)NmsisNnQuant::FinalizeFcPlan(lp.fc, weights, bias, arena);
                         if (!CmsisNnQuant::FinalizeFcPlan(lp.fc, weights, bias, arena))
                         {
                             std::fprintf(stderr, "BuildRuntime: FinalizeFcPlan(softmax) failed layer %u\n", i);
@@ -1167,6 +1172,7 @@ bool BuildRuntime(CNNNetwork& network, Arena& arena, uint32_t in_h, uint32_t in_
                         const int8_t* weights =
                             static_cast<const int8_t*>(block.dense.weights.data);
                         const int32_t* bias = static_cast<const int32_t*>(block.dense.bias.data);
+                        (void)NmsisNnQuant::FinalizeFcPlan(lp.fc, weights, bias, arena);
                         if (!CmsisNnQuant::FinalizeFcPlan(lp.fc, weights, bias, arena))
                         {
                             std::fprintf(stderr, "BuildRuntime: FinalizeFcPlan failed layer %u\n", i);
@@ -1709,6 +1715,12 @@ namespace
                             break;
                     }
 
+                    if constexpr (NmsisNnQuant::kEnabled)
+                    {
+                        if (NmsisNnQuant::TryConv2dNhwcQuantPlan(
+                                lp.conv, current, conv.weights_q, conv.bias_q, out))
+                            break;
+                    }
                     if constexpr (CmsisNnQuant::kEnabled)
                     {
                         if (CmsisNnQuant::TryConv2dNhwcQuantPlan(
@@ -1761,6 +1773,12 @@ namespace
                             break;
                     }
 
+                    if constexpr (NmsisNnQuant::kEnabled)
+                    {
+                        if (NmsisNnQuant::TryDepthwiseConv2dNhwcQuantPlan(
+                                lp.depthwise, current, weights, dw.bias_q, out))
+                            break;
+                    }
                     if constexpr (CmsisNnQuant::kEnabled)
                     {
                         if (CmsisNnQuant::TryDepthwiseConv2dNhwcQuantPlan(
@@ -1807,6 +1825,11 @@ namespace
                             break;
                     }
 
+                    if constexpr (NmsisNnQuant::kEnabled)
+                    {
+                        if (NmsisNnQuant::TryMaxPool2dNhwcQuantPlan(lp.pool, current, out))
+                            break;
+                    }
                     if constexpr (CmsisNnQuant::kEnabled)
                     {
                         if (CmsisNnQuant::TryMaxPool2dNhwcQuantPlan(lp.pool, current, out))
@@ -1929,6 +1952,16 @@ namespace
                                                next_data);
                             }
 
+                            if constexpr (NmsisNnQuant::kEnabled)
+                            {
+                                ok = ok || NmsisNnQuant::TryDepthwiseConv2dNhwcQuantPlan(
+                                               up.start_dw,
+                                               cur_data,
+                                               up.start_dw.weights_hwc ? up.start_dw.weights_hwc
+                                                                       : uib.start_dw_weights_q,
+                                               uib.start_dw_bias_q,
+                                               next_data);
+                            }
                             if constexpr (CmsisNnQuant::kEnabled)
                             {
                                 ok = ok || CmsisNnQuant::TryDepthwiseConv2dNhwcQuantPlan(
@@ -2000,6 +2033,15 @@ namespace
                                                expand_out);
                             }
 
+                            if constexpr (NmsisNnQuant::kEnabled)
+                            {
+                                ok = ok || NmsisNnQuant::TryConv2dNhwcQuantPlan(
+                                               up.expand,
+                                               cur_data,
+                                               uib.expand_weights_q,
+                                               uib.expand_bias_q,
+                                               expand_out);
+                            }
                             if constexpr (CmsisNnQuant::kEnabled)
                             {
                                 ok = ok || CmsisNnQuant::TryConv2dNhwcQuantPlan(
@@ -2075,6 +2117,16 @@ namespace
                                                middle_out);
                             }
 
+                            if constexpr (NmsisNnQuant::kEnabled)
+                            {
+                                ok = ok || NmsisNnQuant::TryDepthwiseConv2dNhwcQuantPlan(
+                                               up.middle_dw,
+                                               cur_data,
+                                               up.middle_dw.weights_hwc ? up.middle_dw.weights_hwc
+                                                                        : uib.middle_dw_weights_q,
+                                               uib.middle_dw_bias_q,
+                                               middle_out);
+                            }
                             if constexpr (CmsisNnQuant::kEnabled)
                             {
                                 ok = ok || CmsisNnQuant::TryDepthwiseConv2dNhwcQuantPlan(
@@ -2138,6 +2190,15 @@ namespace
                                                out);
                             }
 
+                            if constexpr (NmsisNnQuant::kEnabled)
+                            {
+                                ok = ok || NmsisNnQuant::TryConv2dNhwcQuantPlan(
+                                               up.proj,
+                                               cur_data,
+                                               uib.proj_weights_q,
+                                               uib.proj_bias_q,
+                                               out);
+                            }
                             if constexpr (CmsisNnQuant::kEnabled)
                             {
                                 ok = ok || CmsisNnQuant::TryConv2dNhwcQuantPlan(
@@ -2261,6 +2322,11 @@ namespace
                                              lp.fc, current, weights, bias, dense_out);
                         }
 
+                        if constexpr (NmsisNnQuant::kEnabled)
+                        {
+                            ran = ran || NmsisNnQuant::TryFullyConnectedQuantPlan(
+                                             lp.fc, current, weights, bias, dense_out);
+                        }
                         if constexpr (CmsisNnQuant::kEnabled)
                         {
                             ran = ran || CmsisNnQuant::TryFullyConnectedQuantPlan(
@@ -2316,6 +2382,11 @@ namespace
                                              lp.fc, current, weights, bias, fc_dest);
                         }
 
+                        if constexpr (NmsisNnQuant::kEnabled)
+                        {
+                            ran = ran || NmsisNnQuant::TryFullyConnectedQuantPlan(
+                                             lp.fc, current, weights, bias, fc_dest);
+                        }
                         if constexpr (CmsisNnQuant::kEnabled)
                         {
                             ran = ran || CmsisNnQuant::TryFullyConnectedQuantPlan(
@@ -2357,6 +2428,11 @@ namespace
                                 lp.softmax, runtime.logits, softmax_out);
                         }
 
+                        if constexpr (NmsisNnQuant::kEnabled)
+                        {
+                            ran = NmsisNnQuant::TrySoftmaxS8Plan(
+                                lp.softmax, runtime.logits, softmax_out);
+                        }
                         if constexpr (CmsisNnQuant::kEnabled)
                         {
                             ran = CmsisNnQuant::TrySoftmaxS8Plan(

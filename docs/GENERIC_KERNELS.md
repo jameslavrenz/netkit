@@ -12,7 +12,7 @@ maturity), [DATATYPES.md](DATATYPES.md) (float32 / int8).
 ## 1. What “generic” means here
 
 netkit routes numeric work through a compile-time kernel facade
-(`Kernels::…`). When CMSIS-NN, ESP-NN, and XNNPACK are off (or reject an op), execution
+(`Kernels::…`). When CMSIS-NN, ESP-NN, NMSIS-NN, and XNNPACK are off (or reject an op), execution
 falls through to **`ReferenceKernel`** plus, for int8, **`QuantOps`** integer
 loops. That stack is what this document calls the **generic** path.
 
@@ -26,8 +26,9 @@ these TUs). Speedups come from:
   `NETKIT_IM2COL`).
 
 **RISC MCU “fast generic”** is the **same** code as desktop reference — there
-is no separate RISC kernel translation unit. Until a CMSIS-NN–class RISC MCU
-library exists, `mcu_risc` ships on these kernels as the production path.
+is no separate hand-written RISC SIMD translation unit. With NMSIS-NN enabled
+(default on `mcu_risc`), int8 production uses Nuclei’s CMSIS-NN twin; these
+generics remain the float path and the fallback when NMSIS-NN is off or rejects an op.
 
 ```text
 Layer / QuantOps
@@ -36,8 +37,10 @@ Layer / QuantOps
   active_kernel.hpp  →  Kernels alias
         │
         ├─ mcu_arm + CMSIS-NN     → ComposedKernel<Reference, CmsisNn>
+        ├─ mcu_esp + ESP-NN       → ComposedKernel<Reference, EspNn>
+        ├─ mcu_risc + NMSIS-NN    → ComposedKernel<Reference, NmsisNn>
         ├─ cpu/MPU + XNNPACK      → ComposedKernel<Reference, Xnnpack>
-        └─ else (incl. mcu_risc)  → ReferenceKernel (+ QuantOps for int8)
+        └─ else                  → ReferenceKernel (+ QuantOps for int8)
 ```
 
 ---
@@ -74,7 +77,7 @@ tensors.
 | **No `int64`** | Int8 requant breaks or needs a different implementation |
 | **Strict-alignment cores with packed unaligned loads** | Kernels use typed `float*` / `int8_t*` arithmetic; they do not emulate unaligned access |
 | **Big-endian hosts loading `.nk` as-is** | `.nk` is **little-endian**; load path must byte-swap multi-byte fields (kernels themselves are endian-agnostic once values are in registers) |
-| **Vector ISA required for correctness** | None — generics are scalar C++; SIMD is left to XNNPACK / CMSIS-NN |
+| **Vector ISA required for correctness** | None — generics are scalar C++; SIMD is left to XNNPACK / CMSIS-NN / NMSIS-NN |
 
 ---
 
@@ -240,7 +243,7 @@ stay scalar $\mathrm{int32}$ MACs (§3.8). Workspace is arena-backed; if scratch
 does not fit, QuantOps degrades full → partial → direct.
 
 **Tradeoff.** Can help large float CNNs on reference-only MPU/MCU builds; costs
-RAM and gather bandwidth. CMSIS-NN / ESP-NN / XNNPACK **ignore** this knob.
+RAM and gather bandwidth. CMSIS-NN / ESP-NN / NMSIS-NN / XNNPACK **ignore** this knob.
 
 **Portability:** Same 32-bit types; larger models may need arena headroom that
 tiny MCUs lack — hence default $0$.
@@ -368,7 +371,7 @@ fewer branches) without requiring a vector ISA.
 | Flash ≪ code growth from `NETKIT_LOOP_UNROLL=1` or fat specialists | Link failure |
 | Arena too small for im2col / HWIO repack | Must stay on direct (`IM2COL=0`) or larger arena |
 | Big-endian `.nk` load without swap | Format is LE |
-| Expecting SIMD from reference alone | Use XNNPACK (cpu/MPU) or CMSIS-NN (Arm MCU) |
+| Expecting SIMD from reference alone | Use XNNPACK (cpu/MPU), CMSIS-NN (Arm MCU), or NMSIS-NN (RISC-V MCU) |
 
 ### Endianness and alignment (short)
 
@@ -383,7 +386,7 @@ fewer branches) without requiring a vector ISA.
 
 | Flag | Default | Affects generic path | Notes |
 |------|---------|----------------------|-------|
-| `NETKIT_IM2COL` | $0$ | Float ref + int8 QuantOps Conv2D | Ignored by CMSIS-NN / ESP-NN / XNNPACK |
+| `NETKIT_IM2COL` | $0$ | Float ref + int8 QuantOps Conv2D | Ignored by CMSIS-NN / ESP-NN / NMSIS-NN / XNNPACK |
 | `NETKIT_LOOP_UNROLL` | $0$ | Float elementwise / some activations | Experimental; grows `.text` |
 | `NETKIT_DW_ROW_ACCUM` | $1$ | Float depthwise cross-row ILP | — |
 | `NETKIT_REFERENCE_QUANT_LOOPS` | $0$ | Keep int8 QuantOps bodies on MCU class | Needed for RISC MCU int8 / reference A/B |
@@ -402,7 +405,8 @@ profiling a reference-only build. See
 | **XNNPACK** | Production LayerFast on cpu / MPU — ISA microkernels; generics are fallback |
 | **CMSIS-NN** | Production int8 on Arm MCU; generics for float MCU and CMSIS rejects |
 | **ESP-NN** | Production int8 on Espressif MCU; float always uses generics (no ESP float API) |
-| **Generics** | Correctness baseline, RISC MCU production, host “XNNPACK OFF” peer, accel fallback |
+| **NMSIS-NN** | Production int8 on RISC-V MCU; float always uses generics (no NMSIS float API) |
+| **Generics** | Correctness baseline; float on ESP/NMSIS MCU; host “XNNPACK OFF” peer; accel fallback / `NETKIT_*_NN=0` |
 
 Peer benches that disable XNNPACK compare against this stack (and, for TF Lite,
 often `BUILTIN_REF`). See [STATUS.md](STATUS.md).
@@ -429,9 +433,9 @@ often `BUILTIN_REF`). See [STATUS.md](STATUS.md).
 Generic kernels are **portable C++ tuned for 32-bit+ machines**: NHWC-friendly
 loops, always-on multi-accumulator float reductions, shape specialists, optional
 im2col / unroll, and integer-only int8 MAC+requant. They intentionally avoid
-ISA-specific SIMD so the same sources serve desktop reference builds, Arm MCU
-fallback, Espressif float, and RISC MCU production. The cost of that portability is that peak
+ISA-specific SIMD so the same sources serve desktop reference builds, MCU float
+paths, and accel fallbacks. The cost of that portability is that peak
 host/MPU performance still belongs to **XNNPACK**, peak Arm MCU int8
-to **CMSIS-NN**, and peak Espressif MCU int8 to **ESP-NN** — with the understanding that almost every
+to **CMSIS-NN**, peak Espressif MCU int8 to **ESP-NN**, and peak RISC-V MCU int8 to **NMSIS-NN** — with the understanding that almost every
 speedup above assumes at least a 32-bit word, native or soft `float` /
 `int64` where those paths run, and little-endian model load.

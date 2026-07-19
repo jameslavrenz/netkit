@@ -104,6 +104,7 @@ done
 mkdir -p "$DEST/netkit_lib"
 echo "$PIN" > "$DEST/netkit_lib/.xnnpack_pin"
 
+"$ROOT/tools/sync_third_party_licenses.sh" || true
 echo "XNNPACK ready at $PIN (LiteRT peer pin)"
 echo "  headers: $DEST/include + $DEST/netkit_include"
 echo "  libs:    $DEST/netkit_lib/"

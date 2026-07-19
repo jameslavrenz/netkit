@@ -6,7 +6,7 @@
 #   cpu       (default) — desktop: CLI, regression; arena defaults to heap
 #   mcu_arm             — Arm MCU lean runtime; CMSIS-NN defaults (int8 production)
 #   mpu_arm             — Arm MPU lean runtime; XNNPACK defaults
-#   mcu_risc            — RISC-V MCU lean runtime (generic kernels; CMSIS-NN + XNNPACK forbidden)
+#   mcu_risc            — RISC-V MCU lean runtime; NMSIS-NN defaults (int8 production)
 #   mpu_risc            — RISC-V MPU lean runtime; XNNPACK on; CMSIS-NN forbidden
 #   mcu_esp             — Espressif MCU lean runtime; ESP-NN defaults (int8 production)
 #
@@ -27,6 +27,7 @@
 # Optional backends (profile defaults below; override on command line):
 #   NETKIT_CMSIS_NN=1      — Arm MCU only (NETKIT_TARGET=mcu_arm + NETKIT_ARCH=CM4|M33|...)
 #   NETKIT_ESP_NN=1        — Espressif MCU only (NETKIT_TARGET=mcu_esp + NETKIT_ARCH=ESP32S3|...)
+#   NETKIT_NMSIS_NN=1      — RISC-V MCU only (NETKIT_TARGET=mcu_risc + NETKIT_ARCH=N300|RV32IMAC|...)
 #   NETKIT_XNNPACK=1       — Google XNNPACK (cpu + any MPU; forbidden on MCU; ./tools/fetch_xnnpack.sh)
 #   CMSIS-DSP is not used (no NETKIT_CMSIS_DSP backend).
 #
@@ -34,7 +35,7 @@
 #   cpu      — XNNPACK on (any host ISA), CMSIS-NN / ESP-NN off
 #   mcu_arm  — CMSIS-NN on, XNNPACK forbidden (float32 uses reference kernels)
 #   mpu_arm  — XNNPACK on, CMSIS-NN / ESP-NN off
-#   mcu_risc — generic kernels only (CMSIS-NN + XNNPACK + ESP-NN forbidden)
+#   mcu_risc — NMSIS-NN on (int8); float32 uses reference (NMSIS-NN is int8-only)
 #   mpu_risc — XNNPACK on; CMSIS-NN / ESP-NN forbidden
 #   mcu_esp  — ESP-NN on (int8); float32 uses reference (ESP-NN is int8-only)
 #
@@ -50,6 +51,7 @@
 #   make NETKIT_TARGET=cpu NETKIT_GLOBAL_ARENA=1 all
 #   make NETKIT_TARGET=mcu_arm NETKIT_ARCH=CM4 lib
 #   make NETKIT_TARGET=mcu_esp NETKIT_ARCH=ESP32S3 lib
+#   make NETKIT_TARGET=mcu_risc NETKIT_ARCH=N300 lib
 #   make NETKIT_TARGET=mpu_arm lib
 
 NETKIT_TARGET ?= cpu
@@ -74,26 +76,32 @@ endif
 ifeq ($(NETKIT_TARGET),cpu)
   NETKIT_CMSIS_NN ?= 0
   NETKIT_ESP_NN ?= 0
+  NETKIT_NMSIS_NN ?= 0
   NETKIT_XNNPACK ?= 1
 else ifeq ($(NETKIT_TARGET),mcu_arm)
   NETKIT_CMSIS_NN ?= 1
   NETKIT_ESP_NN ?= 0
+  NETKIT_NMSIS_NN ?= 0
   NETKIT_XNNPACK ?= 0
 else ifeq ($(NETKIT_TARGET),mpu_arm)
   NETKIT_CMSIS_NN ?= 0
   NETKIT_ESP_NN ?= 0
+  NETKIT_NMSIS_NN ?= 0
   NETKIT_XNNPACK ?= 1
 else ifeq ($(NETKIT_TARGET),mcu_risc)
   NETKIT_CMSIS_NN ?= 0
   NETKIT_ESP_NN ?= 0
+  NETKIT_NMSIS_NN ?= 1
   NETKIT_XNNPACK ?= 0
 else ifeq ($(NETKIT_TARGET),mpu_risc)
   NETKIT_CMSIS_NN ?= 0
   NETKIT_ESP_NN ?= 0
+  NETKIT_NMSIS_NN ?= 0
   NETKIT_XNNPACK ?= 1
 else ifeq ($(NETKIT_TARGET),mcu_esp)
   NETKIT_CMSIS_NN ?= 0
   NETKIT_ESP_NN ?= 1
+  NETKIT_NMSIS_NN ?= 0
   NETKIT_XNNPACK ?= 0
 else ifeq ($(NETKIT_TARGET),mcu)
   $(error NETKIT_TARGET=mcu is removed — use NETKIT_TARGET=mcu_arm)
@@ -102,6 +110,7 @@ else ifeq ($(NETKIT_TARGET),mpu)
 else
   NETKIT_CMSIS_NN ?= 0
   NETKIT_ESP_NN ?= 0
+  NETKIT_NMSIS_NN ?= 0
   NETKIT_XNNPACK ?= 0
 endif
 # In CI, cross-target host compile-checks keep reference kernels (no ARM toolchain /
@@ -110,6 +119,7 @@ ifeq ($(GITHUB_ACTIONS),true)
   ifneq ($(NETKIT_TARGET),cpu)
     override NETKIT_CMSIS_NN := 0
     override NETKIT_ESP_NN := 0
+    override NETKIT_NMSIS_NN := 0
   endif
   override NETKIT_XNNPACK := 0
 endif
@@ -135,7 +145,7 @@ LIB = libnetkit.a
 RUNTIME_SOURCES = src/arena.cpp src/nk_mmap.cpp src/tensor_factory.cpp src/tensor_access.cpp src/reference_kernel.cpp src/kernel_workspace.cpp src/cmsis_buffer_size.cpp src/ops.cpp \
                     src/conv2d.cpp src/depthwise_conv2d.cpp src/conv2d_layout.cpp src/conv_dispatch.cpp src/conv1x1_kernel.cpp src/conv_depthwise_kernel.cpp \
                     src/conv_direct_kernel.cpp src/im2col_partial.cpp src/im2col_full.cpp src/im2col_quant.cpp \
-                    src/convnextv2_block.cpp src/mobilenetv4_uib.cpp src/resnet_basic_block.cpp src/yolox_decoupled_head.cpp src/yolox_pafpn.cpp src/mlp.cpp src/quant_ops.cpp src/quant_softmax_s8.cpp src/netkit_util.cpp src/quant_trace.cpp src/cmsis_nn_quant_backend.cpp src/esp_nn_quant_backend.cpp src/cmsis_quant_plan.cpp src/cnn_quant.cpp src/cnn.cpp \
+                    src/convnextv2_block.cpp src/mobilenetv4_uib.cpp src/resnet_basic_block.cpp src/yolox_decoupled_head.cpp src/yolox_pafpn.cpp src/mlp.cpp src/quant_ops.cpp src/quant_softmax_s8.cpp src/netkit_util.cpp src/quant_trace.cpp src/cmsis_nn_quant_backend.cpp src/esp_nn_quant_backend.cpp src/nmsis_nn_quant_backend.cpp src/cmsis_quant_plan.cpp src/cnn_quant.cpp src/cnn.cpp \
                     src/layer_ops/nk_op_conv2d.cpp src/layer_ops/nk_op_depthwise_conv2d.cpp \
                     src/layer_ops/nk_op_convnextv2_block.cpp src/layer_ops/nk_op_mobilenetv4_uib.cpp src/layer_ops/nk_op_yolox_decoupled_head.cpp src/layer_ops/nk_op_feature_tap.cpp src/layer_ops/nk_op_yolox_pafpn.cpp src/layer_ops/nk_op_resnet_basic_block.cpp src/layer_ops/nk_op_layernorm2d.cpp \
                     src/layer_ops/nk_op_max_pool2d.cpp \
@@ -216,6 +226,40 @@ ifeq ($(NETKIT_ESP_NN_EFFECTIVE),1)
   include third_party/esp_nn.mk
   TARGET_CPPFLAGS += -DNETKIT_USE_ESP_NN=1 -I$(ESP_NN_DIR)/include -I$(ESP_NN_DIR)/src/common
   RUNTIME_SOURCES += src/esp_nn_backend.cpp
+endif
+
+# NMSIS-NN: RISC-V MCU int8 production path (float LayerFast always falls to reference).
+NMSIS_NN_OBJECTS =
+NETKIT_NMSIS_NN_EFFECTIVE := 0
+NMSIS_DIR ?= third_party/NMSIS
+NMSIS_NN_DIR ?= $(NMSIS_DIR)/NMSIS/NN
+ifneq ($(filter $(NETKIT_TARGET),mcu_arm mpu_arm mpu_risc mcu_esp cpu),)
+  ifeq ($(NETKIT_NMSIS_NN),1)
+    $(warning NETKIT_NMSIS_NN=1 forced off on NETKIT_TARGET=$(NETKIT_TARGET) — NMSIS-NN is mcu_risc only)
+  endif
+  override NETKIT_NMSIS_NN := 0
+endif
+ifeq ($(NETKIT_NMSIS_NN),1)
+  ifeq ($(NETKIT_TARGET),mcu_risc)
+    ifeq ($(NETKIT_ARCH_IS_RISC_NN),1)
+      NETKIT_NMSIS_NN_EFFECTIVE := 1
+    else
+      $(warning NETKIT_NMSIS_NN=1 ignored — set NETKIT_ARCH=N300|N600|NX900|RV32IMAC|…; using reference)
+    endif
+  else
+    $(warning NETKIT_NMSIS_NN=1 ignored on NETKIT_TARGET=$(NETKIT_TARGET) — NMSIS-NN is mcu_risc only)
+  endif
+endif
+ifeq ($(NETKIT_NMSIS_NN_EFFECTIVE),1)
+  ifeq ($(wildcard $(NMSIS_NN_DIR)/Include/riscv_nnfunctions.h),)
+    $(error NETKIT_NMSIS_NN=1 requires NMSIS at $(NMSIS_DIR) — run ./tools/fetch_nmsis.sh)
+  endif
+  include third_party/nmsis_nn.mk
+  TARGET_CPPFLAGS += -DNETKIT_USE_NMSIS_NN=1 -I$(NMSIS_NN_DIR)/Include -I$(NMSIS_DIR)/NMSIS/Core/Include
+  ifeq ($(NETKIT_HOST_SMOKE),1)
+    TARGET_CPPFLAGS += -include third_party/nmsis_host_compat.h
+  endif
+  RUNTIME_SOURCES += src/nmsis_nn_backend.cpp
 endif
 
 
@@ -376,7 +420,7 @@ TRIM_CORE_OBJECTS = $(TRIM_RUNTIME_SOURCES:.cpp=.o)
 
 # Rebuild objects when target/backends change — avoids mixing CPU and MCU .o files in libnetkit.a.
 NETKIT_BUILD_STAMP = .netkit_build_stamp
-NETKIT_BUILD_ID = target=$(NETKIT_TARGET),global_arena=$(NETKIT_GLOBAL_ARENA),heap_arena=$(NETKIT_HEAP_ARENA),arena_cap=$(NETKIT_ARENA_CAPACITY)$(NETKIT_ARENA_KB),mmap=$(NETKIT_MMAP),cmsis_nn=$(NETKIT_CMSIS_NN_EFFECTIVE),xnnpack=$(NETKIT_XNNPACK_EFFECTIVE),im2col=$(NETKIT_IM2COL),loop_unroll=$(NETKIT_LOOP_UNROLL),arch=$(NETKIT_ARCH),host_smoke=$(NETKIT_HOST_SMOKE)
+NETKIT_BUILD_ID = target=$(NETKIT_TARGET),global_arena=$(NETKIT_GLOBAL_ARENA),heap_arena=$(NETKIT_HEAP_ARENA),arena_cap=$(NETKIT_ARENA_CAPACITY)$(NETKIT_ARENA_KB),mmap=$(NETKIT_MMAP),cmsis_nn=$(NETKIT_CMSIS_NN_EFFECTIVE),esp_nn=$(NETKIT_ESP_NN_EFFECTIVE),nmsis_nn=$(NETKIT_NMSIS_NN_EFFECTIVE),xnnpack=$(NETKIT_XNNPACK_EFFECTIVE),im2col=$(NETKIT_IM2COL),loop_unroll=$(NETKIT_LOOP_UNROLL),arch=$(NETKIT_ARCH),host_smoke=$(NETKIT_HOST_SMOKE)
 
 NETKIT_STALE_BINARIES = $(TARGET) $(LIB) $(TRIM_LIB) $(EXAMPLE_C) $(EXAMPLE_CPP) $(TEST_C) $(EMBEDDED_SMOKE) $(NK_INFER)
 
@@ -398,7 +442,8 @@ $(NETKIT_BUILD_STAMP):
 
 .PHONY: all lib clean rebuild test test-full test-cpp test-c test-python test-python-full run example-c example-cpp examples \
         export-mnist export-mnist-int8 export-mnist-cnn export-mnist-all export-op-matrix \
-        export-nk build-all embed-tests cmsis-nn-init cmsis-init esp-nn-init \
+        export-nk build-all embed-tests cmsis-nn-init cmsis-init esp-nn-init nmsis-init \
+        sync-licenses xnnpack-init \
         cpu cpu-global mcu-arm mpu-arm mpu-arm-heap mcu-risc mpu-risc mcu-esp \
         embedded-smoke test-embedded-smoke test-embedded-smoke-matrix trim-lib check-trim-lib
 
@@ -412,7 +457,7 @@ endif
 
 .DEFAULT_GOAL := all
 
-$(LIB): $(CORE_OBJECTS) $(CMSIS_NN_OBJECTS) $(CMSIS_SOFTMAX_OBJECTS) $(ESP_NN_OBJECTS)
+$(LIB): $(CORE_OBJECTS) $(CMSIS_NN_OBJECTS) $(CMSIS_SOFTMAX_OBJECTS) $(ESP_NN_OBJECTS) $(NMSIS_NN_OBJECTS)
 	ar rcs $@ $^
 
 build/cmsis_softmax/%.o: $(CMSIS_NN_DIR)/%.c
@@ -546,7 +591,7 @@ mpu-arm-heap:
 	$(MAKE) NETKIT_TARGET=mpu_arm NETKIT_HEAP_ARENA=1 lib
 
 mcu-risc:
-	$(MAKE) NETKIT_TARGET=mcu_risc lib
+	$(MAKE) NETKIT_TARGET=mcu_risc NETKIT_ARCH=N300 lib
 
 mpu-risc:
 	$(MAKE) NETKIT_TARGET=mpu_risc lib
@@ -563,12 +608,19 @@ cmsis-core-init:
 esp-nn-init:
 	./tools/fetch_esp_nn.sh
 
+nmsis-init:
+	./tools/fetch_nmsis.sh
+
 xnnpack-init:
 	./tools/fetch_xnnpack.sh
 
 cmsis-init: cmsis-nn-init cmsis-core-init
 
-.PHONY: xnnpack-init esp-nn-init
+# Refresh third_party/licenses/ from fetched CMSIS / ESP-NN / NMSIS / XNNPACK trees.
+sync-licenses:
+	./tools/sync_third_party_licenses.sh
+
+.PHONY: xnnpack-init esp-nn-init nmsis-init sync-licenses
 
 export-mnist:
 	PYTHONPATH=python python3 tools/export_mnist_mlp.py

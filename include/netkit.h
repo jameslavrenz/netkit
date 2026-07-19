@@ -7,7 +7,8 @@
  * Documentation:
  *   docs/PHILOSOPHY.md       — product vision, Phase 1/2, roadmap
  *   docs/GETTING_STARTED.md  — build, test, first inference
- *   docs/BUILD_TARGETS.md    — NETKIT_TARGET (cpu/mcu_arm/mpu_arm/mcu_risc/mpu_risc/mcu_esp), arena, backends
+ *   docs/BUILD_TARGETS.md    — NETKIT_TARGET (cpu/mcu_arm/mpu_arm/mcu_risc/mpu_risc/mcu_esp), arena, CMSIS/ESP/NMSIS/XNNPACK
+ *   docs/PLATFORMS.md       — Per-device configuration cookbooks
  *   docs/DATATYPES.md        — float32 and int8 today; more dtypes roadmap
  *   docs/ARENA.md            — bump allocator memory model
  *   docs/c-api.md            — full C API reference
@@ -562,7 +563,7 @@ nk_status_t nk_cnn_init_activation_buffers(nk_cnn_t* cnn,
                                            uint32_t in_w,
                                            uint32_t in_c);
 bool nk_cnn_has_activation_buffers(const nk_cnn_t* cnn);
-/** CMSIS-NN / kernel scratch sized at `InitActivationBuffers` (0 if none). */
+/** CMSIS-NN / NMSIS-NN shared kernel scratch sized at `InitActivationBuffers` (0 if none). */
 size_t nk_cnn_kernel_workspace_bytes(const nk_cnn_t* cnn);
 /**
  * Same classification knob as `nk_mlp_set_omit_final_softmax`.

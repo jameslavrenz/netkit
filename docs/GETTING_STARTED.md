@@ -1,6 +1,8 @@
 # Getting Started
 
-Welcome to netkit — a **multi-modal inference engine** (voice, image, vision) with an **embedded-first** design for **MCUs, MPUs, and NPUs**, implemented in **C++26** with a **C23** API. **Float32** and **int8** inference are complete on **Arm, Espressif, and RISC** MCU/MPU targets and host cpu: Arm MCU uses **CMSIS-NN**; Espressif MCU uses **ESP-NN**; RISC MPU uses **XNNPACK**; RISC MCU uses **fast generic** kernels — [STATUS.md](STATUS.md).
+Welcome to netkit — a **multi-modal inference engine** (voice, image, vision) with an **embedded-first** design for **MCUs, MPUs, and NPUs**, implemented in **C++26** with a **C23** API. **Float32** and **int8** inference are complete on **Arm, Espressif, and RISC** MCU/MPU targets and host cpu: Arm MCU uses **CMSIS-NN**; Espressif MCU uses **ESP-NN**; RISC-V MCU uses **NMSIS-NN**; RISC MPU uses **XNNPACK** — [STATUS.md](STATUS.md).
+
+**Configure a specific device:** [PLATFORMS.md](PLATFORMS.md) (cpu · Arm MCU/MPU · RISC-V MCU/MPU · Espressif).
 
 **Two ways to run inference:** load a `.nk` and execute through the **`NkOpsResolver` interpreter** (flexible — swap models, use the CLI), or **AOT lower** with `python -m netkit aot` (static kernel / CmsisQuantPlan call chain + weight arrays in flash — default). Use `--no-lower` only for interpreter embed (TFLM-fair). Both paths share the same kernels — see [PHILOSOPHY.md](PHILOSOPHY.md#terminology-embed-vs-lowered).
 
@@ -83,7 +85,7 @@ Select target with **`NETKIT_TARGET`**:
 | **CPU** (default) | `make` | CLI + full library + tests (XNNPACK on) |
 | **MCU Arm** | `make NETKIT_TARGET=mcu_arm lib` | Lean runtime; CMSIS-NN (int8); float32 via reference |
 | **MPU Arm** | `make NETKIT_TARGET=mpu_arm lib` | Lean runtime; XNNPACK on |
-| **MCU RISC** | `make NETKIT_TARGET=mcu_risc lib` | Lean runtime; fast generic kernels (fully functional) |
+| **MCU RISC** | `make NETKIT_TARGET=mcu_risc NETKIT_ARCH=N300 lib` | Lean runtime; NMSIS-NN (int8); float32 via reference |
 | **MPU RISC** | `make NETKIT_TARGET=mpu_risc lib` | Lean runtime; XNNPACK on (fully functional) |
 | **MCU Espressif** | `make NETKIT_TARGET=mcu_esp NETKIT_ARCH=ESP32S3 lib` | Lean runtime; ESP-NN (int8); float32 via reference |
 
@@ -103,7 +105,7 @@ make                                    # CPU, heap default
 make NETKIT_TARGET=cpu NETKIT_GLOBAL_ARENA=1 all   # CPU, static arena
 make NETKIT_TARGET=mcu_arm lib              # Arm MCU, 64 KiB constant
 make NETKIT_TARGET=mpu_arm lib              # Arm MPU, 64 MiB constant
-make NETKIT_TARGET=mcu_risc lib             # RISC MCU (generic kernels)
+make NETKIT_TARGET=mcu_risc NETKIT_ARCH=N300 lib  # RISC-V MCU (NMSIS-NN)
 make NETKIT_TARGET=mpu_risc lib             # RISC MPU (XNNPACK)
 make NETKIT_TARGET=mcu_esp NETKIT_ARCH=ESP32S3 lib   # Espressif MCU (ESP-NN)
 make NETKIT_TARGET=mpu_arm NETKIT_HEAP_ARENA=1 lib     # MPU + heap helpers
@@ -113,7 +115,7 @@ Macros are defined in [`include/netkit_config.h`](../include/netkit_config.h). F
 
 ### Target architecture (`NETKIT_ARCH`)
 
-Leave **`NETKIT_ARCH` unset** for native desktop builds. Set it when cross-compiling firmware so CMSIS gets the right `ARM_MATH_*` defines, or ESP-NN gets `CONFIG_IDF_TARGET_*`:
+Leave **`NETKIT_ARCH` unset** for native desktop builds. Set it when cross-compiling firmware so CMSIS gets `ARM_MATH_*`, ESP-NN gets `CONFIG_IDF_TARGET_*`, or NMSIS-NN gets Nuclei/RV32 tags:
 
 ```bash
 # Desktop (default) — no NETKIT_ARCH
@@ -130,6 +132,11 @@ make NETKIT_ARCH=M33 NETKIT_TARGET=mcu_arm NETKIT_CMSIS_NN=1 lib
 make esp-nn-init
 make NETKIT_ARCH=ESP32S3 NETKIT_TARGET=mcu_esp lib
 make NETKIT_ARCH=ESP32C6 NETKIT_TARGET=mcu_esp NETKIT_HOST_SMOKE=1 lib
+
+# Nuclei / RISC-V with NMSIS-NN
+make nmsis-init
+make NETKIT_ARCH=N300 NETKIT_TARGET=mcu_risc lib
+make NETKIT_ARCH=RV32IMAC NETKIT_TARGET=mcu_risc NETKIT_HOST_SMOKE=1 lib
 ```
 
 | Core | `NETKIT_ARCH` | Extra flags |
@@ -139,30 +146,34 @@ make NETKIT_ARCH=ESP32C6 NETKIT_TARGET=mcu_esp NETKIT_HOST_SMOKE=1 lib
 | Cortex-M55/M85 | `M55` / `M85` | `ARM_MATH_MVEF`, `ARM_MATH_MVEI`, loop unroll |
 | AArch64 Neon | `NEON` | loop unroll |
 | ESP32 / S3 / C3 / C6 / P4 | `ESP32` / `ESP32S3` / … | `CONFIG_IDF_TARGET_*` (+ chip asm unless `NETKIT_HOST_SMOKE=1`) |
+| Nuclei N300 / N600 / NX900 | `N300` / `N600` / `NX900` | `RISCV_MATH_LOOPUNROLL` (NMSIS-NN) |
+| Generic RV32 | `RV32IMAC` / `RV32IMC` / … | `RISCV_MATH_LOOPUNROLL` (NMSIS-NN) |
 
-See the full core table in [BUILD_TARGETS.md](BUILD_TARGETS.md#target-architecture-netkit_arch).
+Per-device cookbooks: [PLATFORMS.md](PLATFORMS.md). Full core table: [BUILD_TARGETS.md](BUILD_TARGETS.md#target-architecture-netkit_arch).
 
-### Optional CMSIS / ESP-NN / XNNPACK backends
+### Optional CMSIS / ESP-NN / NMSIS-NN / XNNPACK backends
 
-`make cmsis-init` fetches **CMSIS-Core** and **CMSIS-NN** as git submodules. `make esp-nn-init` fetches **ESP-NN**. CMSIS-DSP is not used. Backends are **opt-in** at compile time — not inferred from `NETKIT_ARCH` alone (except profile defaults). Third-party license texts: [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md).
+`make cmsis-init` fetches **CMSIS-Core** and **CMSIS-NN** as git submodules. `make esp-nn-init` fetches **ESP-NN**. `make nmsis-init` fetches **NMSIS** (NMSIS-NN). CMSIS-DSP is not used. Backends are **opt-in** at compile time — not inferred from `NETKIT_ARCH` alone (except profile defaults). Third-party license texts: [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md).
 
-**Profile defaults** (after `cmsis-init` / `esp-nn-init` / `xnnpack-init` as needed):
+**Profile defaults** (after `cmsis-init` / `esp-nn-init` / `nmsis-init` / `xnnpack-init` as needed):
 
-| `NETKIT_TARGET` | CMSIS-NN | ESP-NN | XNNPACK |
-|-----------------|----------|--------|---------|
-| `cpu` | off | off | on |
-| `mcu_arm` | on (needs Cortex-M `NETKIT_ARCH`) | forbidden | forbidden |
-| `mpu_arm` | off | off | on |
-| `mcu_risc` | forbidden | forbidden | forbidden |
-| `mpu_risc` | forbidden | forbidden | on |
-| `mcu_esp` | forbidden | on (needs `NETKIT_ARCH=ESP32*`) | forbidden |
+| `NETKIT_TARGET` | CMSIS-NN | ESP-NN | NMSIS-NN | XNNPACK |
+|-----------------|----------|--------|----------|---------|
+| `cpu` | off | off | off | on |
+| `mcu_arm` | on (Cortex-M) | forbidden | forbidden | forbidden |
+| `mpu_arm` | off | off | off | on |
+| `mcu_risc` | forbidden | forbidden | on (N300/RV32*) | forbidden |
+| `mpu_risc` | forbidden | forbidden | forbidden | on |
+| `mcu_esp` | forbidden | on (ESP32*) | forbidden | forbidden |
 
 ```bash
 make cmsis-init
 make esp-nn-init
-make test-cpp                                    # cpu: XNNPACK on, CMSIS/ESP off by default
+make nmsis-init
+make test-cpp                                    # cpu: XNNPACK on, CMSIS/ESP/NMSIS off by default
 make NETKIT_TARGET=mcu_arm NETKIT_ARCH=CM4 lib       # Arm MCU firmware: CMSIS-NN
 make NETKIT_TARGET=mcu_esp NETKIT_ARCH=ESP32S3 lib   # Espressif MCU: ESP-NN
+make NETKIT_TARGET=mcu_risc NETKIT_ARCH=N300 lib     # RISC-V MCU: NMSIS-NN
 make NETKIT_CMSIS_NN=0 NETKIT_XNNPACK=0 test     # reference kernels only (CI)
 ```
 
@@ -175,7 +186,8 @@ Before flashing firmware, validate lean runtime linking on the host. The smoke b
 ```bash
 make cmsis-init
 make esp-nn-init
-make test-embedded-smoke-matrix   # Arm/RISC/ESP + CMSIS + ESP-NN profiles
+make nmsis-init
+make test-embedded-smoke-matrix   # Arm/RISC/ESP + CMSIS + ESP-NN + NMSIS-NN profiles
 ```
 
 Single profile:
@@ -183,10 +195,11 @@ Single profile:
 ```bash
 make NETKIT_TARGET=mcu_arm NETKIT_ARCH=CM4 NETKIT_CMSIS_NN=1 embedded-smoke
 make NETKIT_TARGET=mcu_esp NETKIT_ARCH=ESP32C6 NETKIT_HOST_SMOKE=1 embedded-smoke
+make NETKIT_TARGET=mcu_risc NETKIT_ARCH=N300 NETKIT_HOST_SMOKE=1 embedded-smoke
 ./tests/embedded_smoke
 ```
 
-The matrix sets `NETKIT_HOST_SMOKE=1` so CMSIS-NN uses the portable host path without CMSIS-Core headers, and ESP-NN builds ANSI-only. On hardware, omit `NETKIT_HOST_SMOKE` and use your toolchain flags. Details: [TESTING.md](TESTING.md#embedded-smoke-mcupu).
+The matrix sets `NETKIT_HOST_SMOKE=1` so CMSIS-NN / NMSIS-NN use portable host paths without Core headers, and ESP-NN builds ANSI-only. On hardware, omit `NETKIT_HOST_SMOKE` and use your toolchain flags. Details: [TESTING.md](TESTING.md#embedded-smoke-mcupu).
 
 ### CMake alternative
 
@@ -196,7 +209,7 @@ cmake --build cmake-build
 ./cmake-build/netkit test
 ```
 
-Use `-DNETKIT_ARCH=CM4`, `-DNETKIT_TARGET=mcu_arm` for Arm MCU, or `-DNETKIT_TARGET=mcu_esp -DNETKIT_ARCH=ESP32S3` for Espressif (CMake defaults: CMSIS-NN on for `mcu_arm`; ESP-NN on for `mcu_esp`; XNNPACK on for `cpu` / MPU; generic only for `mcu_risc`). Override with `-DNETKIT_CMSIS_NN=OFF` / `-DNETKIT_ESP_NN=OFF` / `-DNETKIT_XNNPACK=OFF`. CMSIS-DSP is not used; float32 on MCU is reference-only (ESP-NN has no float API).
+Use `-DNETKIT_ARCH=CM4`, `-DNETKIT_TARGET=mcu_arm` for Arm MCU, `-DNETKIT_TARGET=mcu_esp -DNETKIT_ARCH=ESP32S3` for Espressif, or `-DNETKIT_TARGET=mcu_risc -DNETKIT_ARCH=N300` for RISC-V (CMake defaults: CMSIS-NN on for `mcu_arm`; ESP-NN on for `mcu_esp`; NMSIS-NN on for `mcu_risc`; XNNPACK on for `cpu` / MPU). Override with `-DNETKIT_CMSIS_NN=OFF` / `-DNETKIT_ESP_NN=OFF` / `-DNETKIT_NMSIS_NN=OFF` / `-DNETKIT_XNNPACK=OFF`. CMSIS-DSP is not used; float32 on MCU is reference-only for ESP-NN / NMSIS-NN (no float API).
 
 ### Size a buffer for your model
 
@@ -384,8 +397,8 @@ netkit/
 | Run full regression in CI | `gh workflow run test-full.yml` (manual only) |
 | Try a model quickly | `./netkit run model.nk --input ...` |
 | Size firmware RAM | `./netkit inspect model.nk --full` |
-| Ship on MCU | `make NETKIT_TARGET=mcu_arm lib` or `mcu_esp NETKIT_ARCH=ESP32S3`, link into firmware, static arena |
-| Smoke MCU/MPU + CMSIS / ESP-NN on host | `make test-embedded-smoke-matrix` |
+| Ship on MCU | `make NETKIT_TARGET=mcu_arm lib`, `mcu_esp NETKIT_ARCH=ESP32S3`, or `mcu_risc NETKIT_ARCH=N300`, link into firmware, static arena |
+| Smoke MCU/MPU + CMSIS / ESP-NN / NMSIS-NN on host | `make test-embedded-smoke-matrix` |
 | Add regression case | Edit `HAND_CASE_INPUTS` in `python/netkit/regression_data.py`, `make embed-tests`, register in `src/test.cpp` |
 
 ---

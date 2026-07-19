@@ -2,6 +2,7 @@
 
 #include "cmsis_nn_quant.hpp"
 #include "esp_nn_quant.hpp"
+#include "nmsis_nn_quant.hpp"
 #include "netkit_util.hpp"
 #include "quant_trace.hpp"
 
@@ -17,6 +18,10 @@ extern "C" {
 
 #if defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN && NETKIT_CMSIS_NN_ALLOWED
 #include <arm_nnfunctions.h>
+#endif
+
+#if defined(NETKIT_USE_NMSIS_NN) && NETKIT_USE_NMSIS_NN && NETKIT_NMSIS_NN_ALLOWED
+#include <riscv_nnfunctions.h>
 #endif
 
 namespace
@@ -229,6 +234,13 @@ namespace QuantOps
             return;
         }
 #endif
+#if defined(NETKIT_USE_NMSIS_NN) && NETKIT_USE_NMSIS_NN && NETKIT_NMSIS_NN_ALLOWED
+        if (NmsisNnQuant::TrySoftmaxS8(logits, 1, count, scale, output))
+        {
+            QuantTrace::RecordSoftmaxCmsisOk();
+            return;
+        }
+#endif
 #if defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN && NETKIT_CMSIS_NN_ALLOWED
         if (CmsisNnQuant::TrySoftmaxS8(logits, 1, count, scale, output))
         {
@@ -261,6 +273,51 @@ namespace QuantOps
         return CmsisQuantUtil::ArgMaxInt8(values, count);
     }
 }
+
+#if defined(NETKIT_USE_NMSIS_NN) && NETKIT_USE_NMSIS_NN && NETKIT_NMSIS_NN_ALLOWED
+
+namespace NmsisNnQuant
+{
+
+bool TrySoftmaxS8(const int8_t* input,
+                  uint32_t num_rows,
+                  uint32_t row_size,
+                  float logit_scale,
+                  int8_t* output)
+{
+    if (!input || !output || num_rows == 0 || row_size == 0)
+        return false;
+
+    const QuantOps::SoftmaxS8Params params = QuantOps::ComputeSoftmaxS8Params(logit_scale);
+    riscv_softmax_s8(input,
+                     static_cast<int32_t>(num_rows),
+                     static_cast<int32_t>(row_size),
+                     params.mult,
+                     params.shift,
+                     params.diff_min,
+                     output);
+    return true;
+}
+
+}  // namespace NmsisNnQuant
+
+#else
+
+namespace NmsisNnQuant
+{
+
+bool TrySoftmaxS8(const int8_t* /*input*/,
+                  uint32_t /*num_rows*/,
+                  uint32_t /*row_size*/,
+                  float /*logit_scale*/,
+                  int8_t* /*output*/)
+{
+    return false;
+}
+
+}  // namespace NmsisNnQuant
+
+#endif
 
 #if defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN && NETKIT_CMSIS_NN_ALLOWED
 

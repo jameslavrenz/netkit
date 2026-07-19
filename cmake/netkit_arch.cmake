@@ -3,7 +3,7 @@
 # CMSIS-DSP is not used as a netkit backend.
 
 set(NETKIT_ARCH "" CACHE STRING
-    "Target core (empty=desktop CPU): CM0..M85, A32, NEON, or ESP32/ESP32S3/ESP32C3/ESP32C6/ESP32P4")
+    "Target core (empty=desktop CPU): CM0..M85, A32, NEON, ESP32*, or N300/RV32IMAC/…")
 
 function(netkit_normalize_arch arch out_var)
     string(TOUPPER "${arch}" _arch)
@@ -15,11 +15,13 @@ endfunction()
 function(netkit_resolve_architecture)
     set(_arm_math_defines "")
     set(_esp_defines "")
+    set(_risc_defines "")
     set(_arm_math_neon OFF)
     set(_arm_math_loopunroll OFF)
     set(_arm_math_mve OFF)
     set(_cmsis_nn OFF)
     set(_generic_nn OFF)
+    set(_risc_nn OFF)
     set(_target_default cpu)
 
     if(NOT NETKIT_ARCH)
@@ -106,11 +108,20 @@ function(netkit_resolve_architecture)
             list(APPEND _esp_defines CONFIG_IDF_TARGET_ESP32P4=1 CONFIG_NN_OPTIMIZED=1)
             set(_target_default mcu_esp)
             set(_arm_math_loopunroll OFF)
+        elseif(_arch STREQUAL "N300" OR _arch STREQUAL "N600" OR _arch STREQUAL "N900" OR
+               _arch STREQUAL "NX600" OR _arch STREQUAL "NX900" OR _arch STREQUAL "UX900" OR
+               _arch STREQUAL "RV32IMAC" OR _arch STREQUAL "RV32IMC" OR _arch STREQUAL "RV32IMF" OR
+               _arch STREQUAL "RV32IMAFDC" OR _arch STREQUAL "RV32IMAFC" OR
+               _arch STREQUAL "RV64IMAFDC" OR _arch STREQUAL "RISC" OR _arch STREQUAL "RISCV")
+            list(APPEND _risc_defines RISCV_MATH_LOOPUNROLL=1)
+            set(_target_default mcu_risc)
+            set(_arm_math_loopunroll OFF)
+            set(_risc_nn ON)
         else()
             message(FATAL_ERROR
                 "Unknown NETKIT_ARCH '${NETKIT_ARCH}' (normalized '${_arch}'). "
                 "Use CM0, CM0PLUS, CM3, CM4, CM7, M23, M33, M55, M85, A32, NEON, "
-                "ESP32, ESP32S3, ESP32C3, ESP32C6, or ESP32P4; leave unset for desktop.")
+                "ESP32*, or N300/N600/NX900/RV32IMAC/…; leave unset for desktop.")
         endif()
 
         if(_target_default STREQUAL "mcu_arm")
@@ -121,10 +132,12 @@ function(netkit_resolve_architecture)
 
     set(NETKIT_ENV_ARM_MATH_DEFINES "${_arm_math_defines}" PARENT_SCOPE)
     set(NETKIT_ENV_ESP_DEFINES "${_esp_defines}" PARENT_SCOPE)
+    set(NETKIT_ENV_RISC_DEFINES "${_risc_defines}" PARENT_SCOPE)
     set(NETKIT_ENV_ARM_MATH_NEON ${_arm_math_neon} PARENT_SCOPE)
     set(NETKIT_ENV_ARM_MATH_LOOPUNROLL ${_arm_math_loopunroll} PARENT_SCOPE)
     set(NETKIT_ENV_ARM_MATH_MVE ${_arm_math_mve} PARENT_SCOPE)
     set(NETKIT_ENV_CMSIS_NN ${_cmsis_nn} PARENT_SCOPE)
     set(NETKIT_ENV_GENERIC_NN ${_generic_nn} PARENT_SCOPE)
+    set(NETKIT_ENV_RISC_NN ${_risc_nn} PARENT_SCOPE)
     set(_netkit_target_default ${_target_default} PARENT_SCOPE)
 endfunction()

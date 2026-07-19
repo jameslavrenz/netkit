@@ -18,7 +18,7 @@ make test-python-full  # ONNX parity (82) + AOT compile tests; requires libnetki
 make clean        # remove objects and binaries
 make rebuild      # clean + make
 
-# Optional CMSIS / ESP-NN backend parity (after make cmsis-init / esp-nn-init)
+# Optional CMSIS / ESP-NN / NMSIS-NN backend parity (after make cmsis-init / esp-nn-init / nmsis-init)
 make test-cpp
 make test-embedded-smoke-matrix   # Arm + RISC + Espressif MCU/MPU profiles (local only)
 
@@ -100,15 +100,16 @@ For **`mlp_hand.nk`** and **`cnn_hand.nk`**, use **`make test`** (embedded TCAS 
 ```bash
 make cmsis-init   # required for CMSIS profiles
 make esp-nn-init  # required for ESP-NN profiles
+make nmsis-init   # required for NMSIS-NN profiles
 make NETKIT_TARGET=mcu_arm NETKIT_ARCH=CM4 NETKIT_CMSIS_NN=1 embedded-smoke
 make NETKIT_TARGET=mcu_esp NETKIT_ARCH=ESP32C6 NETKIT_HOST_SMOKE=1 embedded-smoke
 ./tests/embedded_smoke
 
-# Full matrix (Arm + RISC + Espressif MCU/MPU; CMSIS / ESP-NN; RISC generic / XNNPACK)
+# Full matrix (Arm + RISC + Espressif MCU/MPU; CMSIS / ESP-NN / NMSIS-NN; XNNPACK on MPU)
 make test-embedded-smoke-matrix
 ```
 
-Host execution exercises linking and inference paths before on-device bring-up. Smoke loads two bundled models: tiny MLP and CNN hand fixtures. Profiles include `mcu_arm`, `mpu_arm`, `mcu_risc`, `mpu_risc`, `mcu_esp`, plus Arm CMSIS and Espressif ESP-NN variants. The matrix sets `NETKIT_HOST_SMOKE=1` so CMSIS-NN uses the portable `__GNUC_PYTHON__` path (no CMSIS-Core headers) and ESP-NN builds ANSI-only. On hardware, link with your toolchain flags and `NETKIT_ARCH=...` without `NETKIT_HOST_SMOKE`.
+Host execution exercises linking and inference paths before on-device bring-up. Smoke loads two bundled models: tiny MLP and CNN hand fixtures. Profiles include `mcu_arm`, `mpu_arm`, `mcu_risc`, `mpu_risc`, `mcu_esp`, plus Arm CMSIS, Espressif ESP-NN, and RISC-V NMSIS-NN variants. The matrix sets `NETKIT_HOST_SMOKE=1` so CMSIS-NN / NMSIS-NN use portable host paths (no Core device headers) and ESP-NN builds ANSI-only. On hardware, link with your toolchain flags and `NETKIT_ARCH=...` without `NETKIT_HOST_SMOKE`.
 
 | Doc | Contents |
 |-----|----------|

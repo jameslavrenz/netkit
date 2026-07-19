@@ -1,13 +1,13 @@
 # Platform and dtype status
 
-Snapshot of what works today, what was measured, and what is still open. Companion to [PHILOSOPHY.md](PHILOSOPHY.md), [BUILD_TARGETS.md](BUILD_TARGETS.md), and [DATATYPES.md](DATATYPES.md).
+Snapshot of what works today, what was measured, and what is still open. Companion to [PHILOSOPHY.md](PHILOSOPHY.md), [BUILD_TARGETS.md](BUILD_TARGETS.md), [PLATFORMS.md](PLATFORMS.md) (per-device setup), and [DATATYPES.md](DATATYPES.md).
 
 ## Dtypes
 
 | Dtype | Status | Notes |
 |-------|--------|-------|
 | **float32** | **Complete** | Default path on cpu / MCU / MPU; ImageNet MobileNetV4, MNIST CNN / DS-CNN / MLP, fused blocks |
-| **int8** | **Complete** | End-to-end int8 I/O (no C++ float↔int8); MNIST CNN / DS-CNN / MLP Arm MCU (CMSIS-NN); Espressif MCU via ESP-NN; host/MPU via XNNPACK qs8 or QuantOps reference; ImageNet MNv4 int8 |
+| **int8** | **Complete** | End-to-end int8 I/O (no C++ float↔int8); MNIST CNN / DS-CNN / MLP Arm MCU (CMSIS-NN); Espressif MCU via ESP-NN; RISC-V MCU via NMSIS-NN; host/MPU via XNNPACK qs8 or QuantOps reference; ImageNet MNv4 int8 |
 | float16 / int16 / int4 | Planned (Phase 2) | See [DATATYPES.md](DATATYPES.md) |
 
 ## Target maturity
@@ -18,10 +18,10 @@ Snapshot of what works today, what was measured, and what is still open. Compani
 | **mcu_arm** | Arm Cortex-M firmware | CMSIS-NN (int8 production); float32 via reference; XNNPACK **forbidden** | **Done** — float32 + int8 (NUCLEO-F446RE) |
 | **mpu_arm** | Arm Cortex-A / RTOS-class | XNNPACK (default); CMSIS-NN off | **Done** — float32 + int8 |
 | **mpu_risc** | RISC-V MPU | XNNPACK (default); CMSIS-NN **forbidden** | **Done** — float32 + int8; same XNNPACK LayerFast stack as other MPUs (XNNPACK has strong RISC-V MPU support) |
-| **mcu_risc** | RISC-V MCU | Generic / reference kernels only; CMSIS + XNNPACK + ESP-NN **forbidden** | **Done** — float32 + int8 on **fast generic** kernels; a RISC MCU NN library (CMSIS-NN–class) is planned later |
+| **mcu_risc** | RISC-V MCU | NMSIS-NN (int8 production); float32 via reference (NMSIS-NN has no float API); CMSIS + XNNPACK + ESP-NN **forbidden** | **Done** — float32 + int8 runtime (host smoke via `NETKIT_HOST_SMOKE=1`); on-device peer benches TBD |
 | **mcu_esp** | Espressif MCU (ESP32 / S3 / C3 / C6 / P4) | ESP-NN (int8 production); float32 via reference (ESP-NN has no float API); XNNPACK **forbidden** | **Done** — float32 + int8 runtime (host ANSI smoke); on-device peer benches TBD |
 
-**Policy reminder:** XNNPACK is default on cpu and all MPUs, never on MCU. CMSIS-NN is Arm MCU only (production int8). ESP-NN is Espressif MCU only (production int8; same CMSIS-style Try* / plan wiring). **CMSIS-DSP is not used.** Float32 on MCU uses reference kernels (CMSIS float LayerFast exists on Arm; ESP-NN float Try* always miss). `NETKIT_IM2COL` defaults to **0** on all targets (see [BUILD_TARGETS.md](BUILD_TARGETS.md#netkit_im2col-guidance)).
+**Policy reminder:** XNNPACK is default on cpu and all MPUs, never on MCU. CMSIS-NN is Arm MCU only (production int8). ESP-NN is Espressif MCU only (production int8). NMSIS-NN is RISC-V MCU only (production int8; same CMSIS-style Try* / plan wiring). **CMSIS-DSP is not used.** Float32 on MCU uses reference kernels (CMSIS float LayerFast exists on Arm; ESP-NN / NMSIS-NN float Try* always miss). `NETKIT_IM2COL` defaults to **0** on all targets (see [BUILD_TARGETS.md](BUILD_TARGETS.md#netkit_im2col-guidance)).
 
 ## Host file mmap
 
@@ -176,14 +176,14 @@ Boards: `nucleo-f446re-cnn-int8` / `nucleo-f446re-tflm-cnn-int8` / `nucleo-f446r
 - **Arm MCU / MPU:** production-oriented paths exist (CMSIS-NN on MCU; XNNPACK on MPU/cpu) with float32 and int8 models, benches, and docs.
 - **Espressif MCU (`mcu_esp`):** **fully functional** for float32 + int8 — ESP-NN for int8 (CMSIS-style), float32 on reference; host ANSI smoke via `NETKIT_HOST_SMOKE=1`. On-device peer benches vs ESP-IDF / TFLM TBD.
 - **RISC MPU (`mpu_risc`):** **fully functional** for float32 + int8 via the same **XNNPACK** LayerFast stack as Arm MPU / cpu. XNNPACK has strong RISC-V coverage on MPU-class cores; CMSIS-NN is correctly unavailable.
-- **RISC MCU (`mcu_risc`):** **fully functional** for float32 + int8 on **generic / reference kernels** only (CMSIS + XNNPACK + ESP-NN forbidden). Those portable kernels are already fast and are the same fallbacks used when accelerators are off elsewhere. A dedicated RISC MCU NN library (analogous to Arm **CMSIS-NN**) is planned as a future acceleration layer; generics remain the production path until then.
+- **RISC MCU (`mcu_risc`):** **fully functional** for float32 + int8 — **NMSIS-NN** for int8 (CMSIS-NN analogue for Nuclei / RISC-V MCU), float32 on reference; host smoke via `NETKIT_HOST_SMOKE=1`. On-device peer benches TBD. Override with `NETKIT_NMSIS_NN=0` for generic-only.
 
 ## Open / next
 
 - **YOLOX detection accuracy** — runtime and host latency path land; more training / calibration needed for mAP
 - **Deeper float AOT specialization** (optional) — fused/specialized codegen beyond calling shared `Kernels` / composite `::forward` APIs; not required for correctness
 - Espressif on-device peer benches (ESP32-S3 / C6 vs TFLM / ESP-IDF NN)
-- RISC-V MCU NN kernels (CMSIS-NN–class accelerator; optional — generic path stays the default until it lands)
+- RISC-V MCU on-device peer benches (Nuclei N300 / RV32* vs TFLM / NMSIS-NN)
 - Broader int8 model coverage beyond MNIST + ImageNet MNv4 fixtures
 - float16 / int16 / int4 (Phase 2)
 - Voice modality fixtures

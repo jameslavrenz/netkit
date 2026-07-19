@@ -5,8 +5,8 @@
  *   NETKIT_TARGET_CPU       — desktop dev/test (CLI, regression, debug tooling)
  *   NETKIT_TARGET_MCU_ARM   — Arm microcontroller firmware (lean runtime)
  *   NETKIT_TARGET_MPU_ARM   — Arm microprocessor / RTOS (lean runtime)
- *   NETKIT_TARGET_MCU_RISC  — RISC-V MCU (lean runtime; backends TBD)
- *   NETKIT_TARGET_MPU_RISC  — RISC-V MPU (lean runtime; backends TBD)
+ *   NETKIT_TARGET_MCU_RISC  — RISC-V MCU firmware (NMSIS-NN int8 production)
+ *   NETKIT_TARGET_MPU_RISC  — RISC-V MPU (lean runtime; XNNPACK)
  *   NETKIT_TARGET_MCU_ESP   — Espressif MCU firmware (ESP-NN int8 production)
  *
  * Derived class / ISA macros (set automatically from the target above):
@@ -14,17 +14,17 @@
  *   NETKIT_ISA_ARM / NETKIT_ISA_RISC / NETKIT_ISA_ESP — instruction-set family
  *
  * Backend profile defaults (Makefile / CMake; override with NETKIT_CMSIS_NN=0|1):
- *   cpu       — XNNPACK on (any host ISA), CMSIS-NN / ESP-NN off
+ *   cpu       — XNNPACK on (any host ISA), CMSIS-NN / ESP-NN / NMSIS-NN off
  *   mcu_arm   — CMSIS-NN on (int8 production), XNNPACK forbidden; float32 uses reference
- *   mpu_arm   — XNNPACK on, CMSIS-NN / ESP-NN off
- *   mcu_risc  — generic kernels only (CMSIS-NN + XNNPACK + ESP-NN forbidden)
- *   mpu_risc  — XNNPACK on (default); CMSIS-NN / ESP-NN forbidden
+ *   mpu_arm   — XNNPACK on, CMSIS-NN / ESP-NN / NMSIS-NN off
+ *   mcu_risc  — NMSIS-NN on (int8 production); float32 uses reference; XNNPACK forbidden
+ *   mpu_risc  — XNNPACK on (default); CMSIS-NN / ESP-NN / NMSIS-NN forbidden
  *   mcu_esp   — ESP-NN on (int8 production; float32 uses reference — ESP-NN is int8-only)
  *
  * XNNPACK policy: default ON for cpu and all MPU targets; never allowed on MCU.
  *
  * CMSIS-DSP is not used or linked. Float32 on MCU is supported via portable/reference
- * kernels only (CMSIS-NN also offers float LayerFast on Arm; ESP-NN has no float API).
+ * kernels (CMSIS-NN also offers float LayerFast on Arm; ESP-NN / NMSIS-NN have no float API).
  *
  * Arena static defaults (NK_ARENA_DEFAULT_CAPACITY / Arena::kDefaultCapacity):
  *   CLASS_MCU — 64 KiB   CPU and CLASS_MPU — 64 MiB
@@ -204,9 +204,23 @@
 #endif
 
 /*
+ * NMSIS-NN: RISC-V MCU only (Nuclei N/NX/UX + RV32* via NETKIT_ARCH).
+ * Int8 production path (CMSIS-NN analogue); float32 uses reference (no f32 API).
+ */
+#if defined(NETKIT_TARGET_MCU_RISC)
+#define NETKIT_NMSIS_NN_ALLOWED 1
+#else
+#define NETKIT_NMSIS_NN_ALLOWED 0
+#endif
+
+#if defined(NETKIT_USE_NMSIS_NN) && NETKIT_USE_NMSIS_NN && !NETKIT_NMSIS_NN_ALLOWED
+#error "NETKIT_USE_NMSIS_NN requires NETKIT_TARGET_MCU_RISC; forbidden on cpu, mpu, Arm, and ESP"
+#endif
+
+/*
  * XNNPACK LayerFast: default for cpu + any MPU (Arm or RISC). Forbidden on MCU
  * (override not allowed) — XNNPACK can run on many ISAs, but MCU flash/RAM
- * budgets make it a poor fit; use CMSIS-NN / ESP-NN / reference there instead.
+ * budgets make it a poor fit; use CMSIS-NN / ESP-NN / NMSIS-NN / reference there.
  */
 #if defined(NETKIT_CLASS_MCU)
 #define NETKIT_XNNPACK_ALLOWED 0

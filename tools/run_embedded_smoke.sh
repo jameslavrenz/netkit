@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build and run tests/embedded_smoke for MCU/MPU ISA profiles + CMSIS-NN / ESP-NN.
+# Build and run tests/embedded_smoke for MCU/MPU ISA profiles + CMSIS-NN / ESP-NN / NMSIS-NN.
 #
 # Host execution validates linking and inference paths before on-device bring-up.
 # Requires CMSIS-NN/Core (make cmsis-init) when CMSIS-NN profiles are used.
@@ -38,7 +38,7 @@ run_profile() {
 # Reference kernels only (no CMSIS / ESP-NN fetch required).
 run_profile "mcu_arm" NETKIT_TARGET=mcu_arm NETKIT_CMSIS_NN=0
 run_profile "mpu_arm" NETKIT_TARGET=mpu_arm NETKIT_CMSIS_NN=0 NETKIT_XNNPACK=0
-run_profile "mcu_risc" NETKIT_TARGET=mcu_risc
+run_profile "mcu_risc" NETKIT_TARGET=mcu_risc NETKIT_NMSIS_NN=0
 run_profile "mpu_risc" NETKIT_TARGET=mpu_risc
 
 if [[ ! -f third_party/CMSIS-NN/Include/arm_nnfunctions.h ]]; then
@@ -56,6 +56,14 @@ fi
 
 run_profile "mcu_esp+esp32c6+esp-nn" NETKIT_TARGET=mcu_esp NETKIT_ARCH=ESP32C6 NETKIT_ESP_NN=1
 run_profile "mcu_esp+esp32s3+esp-nn" NETKIT_TARGET=mcu_esp NETKIT_ARCH=ESP32S3 NETKIT_ESP_NN=1
+
+if [[ ! -f third_party/NMSIS/NMSIS/NN/Include/riscv_nnfunctions.h ]]; then
+  echo "NMSIS not found — run: make nmsis-init" >&2
+  exit 1
+fi
+
+run_profile "mcu_risc+n300+nmsis-nn" NETKIT_TARGET=mcu_risc NETKIT_ARCH=N300 NETKIT_NMSIS_NN=1
+run_profile "mcu_risc+rv32imac+nmsis-nn" NETKIT_TARGET=mcu_risc NETKIT_ARCH=RV32IMAC NETKIT_NMSIS_NN=1
 
 echo ""
 echo "All embedded smoke profiles passed."

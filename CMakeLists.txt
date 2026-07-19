@@ -26,31 +26,47 @@ elseif(NETKIT_TARGET STREQUAL "mpu_arm")
 elseif(NETKIT_TARGET STREQUAL "mcu_risc")
     set(_netkit_cmsis_nn_default OFF)
     set(_netkit_esp_nn_default OFF)
+    set(_netkit_nmsis_nn_default ON)
     set(_netkit_xnnpack_default OFF)
 elseif(NETKIT_TARGET STREQUAL "mpu_risc")
     set(_netkit_cmsis_nn_default OFF)
     set(_netkit_esp_nn_default OFF)
+    set(_netkit_nmsis_nn_default OFF)
     set(_netkit_xnnpack_default ON)
 elseif(NETKIT_TARGET STREQUAL "mcu_esp")
     set(_netkit_cmsis_nn_default OFF)
     set(_netkit_esp_nn_default ON)
+    set(_netkit_nmsis_nn_default OFF)
     set(_netkit_xnnpack_default OFF)
 elseif(NETKIT_TARGET STREQUAL "mcu" OR NETKIT_TARGET STREQUAL "mpu")
     message(FATAL_ERROR "NETKIT_TARGET=${NETKIT_TARGET} is removed — use mcu_arm or mpu_arm")
 else()
     set(_netkit_cmsis_nn_default OFF)
     set(_netkit_esp_nn_default OFF)
+    set(_netkit_nmsis_nn_default OFF)
     set(_netkit_xnnpack_default OFF)
+endif()
+
+# Ensure NMSIS default is defined for all branches above.
+if(NOT DEFINED _netkit_nmsis_nn_default)
+    set(_netkit_nmsis_nn_default OFF)
 endif()
 
 option(NETKIT_CMSIS_NN "Use ARM CMSIS-NN backends (mcu_arm + Cortex-M)" ${_netkit_cmsis_nn_default})
 option(NETKIT_ESP_NN "Use Espressif ESP-NN backends (mcu_esp; int8 production)" ${_netkit_esp_nn_default})
+option(NETKIT_NMSIS_NN "Use Nuclei NMSIS-NN backends (mcu_risc; int8 production)" ${_netkit_nmsis_nn_default})
 option(NETKIT_XNNPACK "Use Google XNNPACK LayerFast backends (cpu + any MPU; forbidden on MCU)" ${_netkit_xnnpack_default})
 
-# Match Makefile: CI forces XNNPACK off so embedded TCAS stays on reference kernels.
-if(DEFINED ENV{GITHUB_ACTIONS} AND "$ENV{GITHUB_ACTIONS}" STREQUAL "true" AND NETKIT_XNNPACK)
-    message(STATUS "GITHUB_ACTIONS=true — forcing NETKIT_XNNPACK=OFF for reference-kernel CI")
-    set(NETKIT_XNNPACK OFF CACHE BOOL "Use Google XNNPACK LayerFast backends (cpu + any MPU; forbidden on MCU)" FORCE)
+# Match Makefile: CI forces accel backends off so default CI stays on reference kernels.
+if(DEFINED ENV{GITHUB_ACTIONS} AND "$ENV{GITHUB_ACTIONS}" STREQUAL "true")
+    if(NETKIT_XNNPACK)
+        message(STATUS "GITHUB_ACTIONS=true — forcing NETKIT_XNNPACK=OFF for reference-kernel CI")
+        set(NETKIT_XNNPACK OFF CACHE BOOL "Use Google XNNPACK LayerFast backends (cpu + any MPU; forbidden on MCU)" FORCE)
+    endif()
+    if(NETKIT_NMSIS_NN)
+        message(STATUS "GITHUB_ACTIONS=true — forcing NETKIT_NMSIS_NN=OFF for reference-kernel CI")
+        set(NETKIT_NMSIS_NN OFF CACHE BOOL "Use Nuclei NMSIS-NN backends (mcu_risc; int8 production)" FORCE)
+    endif()
 endif()
 
 option(NETKIT_GLOBAL_ARENA "Use static/global arena on CPU builds" OFF)
@@ -131,6 +147,7 @@ set(NETKIT_RUNTIME_SOURCES
     src/quant_trace.cpp
     src/cmsis_nn_quant_backend.cpp
     src/esp_nn_quant_backend.cpp
+    src/nmsis_nn_quant_backend.cpp
     src/cmsis_quant_plan.cpp
     src/cnn_quant.cpp
     src/xnnpack_quant_backend.cpp
@@ -248,8 +265,14 @@ if(NETKIT_ESP_NN AND NOT NETKIT_TARGET STREQUAL "mcu_esp")
     set(NETKIT_ESP_NN OFF)
 endif()
 
+if(NETKIT_NMSIS_NN AND NOT NETKIT_TARGET STREQUAL "mcu_risc")
+    message(WARNING "NETKIT_NMSIS_NN=ON ignored on ${NETKIT_TARGET} — NMSIS-NN is mcu_risc only")
+    set(NETKIT_NMSIS_NN OFF)
+endif()
+
 include(cmake/netkit_cmsis.cmake)
 include(cmake/netkit_esp_nn.cmake)
+include(cmake/netkit_nmsis_nn.cmake)
 include(cmake/netkit_xnnpack.cmake)
 
 netkit_add_cmsis_softmax_s8(netkit)
@@ -260,6 +283,10 @@ endif()
 
 if(NETKIT_ESP_NN)
     netkit_add_esp_nn(netkit)
+endif()
+
+if(NETKIT_NMSIS_NN)
+    netkit_add_nmsis_nn(netkit)
 endif()
 
 if(NETKIT_XNNPACK)
