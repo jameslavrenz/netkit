@@ -473,6 +473,11 @@ static void TestInt8Parity(void)
                  NK_OK,
                  "nk_model_run_int8 zeros");
     ExpectTrue(written == out_n, "int8 run wrote outputs");
+
+    static const int8_t logits_i8[] = {-3, 7, 2};
+    ExpectTrue(nk_argmax_i8(logits_i8, 3) == 1u, "nk_argmax_i8");
+    static const float logits_f32[] = {-1.0f, 0.5f, 2.0f, 1.5f};
+    ExpectTrue(nk_argmax_f32(logits_f32, 4) == 2u, "nk_argmax_f32");
 }
 
 static void TestInspectModel(void)

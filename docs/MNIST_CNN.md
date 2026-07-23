@@ -88,6 +88,17 @@ Verified peer A/B on NUCLEO-F446RE @ 180 MHz (matched −O2/−flto toolchain; `
 
 All **10/10**. Board default is **quant lowered** (`make` / `make deploy-lowered`); use `NETKIT_EMBED=1` for the TFLM-fair interpreter numbers above. Reference: `NETKIT_REFERENCE_QUANT_LOOPS=1`. Peers: [cnn-int8](../boards/nucleo-f446re-cnn-int8/README.md), [tflm-cnn-int8](../boards/nucleo-f446re-tflm-cnn-int8/README.md), [tvm-cnn-int8](../boards/nucleo-f446re-tvm-cnn-int8/README.md).
 
+### Int8 on-device (Seeed XIAO ESP32C3)
+
+ESP-NN peer A/B vs TFLM @ 160 MHz (matched `-O3` C++ flags; quant lowered AOT; 10×10; order swaps) — [STATUS.md](STATUS.md#mcu-seeed-xiao-esp32c3), [`esp32c3_int8_ab_results.txt`](../benchmark/mcu_ab_logs/xiao_esp32c3/esp32c3_int8_ab_results.txt):
+
+| Model | netkit | TFLM |
+|-------|-------:|-----:|
+| MNIST CNN | 254.6 ms | **253.2 ms** |
+| MNIST DS-CNN | 88.5 ms | **87.5 ms** |
+
+All **10/10**. Index: [boards/xiao-esp32c3/](../boards/xiao-esp32c3/README.md). Runner: `./boards/xiao-esp32c3/scripts/run_esp_int8_ab.sh`.
+
 On-device memory (interpreter embed): **~334 KiB flash**, **~75 KiB SRAM** (64 KiB arena + ~53 KiB headroom on 128 KiB SRAM). Quant lowered uses static ping-pong BSS instead of a large arena — [ARENA.md](ARENA.md#quant-lowered-vs-interpreter-embed-on-mcu).
 
 UART captures `DIGIT_SUMMARY` lines with raw int8 softmax (`pred_i8`, `out_i8=...`). Dequantized per-digit confidence is computed offline — not on device:

@@ -7,15 +7,24 @@ netkit builds for ISA-qualified deployment profiles. Select one with **`NETKIT_T
 | **CPU** | `NETKIT_TARGET=cpu` (default) | Desktop dev, debug, CI | XNNPACK on (any host ISA); CMSIS-NN off; **no MLAS** (not needed — see [STATUS.md](STATUS.md#host-three-way-suite-netkit-vs-tf-lite-vs-onnx-runtime)) |
 | **MCU_ARM** | `NETKIT_TARGET=mcu_arm` | Arm microcontroller firmware | CMSIS-NN (int8 production); XNNPACK forbidden |
 | **MPU_ARM** | `NETKIT_TARGET=mpu_arm` | Arm microprocessor / RTOS | XNNPACK |
-| **MCU_RISC** | `NETKIT_TARGET=mcu_risc` | RISC-V MCU | NMSIS-NN on (int8 production); float32 reference; CMSIS + XNNPACK + ESP-NN forbidden |
+| **MCU_RISC** | `NETKIT_TARGET=mcu_risc` | Non-Espressif RISC-V MCU (Nuclei / RV32) | NMSIS-NN on (int8 production); float32 reference; CMSIS + XNNPACK + ESP-NN forbidden |
 | **MPU_RISC** | `NETKIT_TARGET=mpu_risc` | RISC-V MPU | XNNPACK on (strong RISC-V MPU support); CMSIS-NN forbidden |
-| **MCU_ESP** | `NETKIT_TARGET=mcu_esp` | Espressif MCU (ESP32 / S3 / C3 / C6 / P4) | ESP-NN on (int8 production); float32 reference; XNNPACK forbidden |
+| **MCU_ESP** | `NETKIT_TARGET=mcu_esp` | Espressif MCU — Xtensa **and** RISC-V (ESP32 / S3 / C3 / C6 / P4) | ESP-NN on (int8 production); float32 reference; XNNPACK forbidden |
 
 Legacy `NETKIT_TARGET=mcu` / `mpu` are **rejected** — use `mcu_arm` / `mpu_arm`.
 
 **Maturity:** float32 + int8 are **complete** on **cpu**, **Arm MCU/MPU**, **RISC MCU/MPU**, and **Espressif MCU**. **MCU_ARM** uses [CMSIS-NN](https://github.com/ARM-software/CMSIS-NN); **MCU_ESP** uses [ESP-NN](https://github.com/espressif/esp-nn); **MCU_RISC** uses [NMSIS-NN](https://github.com/Nuclei-Software/NMSIS) — all CMSIS-style int8; ESP-NN / NMSIS-NN have no float API, so float32 uses reference — [STATUS.md](STATUS.md).
 
+**Target ≠ CPU ISA:** `NETKIT_TARGET` follows **vendor stack + NN backend**, not the
+instruction set alone. ESP32-C3 / C6 / P4 are RISC-V silicon but use **`mcu_esp` +
+ESP-NN** (same as ESP32-S3). Use **`mcu_risc` + NMSIS-NN** only for non-Espressif
+RISC-V MCUs. Several Espressif boards share one `mcu_esp` profile; each sets
+`NETKIT_ARCH` (and its own `boards/…` tree). Full table:
+[PLATFORMS.md — Target ≠ CPU ISA](PLATFORMS.md#target--cpu-isa).
+
 Derived macros: `NETKIT_CLASS_MCU` / `NETKIT_CLASS_MPU` (firmware class), `NETKIT_ISA_ARM` / `NETKIT_ISA_RISC` / `NETKIT_ISA_ESP` (backend family).
+Note: `NETKIT_ISA_ESP` applies to all Espressif chips under `mcu_esp`, including
+RISC-V C3/C6/P4 — it does **not** mean “use `mcu_risc`.”
 
 **Per-device cookbooks** (one section per target): [PLATFORMS.md](PLATFORMS.md).
 

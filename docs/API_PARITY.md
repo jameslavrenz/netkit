@@ -30,6 +30,7 @@ When adding a feature, update this file and both [c-api.md](c-api.md) and [cpp-a
 | Load float/int8 `.nk` | `nk_model_load` / `nk_model_load_memory` | `NkLoader::Load*` / `Load*FromBuffer` | MCU: buffer/flash |
 | Run float32 | `nk_model_run` | `forward` | |
 | Run int8 | `nk_model_run_int8` | `forward_quantized` / `nk_model_run_int8` | Prequantize in Python |
+| Argmax | `nk_argmax_i8` / `nk_argmax_f32` | `NetkitUtil::ArgMaxInt8` / `ArgMaxF32` | Classify logits |
 | Query quantized | `nk_*_is_quantized` | `IsQuantized()` | |
 | Omit final Softmax | `nk_*_set_omit_final_softmax` | `SetOmitFinalSoftmax` | Classification logits |
 | Kernel workspace | `nk_cnn_kernel_workspace_bytes` | `KernelWorkspaceBytes()` | CMSIS-NN / NMSIS-NN |
@@ -226,6 +227,7 @@ High-level combined handle (C convenience):
 |-------------------|---|
 | Load + run float32 inference | `nk_model_load`, `nk_model_run`, `nk_inspect_model` |
 | Load + run int8 inference | `nk_model_load` / `nk_model_load_memory`, `nk_model_run_int8` |
+| Argmax (classify logits) | `nk_argmax_i8`, `nk_argmax_f32` |
 | Load embedded `.nk` blob + run | `nk_model_load_memory`, `nk_model_run` / `nk_model_run_int8` |
 | Inspect embedded blob arena peaks | `nk_inspect_model_memory` |
 | Query loaded model | `nk_model_get_arch`, `nk_model_input_count`, `nk_model_output_count`, `nk_model_kind`, `nk_model_is_quantized` |
@@ -250,7 +252,7 @@ High-level combined handle (C convenience):
 | `NETKIT_MCU_ACCEL_ONLY` (`NETKIT_MCU_CMSIS_ONLY`) | Default on MCU class when `REFERENCE_QUANT_LOOPS=0` — QuantOps reference loops omitted (CMSIS-NN / ESP-NN / NMSIS-NN production) |
 | `NETKIT_DISABLE_IOSTREAM` | Default on MCU — `nk_arch_print` / `PrintNetworkSummary` are no-ops |
 | NUCLEO-F446RE peers | **int8** CNN / DS-CNN vs TFLM + microTVM (CMSIS-NN and reference); float32 CNN/DS-CNN exceed 512 KiB flash — [STATUS.md](STATUS.md) |
-| Espressif MCU (`mcu_esp`) | ESP-NN int8 production (ESP32 / S3 / C3 / C6 / P4); float32 reference (ESP-NN has no float API); same C `nk_*` load/run as Arm MCU |
+| Espressif MCU (`mcu_esp`) | ESP-NN int8 production (ESP32 / S3 / C3 / C6 / P4); float32 reference (ESP-NN has no float API); same C `nk_*` load/run as Arm MCU. On-device peers: [XIAO ESP32C3](../boards/xiao-esp32c3/README.md) CNN/DS-CNN vs TFLM — [STATUS.md](STATUS.md#mcu-seeed-xiao-esp32c3) |
 | RISC-V MCU (`mcu_risc`) | NMSIS-NN int8 production (Nuclei N300 / RV32*); float32 reference (NMSIS-NN has no float API); same C `nk_*` load/run as Arm MCU |
 
 ### AOT deployment
@@ -258,9 +260,9 @@ High-level combined handle (C convenience):
 | Path | C++ | C |
 |------|-----|---|
 | Interpreter (embed `.nk` + loader) | `netkit::aot::*::Model` or `*_aot_load` + `nk_model_load_memory` | `*_aot.h` + `nk_model_load_memory` |
-| Lowered (static `Kernels::` chain) | `netkit::aot::*::Model` in `*_aot.hpp` | **C++ only** — no lowered C emitter |
+| Lowered (static `Kernels::` chain) | `netkit::aot::*::Model` in `*_aot.hpp` | C header + C++ body: `*_aot.h` / `*_aot_run_int8` wrap the lowered C++ `Model` (`--language c`); no pure-C lowered emitter |
 
-Lowered AOT keeps coef arrays in flash `.rodata` (no SRAM copy at load). See `boards/nucleo-f446re/`.
+Lowered AOT keeps coef arrays in flash `.rodata` (no SRAM copy at load). See `boards/nucleo-f446re/` and `boards/xiao-esp32c3-*-int8/`.
 
 ### Intentional C++-only symbols
 

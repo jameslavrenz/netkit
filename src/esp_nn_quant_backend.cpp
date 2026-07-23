@@ -186,11 +186,11 @@ bool TryConv2dNhwcQuantPlan(const CmsisQuantPlan::Conv2DPlan& plan,
 
 bool TryDepthwiseConv2dNhwcQuantPlan(const CmsisQuantPlan::DepthwiseConv2DPlan& plan,
                                      const int8_t* input,
-                                     const int8_t* weights_chw,
+                                     const int8_t* weights,
                                      const int32_t* bias,
                                      int8_t* output)
 {
-    if (!plan.ready || !input || !weights_chw || !bias || !output || !plan.multipliers ||
+    if (!plan.ready || !input || !weights || !bias || !output || !plan.multipliers ||
         !plan.shifts)
         return false;
 
@@ -219,34 +219,43 @@ bool TryDepthwiseConv2dNhwcQuantPlan(const CmsisQuantPlan::DepthwiseConv2DPlan& 
     };
     const quant_data_t quant_data = {.shift = plan.shifts, .mult = plan.multipliers};
 
+    // AOT lowered plans pass HWC (plan.weights_hwc / kW*Hwc). Runtime QuantOps passes
+    // CHW and leaves plan.weights_hwc null — repack into workspace in that case.
+    const bool weights_are_hwc = (plan.weights_hwc != nullptr);
     const std::size_t kernel_area = static_cast<std::size_t>(plan.kernel_h) *
                                     static_cast<std::size_t>(plan.kernel_w) *
                                     static_cast<std::size_t>(plan.channels);
     const int scratch = esp_nn_get_depthwise_conv_scratch_size(&input_dims, &filter_dims,
                                                                &output_dims, &dw_params);
-    const int32_t total_need = scratch + static_cast<int32_t>(kernel_area);
+    const int32_t total_need =
+        scratch + (weights_are_hwc ? 0 : static_cast<int32_t>(kernel_area));
 
     void* buf = nullptr;
     int32_t size = 0;
-    if (!BindCmsisWorkspace(buf, size, total_need) || !buf)
-        return false;
-
-    int8_t* weights_hwc = static_cast<int8_t*>(buf) + scratch;
-    if (scratch > 0)
+    if (total_need > 0)
     {
-        esp_nn_set_depthwise_conv_scratch_buf(buf);
+        if (!BindCmsisWorkspace(buf, size, total_need) || !buf)
+            return false;
+        if (scratch > 0)
+            esp_nn_set_depthwise_conv_scratch_buf(buf);
     }
 
-    for (int c = 0; c < plan.channels; ++c)
+    const int8_t* weights_hwc = weights;
+    if (!weights_are_hwc)
     {
-        for (int y = 0; y < plan.kernel_h; ++y)
+        int8_t* packed = static_cast<int8_t*>(buf) + scratch;
+        for (int c = 0; c < plan.channels; ++c)
         {
-            for (int x = 0; x < plan.kernel_w; ++x)
+            for (int y = 0; y < plan.kernel_h; ++y)
             {
-                weights_hwc[(y * plan.kernel_w + x) * plan.channels + c] =
-                    weights_chw[(c * plan.kernel_h + y) * plan.kernel_w + x];
+                for (int x = 0; x < plan.kernel_w; ++x)
+                {
+                    packed[(y * plan.kernel_w + x) * plan.channels + c] =
+                        weights[(c * plan.kernel_h + y) * plan.kernel_w + x];
+                }
             }
         }
+        weights_hwc = packed;
     }
 
     esp_nn_depthwise_conv_s8(&input_dims, input, &filter_dims, weights_hwc, bias, &output_dims,

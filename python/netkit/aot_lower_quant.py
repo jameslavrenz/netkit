@@ -1,4 +1,4 @@
-"""Lower quantized CNN graphs to static CmsisQuantPlan call chains (no .nk loader)."""
+"""Lower quantized CNN graphs to static CmsisQuantPlan call chains (ActiveQuant dispatch) (no .nk loader)."""
 
 from __future__ import annotations
 
@@ -284,12 +284,12 @@ def plan_lowered_quant(
             forward_lines.extend(
                 [
                     "    if (use_a) {",
-                    f"        if (!CmsisNnQuant::TryConv2dNhwcQuantPlan(",
+                    f"        if (!ActiveQuant::TryConv2dNhwcQuantPlan(",
                     f"                {plan_name}, current, {w_name}, {b_name}, slot_a))",
                     "            return false;",
                     "        current = slot_a;",
                     "    } else {",
-                    f"        if (!CmsisNnQuant::TryConv2dNhwcQuantPlan(",
+                    f"        if (!ActiveQuant::TryConv2dNhwcQuantPlan(",
                     f"                {plan_name}, current, {w_name}, {b_name}, slot_b))",
                     "            return false;",
                     "        current = slot_b;",
@@ -321,12 +321,12 @@ def plan_lowered_quant(
             forward_lines.extend(
                 [
                     "    if (use_a) {",
-                    f"        if (!CmsisNnQuant::TryDepthwiseConv2dNhwcQuantPlan(",
+                    f"        if (!ActiveQuant::TryDepthwiseConv2dNhwcQuantPlan(",
                     f"                {plan_name}, current, {w_hwc_name}, {b_name}, slot_a))",
                     "            return false;",
                     "        current = slot_a;",
                     "    } else {",
-                    f"        if (!CmsisNnQuant::TryDepthwiseConv2dNhwcQuantPlan(",
+                    f"        if (!ActiveQuant::TryDepthwiseConv2dNhwcQuantPlan(",
                     f"                {plan_name}, current, {w_hwc_name}, {b_name}, slot_b))",
                     "            return false;",
                     "        current = slot_b;",
@@ -345,11 +345,11 @@ def plan_lowered_quant(
             forward_lines.extend(
                 [
                     "    if (use_a) {",
-                    f"        if (!CmsisNnQuant::TryMaxPool2dNhwcQuantPlan({plan_name}, current, slot_a))",
+                    f"        if (!ActiveQuant::TryMaxPool2dNhwcQuantPlan({plan_name}, current, slot_a))",
                     "            return false;",
                     "        current = slot_a;",
                     "    } else {",
-                    f"        if (!CmsisNnQuant::TryMaxPool2dNhwcQuantPlan({plan_name}, current, slot_b))",
+                    f"        if (!ActiveQuant::TryMaxPool2dNhwcQuantPlan({plan_name}, current, slot_b))",
                     "            return false;",
                     "        current = slot_b;",
                     "    }",
@@ -495,10 +495,10 @@ def plan_lowered_quant(
                 sm_name = f"kSoftmax{weight_idx}Plan"
                 forward_lines.extend(
                     [
-                        f"    if (!CmsisNnQuant::TryFullyConnectedQuantPlan(",
+                        f"    if (!ActiveQuant::TryFullyConnectedQuantPlan(",
                         f"            {plan_name}, current, {w_name}, {b_name}, g_logits))",
                         "        return false;",
-                        f"    if (!CmsisNnQuant::TrySoftmaxS8Plan({sm_name}, g_logits, output))",
+                        f"    if (!ActiveQuant::TrySoftmaxS8Plan({sm_name}, g_logits, output))",
                         "        return false;",
                         "    return true;",
                         "",
@@ -508,7 +508,7 @@ def plan_lowered_quant(
                 # Classification: write logits directly (argmax-equivalent).
                 forward_lines.extend(
                     [
-                        f"    if (!CmsisNnQuant::TryFullyConnectedQuantPlan(",
+                        f"    if (!ActiveQuant::TryFullyConnectedQuantPlan(",
                         f"            {plan_name}, current, {w_name}, {b_name}, output))",
                         "        return false;",
                         "    return true;",
@@ -519,12 +519,12 @@ def plan_lowered_quant(
                 forward_lines.extend(
                     [
                         "    if (use_a) {",
-                        f"        if (!CmsisNnQuant::TryFullyConnectedQuantPlan(",
+                        f"        if (!ActiveQuant::TryFullyConnectedQuantPlan(",
                         f"                {plan_name}, current, {w_name}, {b_name}, slot_a))",
                         "            return false;",
                         "        current = slot_a;",
                         "    } else {",
-                        f"        if (!CmsisNnQuant::TryFullyConnectedQuantPlan(",
+                        f"        if (!ActiveQuant::TryFullyConnectedQuantPlan(",
                         f"                {plan_name}, current, {w_name}, {b_name}, slot_b))",
                         "            return false;",
                         "        current = slot_b;",
@@ -560,20 +560,20 @@ def plan_lowered_quant(
     w_idx = 0
     for layer_index, layer in enumerate(arch["layers"]):
         if layer["type"] == "conv2d":
-            load_lines.append(f"CmsisNnQuant::FinalizeConv2DPlan(kConv{w_idx}Plan);")
+            load_lines.append(f"ActiveQuant::FinalizeConv2DPlan(kConv{w_idx}Plan);")
             w_idx += 1
         elif layer["type"] == "depthwise_conv2d":
-            load_lines.append(f"CmsisNnQuant::FinalizeDepthwiseConv2DPlan(kDw{w_idx}Plan);")
+            load_lines.append(f"ActiveQuant::FinalizeDepthwiseConv2DPlan(kDw{w_idx}Plan);")
             w_idx += 1
         elif layer["type"] == "max_pool2d":
-            load_lines.append(f"CmsisNnQuant::FinalizePool2DPlan(kPool{layer_index}Plan);")
+            load_lines.append(f"ActiveQuant::FinalizePool2DPlan(kPool{layer_index}Plan);")
         elif layer["type"] == "avg_pool2d":
             pass
         elif layer["type"] == "mobilenetv4_uib":
             w_idx += _uib_subop_count(layer)
         elif layer["type"] == "dense":
             load_lines.append(
-                f"if (!CmsisNnQuant::FinalizeFcPlan(kFc{w_idx}Plan, kW{w_idx}, kB{w_idx}, arena))"
+                f"if (!ActiveQuant::FinalizeFcPlan(kFc{w_idx}Plan, kW{w_idx}, kB{w_idx}, arena))"
             )
             load_lines.append("    return false;")
             if layer.get("activation") == "softmax" and not omit_final_softmax:
@@ -925,7 +925,7 @@ def render_lowered_quant_cpp_source(
 {flash_attr}
 #include "{symbol}_aot.hpp"
 
-#include "cmsis_nn_quant.hpp"
+#include "active_quant.hpp"
 #include "kernel_workspace.hpp"
 #include "nk_format.hpp"
 #include "quant_ops.hpp"

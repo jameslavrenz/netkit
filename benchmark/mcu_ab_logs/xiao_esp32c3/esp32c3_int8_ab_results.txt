@@ -1,0 +1,50 @@
+# Seeed XIAO ESP32C3 — netkit vs TFLM int8 A/B
+# Chip: ESP32-C3 @ 160 MHz (RISC-V) · NETKIT_TARGET=mcu_esp · ESP-NN
+# Methodology (matches NUCLEO MCU peers): 10 runs × 10 images, discard first
+# invoke each run; untimed probe before timed loops.
+# Order swaps (host-suite spirit): nk→tflm and tflm→nk; means below are the
+# average of the two order captures (they matched within a few µs).
+# netkit: quant lowered AOT · TFLM: esp-tflite-micro (ESP-NN kernels)
+# ImageNet / MobileNetV4: skipped — int8 weights ~2.5–3.8 MiB exceed the
+# default 1 MiB factory app partition.
+#
+# Compiler match (boards/xiao-esp32c3/mcu_esp_tflm_match_compile.cmake):
+#   IDF global: CONFIG_COMPILER_OPTIMIZATION_PERF (-O2)
+#   netkit + TFLM C++ hot path: -O3 -fno-rtti -fno-exceptions
+#     -fno-threadsafe-statics -fno-unwind-tables (same as esp-tflite-micro)
+#   ESP-NN C (both sides): IDF -O2 (TFLM's espressif/esp-nn component)
+
+## Latency (mean_us → ms)
+
+| Model | netkit (ESP-NN) | TFLM (ESP-NN) | Gain (TFLM÷netkit) | Accuracy |
+|-------|----------------:|--------------:|-------------------:|----------|
+| MNIST CNN int8 | 254.6 ms | **253.2 ms** | 0.99× | 10/10 both |
+| MNIST DS-CNN int8 | 88.5 ms | **87.5 ms** | 0.99× | 10/10 both |
+
+Raw BENCHMARK_SUMMARY lines (both order swaps, matched -O3 C++):
+
+```
+BENCHMARK_SUMMARY runtime=netkit model=cnn_int8 backend=esp-nn-int8 mean_us=254568 runs=10
+BENCHMARK_SUMMARY runtime=tflm model=cnn_int8 backend=esp-nn mean_us=253239 runs=10
+BENCHMARK_SUMMARY runtime=tflm model=cnn_int8 backend=esp-nn mean_us=253236 runs=10
+BENCHMARK_SUMMARY runtime=netkit model=cnn_int8 backend=esp-nn-int8 mean_us=254568 runs=10
+BENCHMARK_SUMMARY runtime=netkit model=cnn_dw_int8 backend=esp-nn-int8 mean_us=88470 runs=10
+BENCHMARK_SUMMARY runtime=tflm model=cnn_dw_int8 backend=esp-nn mean_us=87499 runs=10
+BENCHMARK_SUMMARY runtime=tflm model=cnn_dw_int8 backend=esp-nn mean_us=87499 runs=10
+BENCHMARK_SUMMARY runtime=netkit model=cnn_dw_int8 backend=esp-nn-int8 mean_us=88467 runs=10
+```
+
+## Flash / RAM (PlatformIO size check)
+
+| Firmware | Flash | RAM (static) |
+|----------|------:|-------------:|
+| netkit CNN | 374 KiB | 72 KiB |
+| netkit DS-CNN | 364 KiB | 95 KiB |
+| TFLM CNN | 447 KiB | 108 KiB |
+| TFLM DS-CNN | 448 KiB | 108 KiB |
+
+## Reproduce
+
+```bash
+PORT=/dev/cu.usbmodem* ./boards/xiao-esp32c3/scripts/run_esp_int8_ab.sh
+```

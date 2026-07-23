@@ -579,6 +579,7 @@ Float32 and int8 are separate I/O paths — there is no runtime float↔int8 con
 | `nk_model_run` | float32 models only; returns `NK_ERR_INVALID_ARGUMENT` on int8 models |
 | `nk_model_run_int8` | int8 models only; prequantized `int8_t` in → `int8_t` out |
 | `nk_model_set_omit_final_softmax` | Skip final Dense Softmax and write logits (MLP + quantized CNN) |
+| `nk_argmax_i8` / `nk_argmax_f32` | Classify logits (mirror C++ `NetkitUtil::ArgMax*`) |
 
 Prequantize inputs in Python at export / fixture time. Then call `nk_model_run_int8` (or C++ `forward_quantized` / `nk_model_run_int8`). Host: XNNPACK qs8 when `NETKIT_XNNPACK=1`, else QuantOps reference. MCU: CMSIS-NN (`mcu_arm`), ESP-NN (`mcu_esp`), or NMSIS-NN (`mcu_risc`) — same C entry point on every target; backend is compile-time only ([PLATFORMS.md](PLATFORMS.md)).
 
@@ -597,6 +598,17 @@ Runs one forward pass.
 |---------|------------------|
 | MLP | Row-major `[batch, features]` flattened |
 | CNN | NHWC `[H, W, C]` flattened |
+
+### Argmax (classify)
+
+```c
+uint32_t nk_argmax_i8(const int8_t* values, uint32_t count);
+uint32_t nk_argmax_f32(const float* values, uint32_t count);
+```
+
+Same semantics as C++ `NetkitUtil::ArgMaxInt8` / `ArgMaxF32`. Returns `0` when `values` is null or `count` is 0. Typical MCU classify path after omit-final-softmax: `nk_model_run_int8` → `nk_argmax_i8(out, 10)`.
+
+**MCU int8 AOT (C):** `python3 -m netkit aot model.nk -o out/ --language c --target mcu` emits `*_aot.h` with `*_aot_run_int8` wrapping the C++ lowered body — [API_PARITY.md](API_PARITY.md#aot-deployment).
 
 ## Inspection
 

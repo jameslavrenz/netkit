@@ -5,9 +5,10 @@
  *   NETKIT_TARGET_CPU       — desktop dev/test (CLI, regression, debug tooling)
  *   NETKIT_TARGET_MCU_ARM   — Arm microcontroller firmware (lean runtime)
  *   NETKIT_TARGET_MPU_ARM   — Arm microprocessor / RTOS (lean runtime)
- *   NETKIT_TARGET_MCU_RISC  — RISC-V MCU firmware (NMSIS-NN int8 production)
+ *   NETKIT_TARGET_MCU_RISC  — non-Espressif RISC-V MCU (NMSIS-NN int8 production)
  *   NETKIT_TARGET_MPU_RISC  — RISC-V MPU (lean runtime; XNNPACK)
- *   NETKIT_TARGET_MCU_ESP   — Espressif MCU firmware (ESP-NN int8 production)
+ *   NETKIT_TARGET_MCU_ESP   — Espressif MCU firmware (ESP-NN int8; Xtensa and RISC-V
+ *                             ESP32* — C3/C6/P4 stay here, not MCU_RISC)
  *
  * Derived class / ISA macros (set automatically from the target above):
  *   NETKIT_CLASS_MCU / NETKIT_CLASS_MPU — firmware class (arena / lean API)

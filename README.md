@@ -9,11 +9,13 @@ netkit is a **multi-modal inference engine** (image / vision today; voice next) 
 | `cpu` | XNNPACK (default) |
 | `mcu_arm` | **CMSIS-NN** int8 (Arm Cortex-M) |
 | `mpu_arm` | XNNPACK |
-| `mcu_esp` | **ESP-NN** int8 (ESP32 / S3 / C3 / C6 / P4) |
-| `mcu_risc` | **NMSIS-NN** int8 (Nuclei / RISC-V MCU) |
+| `mcu_esp` | **ESP-NN** int8 — all Espressif MCUs (Xtensa S3 **and** RISC-V C3/C6/P4) |
+| `mcu_risc` | **NMSIS-NN** int8 — non-Espressif RISC-V MCU (Nuclei / RV32) |
 | `mpu_risc` | XNNPACK |
 
-The inference engine is **peer-benched end-to-end** across **Arm MCU** (NUCLEO-F446RE vs TFLM and microTVM), **Arm MPU** (Raspberry Pi Zero 2 W vs TF Lite), and **CPU** (Apple M4 vs TF Lite + ONNX Runtime) for latency and flash/RAM — see [docs/STATUS.md](docs/STATUS.md) and the gallery below. Espressif and RISC-V MCU paths are runtime-complete with host smoke; on-device peer benches TBD. **YOLOX** detection (MobileNetV4 + PAFPN) is supported and latency-competitive on host; **detector accuracy still needs more training / calibration**. Next: voice fixtures and broader quantization.
+Targets follow **vendor + NN backend**, not ISA alone — Espressif RISC-V chips stay on `mcu_esp` ([PLATFORMS.md](docs/PLATFORMS.md#target--cpu-isa)).
+
+The inference engine is **peer-benched end-to-end** across **Arm MCU** (NUCLEO-F446RE vs TFLM and microTVM), **Espressif MCU** (XIAO ESP32C3 vs TFLM / ESP-NN), **Arm MPU** (Raspberry Pi Zero 2 W vs TF Lite), and **CPU** (Apple M4 vs TF Lite + ONNX Runtime) for latency and flash/RAM — see [docs/STATUS.md](docs/STATUS.md) and the gallery below. RISC-V MCU (`mcu_risc`) is runtime-complete with host smoke; on-device peers TBD. **YOLOX** detection (MobileNetV4 + PAFPN) is supported and latency-competitive on host; **detector accuracy still needs more training / calibration**. Next: voice fixtures and broader quantization.
 
 Configure any device: [docs/PLATFORMS.md](docs/PLATFORMS.md). Models load from binary **`.nk`** files (architecture + weights). Convert from ONNX with `python -m netkit convert`, or embed a `.nk` in firmware with `python -m netkit aot`.
 
@@ -110,7 +112,7 @@ On-device firmware and peer setups live under [`boards/`](boards/). Full index (
 |----------|-------|--------|-----------------|
 | **STM32 NUCLEO-F446RE** | Arm MCU | `mcu_arm` + `CM4` | [boards/README.md § NUCLEO](boards/README.md#stm32-nucleo-f446re) — netkit + TFLM + microTVM trees |
 | **Raspberry Pi Zero 2 W** | Arm MPU | `mpu_arm` | [boards/pi-zero-2w/README.md](boards/pi-zero-2w/README.md) — cross-build, SSH, TF Lite A/B |
-| Espressif ESP32 / S3 / C3 / C6 / P4 | MCU | `mcu_esp` | No `boards/` tree yet — [PLATFORMS.md (Espressif)](docs/PLATFORMS.md#mcu_esp--espressif-mcu) |
+| **Seeed XIAO ESP32C3** (and other ESP32*) | Espressif MCU | `mcu_esp` | [xiao-esp32c3/](boards/xiao-esp32c3/README.md) (CNN/DS-CNN/MLP int8 + TFLM peers) · [STATUS](docs/STATUS.md#mcu-seeed-xiao-esp32c3) · [PLATFORMS.md (Espressif)](docs/PLATFORMS.md#mcu_esp--espressif-mcu) — RISC-V C3 still uses ESP-NN, not `mcu_risc` |
 | RISC-V MCU (Nuclei / RV32) | MCU | `mcu_risc` | No `boards/` tree yet — [PLATFORMS.md (RISC-V MCU)](docs/PLATFORMS.md#mcu_risc--risc-v-mcu) |
 
 ### NUCLEO-F446RE (quick links)
@@ -371,7 +373,7 @@ See [PHILOSOPHY.md](docs/PHILOSOPHY.md) for the full narrative — including [in
 
 - **Interpreter or compiled** — `NkOpsResolver` + `.nk` load for flexibility; AOT embed + packager optimizations + trimmed ops for production speed
 - **Phase 1 (today)** — Float32 and int8 complete on six targets; Arm MCU/MPU/CPU peer benches done; CMSIS-NN / ESP-NN / NMSIS-NN / XNNPACK; ONNX → `.nk` + AOT; YOLOX path in (accuracy training open)
-- **Phase 2 (planned)** — Broader quantization (float16, int16, int4), fusion, layout, NPU offload; Espressif / RISC-V on-device peers; YOLOX accuracy / voice fixtures
+- **Phase 2 (planned)** — Broader quantization (float16, int16, int4), fusion, layout, NPU offload; ESP32-S3/P4 + `mcu_risc` on-device peers; YOLOX accuracy / voice fixtures
 - **Open-source stack** — MIT engine; optional OSS backends only (no proprietary SDKs). Reference kernels always available
 - **Memory-conscious** — Arena bump allocator; target-specific defaults (MCU 64 KiB / MPU·CPU 64 MiB; overridable)
 - **Single-threaded** — Sequential forward pass
@@ -379,11 +381,11 @@ See [PHILOSOPHY.md](docs/PHILOSOPHY.md) for the full narrative — including [in
 
 ## Roadmap
 
-**Phase 1 (today):** **Float32** and **int8** inference are **complete** for image/vision — `.nk` load or AOT embed, MLP/CNN + fused blocks (ResNet, MobileNetV4, ConvNeXt), depthwise conv, asymmetric padding, and **YOLOX** detection (PAFPN). **Peer A/B of the inference engine is finished** on **Arm MCU** (NUCLEO-F446RE vs TFLM / microTVM), **Arm MPU** (Pi Zero 2 W vs TF Lite), and **CPU** (vs TF Lite / ORT). Production int8 kernels: **CMSIS-NN** (Arm MCU), **ESP-NN** (Espressif), **NMSIS-NN** (RISC-V MCU), **XNNPACK** (cpu / MPU). Espressif and RISC-V MCU on-device peer benches are next — [STATUS.md](docs/STATUS.md), [PLATFORMS.md](docs/PLATFORMS.md), [KERNELS.md](docs/KERNELS.md).
+**Phase 1 (today):** **Float32** and **int8** inference are **complete** for image/vision — `.nk` load or AOT embed, MLP/CNN + fused blocks (ResNet, MobileNetV4, ConvNeXt), depthwise conv, asymmetric padding, and **YOLOX** detection (PAFPN). **Peer A/B of the inference engine is finished** on **Arm MCU** (NUCLEO-F446RE vs TFLM / microTVM), **Espressif MCU** (XIAO ESP32C3 vs TFLM / ESP-NN), **Arm MPU** (Pi Zero 2 W vs TF Lite), and **CPU** (vs TF Lite / ORT). Production int8 kernels: **CMSIS-NN** (Arm MCU), **ESP-NN** (Espressif), **NMSIS-NN** (RISC-V MCU), **XNNPACK** (cpu / MPU). Next on-device peers: ESP32-S3 / P4 and `mcu_risc` — [STATUS.md](docs/STATUS.md), [PLATFORMS.md](docs/PLATFORMS.md), [KERNELS.md](docs/KERNELS.md).
 
 **Phase 2 (next):**
 
-- **Espressif / RISC-V MCU on-device peers** (vs TFLM / vendor NN stacks)
+- **ESP32-S3 / P4 and RISC-V MCU (`mcu_risc`) on-device peers** (vs TFLM / vendor NN stacks; XIAO C3 done)
 - **YOLOX / detection accuracy** — more training and calibration (runtime and latency path already land)
 - **Voice modality** fixtures
 - **Numeric types:** float16, int16, int4; broader **int8** model coverage ([DATATYPES.md](docs/DATATYPES.md))

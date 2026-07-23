@@ -1,6 +1,7 @@
 #include "netkit.h"
 #include "arena_util.hpp"
 #include "nk_loader.hpp"
+#include "netkit_util.hpp"
 #include "tensor_factory.hpp"
 #include "tensor_access.hpp"
 #include "ops.hpp"
@@ -1882,6 +1883,16 @@ nk_status_t nk_model_run_int8(const nk_model_t* model,
     }
 
     return NK_ERR_UNSUPPORTED_NETWORK;
+}
+
+uint32_t nk_argmax_i8(const int8_t* values, uint32_t count)
+{
+    return NetkitUtil::ArgMaxInt8(values, count);
+}
+
+uint32_t nk_argmax_f32(const float* values, uint32_t count)
+{
+    return NetkitUtil::ArgMaxF32(values, count);
 }
 
 nk_status_t nk_inspect_model(const char* nk_path, nk_arena_t* arena, nk_inspect_info_t* info)

@@ -1,0 +1,9 @@
+.pio/
+build/
+sdkconfig
+sdkconfig.old
+dependencies.lock
+managed_components/
+generated/.embed_stamp
+generated/mnist_mlp_int8_aot.cpp
+generated/mnist_mlp_int8_aot.hpp

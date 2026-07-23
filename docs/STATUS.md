@@ -18,10 +18,10 @@ Snapshot of what works today, what was measured, and what is still open. Compani
 | **mcu_arm** | Arm Cortex-M firmware | CMSIS-NN (int8 production); float32 via reference; XNNPACK **forbidden** | **Done** — float32 + int8 (NUCLEO-F446RE) |
 | **mpu_arm** | Arm Cortex-A / RTOS-class | XNNPACK (default); CMSIS-NN off | **Done** — float32 + int8 |
 | **mpu_risc** | RISC-V MPU | XNNPACK (default); CMSIS-NN **forbidden** | **Done** — float32 + int8; same XNNPACK LayerFast stack as other MPUs (XNNPACK has strong RISC-V MPU support) |
-| **mcu_risc** | RISC-V MCU | NMSIS-NN (int8 production); float32 via reference (NMSIS-NN has no float API); CMSIS + XNNPACK + ESP-NN **forbidden** | **Done** — float32 + int8 runtime (host smoke via `NETKIT_HOST_SMOKE=1`); on-device peer benches TBD |
-| **mcu_esp** | Espressif MCU (ESP32 / S3 / C3 / C6 / P4) | ESP-NN (int8 production); float32 via reference (ESP-NN has no float API); XNNPACK **forbidden** | **Done** — float32 + int8 runtime (host ANSI smoke); on-device peer benches TBD |
+| **mcu_risc** | Non-Espressif RISC-V MCU (Nuclei / RV32) | NMSIS-NN (int8 production); float32 via reference (NMSIS-NN has no float API); CMSIS + XNNPACK + ESP-NN **forbidden** | **Done** — float32 + int8 runtime (host smoke via `NETKIT_HOST_SMOKE=1`); on-device peer benches TBD |
+| **mcu_esp** | Espressif MCU — Xtensa **and** RISC-V (ESP32 / S3 / C3 / C6 / P4) | ESP-NN (int8 production); float32 via reference (ESP-NN has no float API); XNNPACK **forbidden** | **Done** — float32 + int8 runtime; [XIAO ESP32C3](../boards/xiao-esp32c3/README.md) peer A/B vs TFLM with matched `-O3` C++ (CNN ~255 ms / DS-CNN ~88 ms, 10/10); ImageNet skipped (flash) — [esp32c3_int8_ab_results.txt](../benchmark/mcu_ab_logs/xiao_esp32c3/esp32c3_int8_ab_results.txt) |
 
-**Policy reminder:** XNNPACK is default on cpu and all MPUs, never on MCU. CMSIS-NN is Arm MCU only (production int8). ESP-NN is Espressif MCU only (production int8). NMSIS-NN is RISC-V MCU only (production int8; same CMSIS-style Try* / plan wiring). **CMSIS-DSP is not used.** Float32 on MCU uses reference kernels (CMSIS float LayerFast exists on Arm; ESP-NN / NMSIS-NN float Try* always miss). `NETKIT_IM2COL` defaults to **0** on all targets (see [BUILD_TARGETS.md](BUILD_TARGETS.md#netkit_im2col-guidance)).
+**Policy reminder:** XNNPACK is default on cpu and all MPUs, never on MCU. CMSIS-NN is Arm MCU only (production int8). ESP-NN is **all Espressif MCUs** (production int8) — including RISC-V C3/C6/P4; do not use `mcu_risc` for ESP32*. NMSIS-NN is **non-Espressif** RISC-V MCU only (production int8; same CMSIS-style Try* / plan wiring). Targets follow vendor + backend, not ISA alone — [PLATFORMS.md — Target ≠ CPU ISA](PLATFORMS.md#target--cpu-isa). **CMSIS-DSP is not used.** Float32 on MCU uses reference kernels (CMSIS float LayerFast exists on Arm; ESP-NN / NMSIS-NN float Try* always miss). `NETKIT_IM2COL` defaults to **0** on all targets (see [BUILD_TARGETS.md](BUILD_TARGETS.md#netkit_im2col-guidance)).
 
 ## Host file mmap
 
@@ -162,6 +162,28 @@ Boards: `nucleo-f446re-cnn-int8` / `nucleo-f446re-tflm-cnn-int8` / `nucleo-f446r
 
 **Float32 MNIST CNN / DS-CNN on this MCU:** deferred — models exceed 512 KiB flash (~850–911 KiB); on-device digit peers remain int8.
 
+### MCU (Seeed XIAO ESP32C3)
+
+Canonical results: [`benchmark/mcu_ab_logs/xiao_esp32c3/esp32c3_int8_ab_results.txt`](../benchmark/mcu_ab_logs/xiao_esp32c3/esp32c3_int8_ab_results.txt) (index: [`mcu_ab_logs/README.md`](../benchmark/mcu_ab_logs/README.md)). Chip: ESP32-C3 @ 160 MHz (RISC-V) · `NETKIT_TARGET=mcu_esp` + `NETKIT_ARCH=ESP32C3` + **ESP-NN**. Methodology matches NUCLEO: 10×10, discard first invoke; order swaps `nk→tflm` / `tflm→nk`. Compiler match: netkit C++ uses the same speed flags as `esp-tflite-micro` (`-O3`, no RTTI/exceptions) — [`mcu_esp_tflm_match_compile.cmake`](../boards/xiao-esp32c3/mcu_esp_tflm_match_compile.cmake). **netkit** = quant lowered AOT. ImageNet / MobileNetV4 skipped (weights exceed the factory app partition).
+
+**Latency — ESP-NN** (all 10/10; no FPU — int8 path only for peer A/B):
+
+| Model | netkit | TFLM | Gain (TFLM÷netkit) |
+|-------|-------:|-----:|-------------------:|
+| MNIST CNN | 254.6 ms | **253.2 ms** | 0.99× |
+| MNIST DS-CNN | 88.5 ms | **87.5 ms** | 0.99× |
+
+**Flash / RAM** (PlatformIO size check):
+
+| Firmware | Flash | RAM (static) |
+|----------|------:|-------------:|
+| netkit CNN | 374 KiB | 72 KiB |
+| netkit DS-CNN | 364 KiB | 95 KiB |
+| TFLM CNN | 447 KiB | 108 KiB |
+| TFLM DS-CNN | 448 KiB | 108 KiB |
+
+Boards: [`xiao-esp32c3/`](../boards/xiao-esp32c3/README.md) index — `xiao-esp32c3-cnn-int8`, `xiao-esp32c3-cnn-dw-int8`, TFLM twins `xiao-esp32c3-tflm-*`. Runner: `boards/xiao-esp32c3/scripts/run_esp_int8_ab.sh`.
+
 ### YOLOX detection (host CPU, float32)
 
 `benchmark/host_ab_suite_results_yolox_f32.txt` — YOLOX MNv4-PAFPN 320 warm mean:
@@ -174,7 +196,7 @@ Boards: `nucleo-f446re-cnn-int8` / `nucleo-f446re-tflm-cnn-int8` / `nucleo-f446r
 ## What “done” means here
 
 - **Arm MCU / MPU:** production-oriented paths exist (CMSIS-NN on MCU; XNNPACK on MPU/cpu) with float32 and int8 models, benches, and docs.
-- **Espressif MCU (`mcu_esp`):** **fully functional** for float32 + int8 — ESP-NN for int8 (CMSIS-style), float32 on reference; host ANSI smoke via `NETKIT_HOST_SMOKE=1`. On-device peer benches vs ESP-IDF / TFLM TBD.
+- **Espressif MCU (`mcu_esp`):** **fully functional** for float32 + int8 — ESP-NN for int8 (CMSIS-style), float32 on reference; host ANSI smoke via `NETKIT_HOST_SMOKE=1`. On-device peers: **XIAO ESP32C3** CNN/DS-CNN int8 vs TFLM done (see above); ESP32-S3 / P4 next.
 - **RISC MPU (`mpu_risc`):** **fully functional** for float32 + int8 via the same **XNNPACK** LayerFast stack as Arm MPU / cpu. XNNPACK has strong RISC-V coverage on MPU-class cores; CMSIS-NN is correctly unavailable.
 - **RISC MCU (`mcu_risc`):** **fully functional** for float32 + int8 — **NMSIS-NN** for int8 (CMSIS-NN analogue for Nuclei / RISC-V MCU), float32 on reference; host smoke via `NETKIT_HOST_SMOKE=1`. On-device peer benches TBD. Override with `NETKIT_NMSIS_NN=0` for generic-only.
 
@@ -182,7 +204,7 @@ Boards: `nucleo-f446re-cnn-int8` / `nucleo-f446re-tflm-cnn-int8` / `nucleo-f446r
 
 - **YOLOX detection accuracy** — runtime and host latency path land; more training / calibration needed for mAP
 - **Deeper float AOT specialization** (optional) — fused/specialized codegen beyond calling shared `Kernels` / composite `::forward` APIs; not required for correctness
-- Espressif on-device peer benches (ESP32-S3 / C6 vs TFLM / ESP-IDF NN)
+- Espressif on-device peer benches on ESP32-S3 / P4 (XIAO C3 CNN/DS-CNN done)
 - RISC-V MCU on-device peer benches (Nuclei N300 / RV32* vs TFLM / NMSIS-NN)
 - Broader int8 model coverage beyond MNIST + ImageNet MNv4 fixtures
 - float16 / int16 / int4 (Phase 2)

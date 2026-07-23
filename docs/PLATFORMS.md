@@ -13,12 +13,28 @@ no runtime “switch to CMSIS/ESP/NMSIS” API. See [API_PARITY.md](API_PARITY.m
 | [`cpu`](#cpu-desktop--ci) | Desktop / CI | XNNPACK (default) | 64 MiB heap |
 | [`mcu_arm`](#mcu_arm--arm-cortex-m) | Arm Cortex-M firmware | CMSIS-NN int8 | 64 KiB static |
 | [`mpu_arm`](#mpu_arm--arm-mpu) | Arm MPU / RTOS | XNNPACK | 64 MiB static |
-| [`mcu_risc`](#mcu_risc--risc-v-mcu) | RISC-V MCU | NMSIS-NN int8 | 64 KiB static |
+| [`mcu_risc`](#mcu_risc--risc-v-mcu) | Non-Espressif RISC-V MCU (Nuclei / RV32) | NMSIS-NN int8 | 64 KiB static |
 | [`mpu_risc`](#mpu_risc--risc-v-mpu) | RISC-V MPU | XNNPACK | 64 MiB static |
-| [`mcu_esp`](#mcu_esp--espressif-mcu) | ESP32 family MCU | ESP-NN int8 | 64 KiB static |
+| [`mcu_esp`](#mcu_esp--espressif-mcu) | Espressif MCU (Xtensa **and** RISC-V) | ESP-NN int8 | 64 KiB static |
 
 Fetch once as needed: `make cmsis-init` · `make esp-nn-init` · `make nmsis-init` ·
 `make xnnpack-init`. Licenses: [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md).
+
+### Target ≠ CPU ISA
+
+`NETKIT_TARGET` selects the **vendor runtime + NN backend**, not the instruction-set
+alone. Several Espressif chips are RISC-V (C3 / C6 / P4) but still use **`mcu_esp`**
+because they all run **ESP-NN** (and ESP-IDF). Do **not** pick `mcu_risc` for those.
+
+| Silicon | Example chips | Correct target | Backend |
+|---------|---------------|----------------|---------|
+| Espressif (Xtensa) | ESP32, ESP32-S3 | `mcu_esp` + `NETKIT_ARCH=ESP32` / `ESP32S3` | ESP-NN |
+| Espressif (RISC-V) | ESP32-C3, C6, P4 | `mcu_esp` + `NETKIT_ARCH=ESP32C3` / `ESP32C6` / `ESP32P4` | ESP-NN |
+| Non-Espressif RISC-V MCU | Nuclei N300, generic RV32 | `mcu_risc` + `NETKIT_ARCH=N300` / `RV32IMAC` / … | NMSIS-NN |
+
+Multiple Espressif boards (C3, S3, P4, …) share **`mcu_esp`**; each board tree sets its
+own `NETKIT_ARCH` (and IDF/PlatformIO board id). Same pattern as several NUCLEO
+firmwares under one `mcu_arm` + `CM4`.
 
 ---
 
@@ -91,7 +107,7 @@ make NETKIT_TARGET=mcu_arm NETKIT_ARCH=CM4 lib
 
 **CMake:** `-DNETKIT_TARGET=mcu_arm -DNETKIT_ARCH=CM4 -DNETKIT_CMSIS_NN=ON`
 
-**On-device:** NUCLEO-F446RE boards — setup index [boards/README.md](../boards/README.md#stm32-nucleo-f446re) (int8 peers vs TFLM / microTVM). Stage int8 inputs in SRAM before timed inference.
+**On-device:** NUCLEO-F446RE boards — setup index [boards/README.md](../boards/README.md#stm32-nucleo-f446re) (int8 peers vs TFLM / microTVM). Espressif: [XIAO ESP32C3](../boards/README.md#seeed-studio-xiao-esp32c3) (int8 peers vs TFLM / ESP-NN). Stage int8 inputs in SRAM before timed inference.
 
 **Override:** `NETKIT_CMSIS_NN=0` → reference QuantOps / float reference only.
 
@@ -121,6 +137,10 @@ make NETKIT_TARGET=mpu_arm NETKIT_HEAP_ARENA=1 lib
 ---
 
 ## `mcu_risc` — RISC-V MCU
+
+**Scope:** Nuclei and other **non-Espressif** RISC-V MCUs (NMSIS-NN). Espressif
+RISC-V parts (ESP32-C3 / C6 / P4) use [`mcu_esp`](#mcu_esp--espressif-mcu) instead —
+see [Target ≠ CPU ISA](#target--cpu-isa).
 
 | Knob | Value |
 |------|-------|
@@ -171,6 +191,11 @@ XNNPACK covers RISC-V MPU-class cores the same way as Arm MPU / cpu. No board RE
 
 ## `mcu_esp` — Espressif MCU
 
+**All Espressif MCUs use this one target** — including RISC-V silicon (C3 / C6 / P4)
+and Xtensa (ESP32 / S3). They share **ESP-NN**; distinguish chips with
+`NETKIT_ARCH` and a per-board firmware tree. Do **not** use `mcu_risc` / NMSIS-NN
+for ESP32* parts — see [Target ≠ CPU ISA](#target--cpu-isa).
+
 | Knob | Value |
 |------|-------|
 | `NETKIT_TARGET` | `mcu_esp` |
@@ -184,11 +209,16 @@ make esp-nn-init
 make NETKIT_TARGET=mcu_esp NETKIT_ARCH=ESP32C6 NETKIT_HOST_SMOKE=1 lib embedded-smoke
 # Device / IDF build (omit HOST_SMOKE; set chip ARCH):
 make NETKIT_TARGET=mcu_esp NETKIT_ARCH=ESP32S3 lib
+# Seeed XIAO ESP32C3 board firmware (PlatformIO ESP-IDF):
+make -C boards/xiao-esp32c3-cnn-int8
+PORT=/dev/cu.usbmodem* ./boards/xiao-esp32c3/scripts/run_esp_int8_ab.sh
 ```
 
 **CMake:** `-DNETKIT_TARGET=mcu_esp -DNETKIT_ARCH=ESP32S3 -DNETKIT_ESP_NN=ON`
 
-**Maturity:** float32 + int8 runtime and host ANSI smoke are **done**. On-device peer benches vs ESP-IDF / TFLM TBD — [STATUS.md](STATUS.md). Same C `nk_*` load/run as Arm MCU.
+**Boards:** [boards/xiao-esp32c3/](../boards/xiao-esp32c3/README.md) — MLP / CNN / DS-CNN int8 (netkit + TFLM) on Seeed XIAO ESP32C3 (RISC-V silicon, **ESP-NN** profile).
+
+**Maturity:** float32 + int8 runtime and host ANSI smoke are **done**. On-device peer A/B vs TFLM (CNN / DS-CNN int8) **done** — [STATUS.md](STATUS.md#mcu-seeed-xiao-esp32c3). Same C `nk_*` load/run as Arm MCU. Note: C3 has **no FPU** (soft-float); production peers are int8.
 
 **Override:** `NETKIT_ESP_NN=0` → reference only.
 

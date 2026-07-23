@@ -44,6 +44,7 @@ See [BUILD_TARGETS.md](BUILD_TARGETS.md). Same macros apply to the C API — [c-
 | `netkit_config.h` | Compile-time target and arena macros (C and C++) |
 | `arena.hpp` | Bump-pointer arena allocator |
 | `arena_util.hpp` | `ArenaUtil::Init`, `Scoped`, model capacity helpers |
+| `netkit_util.hpp` | `NetkitUtil::ArgMaxInt8` / `ArgMaxF32`, `CopyInt8` / `CopyF32` (C mirrors: `nk_argmax_i8` / `nk_argmax_f32`) |
 | `tensor.hpp` | `Tensor`, `DataType`, `kMaxTensorRank` |
 | `tensor_factory.hpp` | Tensor creation, fill, print |
 | `tensor_access.hpp` | Typed data accessors + NHWC indexing |

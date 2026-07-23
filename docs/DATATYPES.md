@@ -23,7 +23,7 @@ Int8 inference is available end-to-end (int8 in → int8 out) for MNIST **CNN** 
 | Path | Backend |
 |------|---------|
 | Arm MCU | CMSIS-NN (NUCLEO-F446RE boards) |
-| Espressif MCU | ESP-NN (`mcu_esp` + `NETKIT_ARCH=ESP32*`) |
+| Espressif MCU | ESP-NN (`mcu_esp` + `NETKIT_ARCH=ESP32*`; XIAO ESP32C3 peers) |
 | cpu / MPU (incl. RISC MPU) | XNNPACK qs8 when enabled; else QuantOps integer reference |
 | RISC MCU | NMSIS-NN (`mcu_risc` + `NETKIT_ARCH=N300|RV32*…`) |
 
@@ -35,8 +35,9 @@ Int8 inference is available end-to-end (int8 in → int8 out) for MNIST **CNN** 
 | Device I/O | **int8 in → int8 out** (no float quant / dequant on MCU or in C++) |
 | CNN export | `make export-mnist-cnn-int8` |
 | MLP export | `make export-mnist-mlp-int8` |
-| MCU firmware (CNN) | [boards/nucleo-f446re-cnn-int8](../boards/nucleo-f446re-cnn-int8/README.md) — **10/10** @ **95.3 ms** CMSIS / **336 ms** reference (`NETKIT_EMBED=1`; vs TFLM / microTVM in [STATUS.md](STATUS.md)) |
-| MCU firmware (MLP) | [boards/nucleo-f446re-mlp-int8](../boards/nucleo-f446re-mlp-int8/README.md) — **10/10** @ ~3.4 ms (CMSIS) / ~15 ms (reference) |
+| MCU firmware (CNN, Arm) | [boards/nucleo-f446re-cnn-int8](../boards/nucleo-f446re-cnn-int8/README.md) — **10/10** @ **95.3 ms** CMSIS / **336 ms** reference (`NETKIT_EMBED=1`; vs TFLM / microTVM in [STATUS.md](STATUS.md)) |
+| MCU firmware (CNN, Espressif) | [boards/xiao-esp32c3-cnn-int8](../boards/xiao-esp32c3-cnn-int8/README.md) — **10/10** @ **254.6 ms** ESP-NN (vs TFLM **253.2 ms**; [STATUS.md](STATUS.md#mcu-seeed-xiao-esp32c3)) |
+| MCU firmware (MLP) | [boards/nucleo-f446re-mlp-int8](../boards/nucleo-f446re-mlp-int8/README.md) — **10/10** @ ~3.4 ms (CMSIS) / ~15 ms (reference); XIAO: [xiao-esp32c3-mlp-int8](../boards/xiao-esp32c3-mlp-int8/README.md) |
 
 **On-device / host C++ rule:** int8 inference stays integer end-to-end on MCU, MPU, and CPU. There is **no C++ float→int8 quantization or dequantization** — float→int8 happens only in Python at `.nk` / test-vector export time; scale metadata lives in the model; kernels apply TFLite-style multiply-by-quantized-multiplier. Interpreting outputs (dequantized confidence, float probabilities) is done **offline in Python** (e.g. `benchmark/tools/parse_mcu_cnn_int8_log.py`), never in firmware or `libnetkit`.
 

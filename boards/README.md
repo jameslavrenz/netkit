@@ -1,15 +1,21 @@
 # Board firmware and peer setups
 
 Hardware bring-up trees for **on-device** netkit builds and peer A/B benches.
-Software targets without a board tree yet (Espressif, RISC-V MCU) use the library
-API + [docs/PLATFORMS.md](../docs/PLATFORMS.md) and host smoke
+Software targets without a board tree yet use the library API +
+[docs/PLATFORMS.md](../docs/PLATFORMS.md) and host smoke
 (`make test-embedded-smoke-matrix`).
+
+**Espressif note:** C3 / C6 / P4 are RISC-V silicon but always use **`mcu_esp` +
+ESP-NN** (same as S3). `mcu_risc` is only for non-Espressif RISC-V + NMSIS-NN.
+Several Espressif boards can coexist — each `boards/…` tree pins its own
+`NETKIT_ARCH`. Details: [PLATFORMS.md — Target ≠ CPU ISA](../docs/PLATFORMS.md#target--cpu-isa).
 
 | Hardware | Class | netkit target | Status |
 |----------|-------|---------------|--------|
 | [STM32 NUCLEO-F446RE](#stm32-nucleo-f446re) | Arm MCU | `mcu_arm` + `NETKIT_ARCH=CM4` | Peer-benched (CMSIS-NN / reference vs TFLM / microTVM) |
+| [Seeed XIAO ESP32C3](#seeed-studio-xiao-esp32c3) | Espressif MCU (RISC-V → still `mcu_esp`) | `mcu_esp` + `NETKIT_ARCH=ESP32C3` | Peer-benched int8 CNN / DS-CNN vs TFLM (ESP-NN); MLP firmware too |
 | [Raspberry Pi Zero 2 W](#raspberry-pi-zero-2-w) | Arm MPU | `mpu_arm` | Peer-benched (XNNPACK ON/OFF vs TF Lite) |
-| Espressif ESP32 family | MCU | `mcu_esp` | Runtime + host smoke; **no `boards/` tree yet** — [PLATFORMS.md](../docs/PLATFORMS.md#mcu_esp--espressif-mcu) |
+| Other Espressif ESP32* (S3 / P4 / …) | MCU | `mcu_esp` + matching `NETKIT_ARCH` | Runtime + host smoke; add a `boards/…` tree per board — [PLATFORMS.md](../docs/PLATFORMS.md#mcu_esp--espressif-mcu) |
 | RISC-V MCU (Nuclei / RV32) | MCU | `mcu_risc` | Runtime + host smoke; **no `boards/` tree yet** — [PLATFORMS.md](../docs/PLATFORMS.md#mcu_risc--risc-v-mcu) |
 
 Canonical latency tables: [../README.md](../README.md#peer-benchmarks-mcu--mpu--cpu), [docs/STATUS.md](../docs/STATUS.md).
@@ -58,6 +64,33 @@ Float32 MNIST CNN / DS-CNN exceed 512 KiB flash on this part — on-device digit
 
 ---
 
+## Seeed Studio XIAO ESP32C3
+
+**Chip:** ESP32-C3 · RISC-V · 160 MHz · ~400 KB SRAM / 4 MB flash  
+**netkit:** `NETKIT_TARGET=mcu_esp` + `NETKIT_ARCH=ESP32C3` + **ESP-NN** (not NMSIS-NN)  
+**Toolchain / flash:** PlatformIO ESP-IDF · onboard USB Serial/JTAG  
+**Index:** [`xiao-esp32c3/README.md`](xiao-esp32c3/README.md)
+
+| Board directory | Runtime | Model |
+|-----------------|---------|-------|
+| [`xiao-esp32c3-mlp-int8/`](xiao-esp32c3-mlp-int8/README.md) | netkit | MNIST MLP int8 |
+| [`xiao-esp32c3-cnn-int8/`](xiao-esp32c3-cnn-int8/README.md) | netkit | MNIST CNN int8 |
+| [`xiao-esp32c3-cnn-dw-int8/`](xiao-esp32c3-cnn-dw-int8/README.md) | netkit | MNIST DS-CNN int8 |
+| [`xiao-esp32c3-tflm-cnn-int8/`](xiao-esp32c3-tflm-cnn-int8/README.md) | TFLM | MNIST CNN int8 |
+| [`xiao-esp32c3-tflm-cnn-dw-int8/`](xiao-esp32c3-tflm-cnn-dw-int8/README.md) | TFLM | MNIST DS-CNN int8 |
+
+Methodology: **10×10**, discard first invoke; order swaps `nk→tflm` / `tflm→nk`.  
+Results: [`benchmark/mcu_ab_logs/xiao_esp32c3/esp32c3_int8_ab_results.txt`](../benchmark/mcu_ab_logs/xiao_esp32c3/esp32c3_int8_ab_results.txt).  
+Runner: [`xiao-esp32c3/scripts/run_esp_int8_ab.sh`](xiao-esp32c3/scripts/run_esp_int8_ab.sh).
+
+**ImageNet / MobileNetV4:** not on this part (weights exceed 1 MiB app partition).
+
+```bash
+PORT=/dev/cu.usbmodem* ./boards/xiao-esp32c3/scripts/run_esp_int8_ab.sh
+```
+
+---
+
 ## Raspberry Pi Zero 2 W
 
 **ISA:** `linux/aarch64` (Cortex-A53) · **netkit:** `NETKIT_TARGET=mpu_arm` + XNNPACK  
@@ -74,7 +107,7 @@ Covers prerequisites, `tools/build_mpu_pi_aarch64.sh`, SSH helpers, and float32 
 
 | Target | How to build / integrate |
 |--------|---------------------------|
-| `mcu_esp` (ESP-NN) | [PLATFORMS.md — Espressif](../docs/PLATFORMS.md#mcu_esp--espressif-mcu) · `make esp-nn-init` · link `libnetkit.a` into your ESP-IDF app |
+| `mcu_esp` (ESP-NN) | Board: [xiao-esp32c3-mlp-int8](xiao-esp32c3-mlp-int8/README.md) · [PLATFORMS.md — Espressif](../docs/PLATFORMS.md#mcu_esp--espressif-mcu) · `make esp-nn-init` |
 | `mcu_risc` (NMSIS-NN) | [PLATFORMS.md — RISC-V MCU](../docs/PLATFORMS.md#mcu_risc--risc-v-mcu) · `make nmsis-init` · link into your RISC-V BSP |
 | `mpu_risc` | [PLATFORMS.md — RISC-V MPU](../docs/PLATFORMS.md#mpu_risc--risc-v-mpu) · XNNPACK like other MPUs |
 | Host `cpu` | [Getting Started](../docs/GETTING_STARTED.md) |

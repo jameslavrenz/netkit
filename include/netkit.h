@@ -658,6 +658,14 @@ nk_status_t nk_model_run_int8(const nk_model_t* model,
                               int8_t* output,
                               uint32_t output_capacity,
                               uint32_t* output_count);
+
+/**
+ * Argmax helpers (mirror C++ `NetkitUtil::ArgMaxInt8` / `ArgMaxF32`).
+ * Returns 0 when `values` is null or `count` is 0.
+ */
+uint32_t nk_argmax_i8(const int8_t* values, uint32_t count);
+uint32_t nk_argmax_f32(const float* values, uint32_t count);
+
 nk_status_t nk_inspect_model(const char* nk_path, nk_arena_t* arena, nk_inspect_info_t* info);
 /** Inspect embedded .nk bytes (same arena peaks as CLI inspect --full for buffer load). */
 nk_status_t nk_inspect_model_memory(const uint8_t* data,
