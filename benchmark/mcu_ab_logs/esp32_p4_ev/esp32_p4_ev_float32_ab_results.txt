@@ -1,0 +1,22 @@
+ESP32-P4-Function-EV float32 peer A/B (reference; ESP-NN has no float API)
+Target: ESP32-P4 @ 360 MHz (FPU; companion ESP32-C6 on kit is WiFi-only)
+Methodology: 10 runs × 10 images, discard first invoke each run; order swaps nk↔tflm
+Note: netkit uses lowered AOT (interpreter embed float path is incorrect on this MCU;
+      same .nk is 10/10 on host embed). Both sides reference float; matched -O3 C++.
+      Open issue: docs/KNOWN_ISSUES.md KI-001.
+
+Per-capture BENCHMARK_SUMMARY:
+  f32_nk_then_tflm_netkit_cnn.log: BENCHMARK_SUMMARY runtime=netkit model=cnn_f32 backend=reference-f32 mean_us=97501 runs=10
+  f32_nk_then_tflm_netkit_cnn_dw.log: BENCHMARK_SUMMARY runtime=netkit model=cnn_dw_f32 backend=reference-f32 mean_us=74761 runs=10
+  f32_nk_then_tflm_tflm_cnn.log: BENCHMARK_SUMMARY runtime=tflm model=cnn_f32 backend=reference-f32 mean_us=166422 runs=10
+  f32_nk_then_tflm_tflm_cnn_dw.log: BENCHMARK_SUMMARY runtime=tflm model=cnn_dw_f32 backend=reference-f32 mean_us=102554 runs=10
+  f32_tflm_then_nk_netkit_cnn.log: BENCHMARK_SUMMARY runtime=netkit model=cnn_f32 backend=reference-f32 mean_us=97498 runs=10
+  f32_tflm_then_nk_netkit_cnn_dw.log: BENCHMARK_SUMMARY runtime=netkit model=cnn_dw_f32 backend=reference-f32 mean_us=74760 runs=10
+  f32_tflm_then_nk_tflm_cnn.log: BENCHMARK_SUMMARY runtime=tflm model=cnn_f32 backend=reference-f32 mean_us=166420 runs=10
+  f32_tflm_then_nk_tflm_cnn_dw.log: BENCHMARK_SUMMARY runtime=tflm model=cnn_dw_f32 backend=reference-f32 mean_us=102564 runs=10
+
+Means (avg of order swaps):
+  netkit cnn_dw_f32  74.8 ms  ([74761, 74760])
+  netkit cnn_f32     97.5 ms  ([97501, 97498])
+  tflm   cnn_dw_f32 102.6 ms  ([102554, 102564])
+  tflm   cnn_f32    166.4 ms  ([166422, 166420])

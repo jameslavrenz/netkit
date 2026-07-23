@@ -33,7 +33,7 @@ When adding a feature, update this file and both [c-api.md](c-api.md) and [cpp-a
 | Argmax | `nk_argmax_i8` / `nk_argmax_f32` | `NetkitUtil::ArgMaxInt8` / `ArgMaxF32` | Classify logits |
 | Query quantized | `nk_*_is_quantized` | `IsQuantized()` | |
 | Omit final Softmax | `nk_*_set_omit_final_softmax` | MLP: `SetOmitFinalSoftmax`; quant CNN: `Runtime::omit_final_softmax` | Classification logits (no-op on float CNN) |
-| Kernel workspace | `nk_cnn_kernel_workspace_bytes` | `KernelWorkspaceBytes()` | CMSIS-NN / ESP-NN / NMSIS-NN scratch |
+| Kernel workspace | `nk_cnn_kernel_workspace_bytes` | `KernelWorkspaceBytes()` | CMSIS-NN / NMSIS-NN scratch (0 for ESP-NN / XNNPACK) |
 | Inspect / size | `nk_inspect_model` | `./netkit inspect --full` | CPU |
 
 Full symbol map below; complete references: [c-api.md](c-api.md), [cpp-api.md](cpp-api.md).
@@ -233,7 +233,7 @@ High-level combined handle (C convenience):
 | Load embedded `.nk` blob + run | `nk_model_load_memory`, `nk_model_run` / `nk_model_run_int8` |
 | Inspect embedded blob arena peaks | `nk_inspect_model_memory` |
 | Query loaded model | `nk_model_get_arch`, `nk_model_input_count`, `nk_model_output_count`, `nk_model_kind`, `nk_model_is_quantized` |
-| Skip final Softmax (logits) | `nk_model_set_omit_final_softmax` / `nk_model_omit_final_softmax` (MLP + quantized CNN) |
+| Skip final Softmax (logits) | `nk_model_set_omit_final_softmax` / `nk_model_omit_final_softmax` (MLP + quantized CNN; **no-op on float CNN**) |
 
 ### Weight storage (always flash/blob-backed)
 
@@ -281,6 +281,7 @@ Lowered AOT keeps coef arrays in flash `.rodata` (no SRAM copy at load). NUCLEO 
 | `NkLoader::ReadTestSuite`, `ModelPayloadBytes`, `NetworkKindName`, `FreeParsedModelExtras` | Loader utilities; C uses `nk_parse_architecture` / `nk_model_*` instead |
 | `Conv2D::forward(..., fuse_activation)` / `DepthwiseConv2D::forward(..., fuse_activation)` | C forwards use default activation fusion |
 | `TensorFactory::PrintLabeled(..., max_values)` | C `nk_tensor_print_labeled` omits truncation control |
+| `NetkitUtil::CopyInt8` / `CopyF32` | C++ helpers for MCU benches; C callers use `memcpy` (ArgMax has C mirrors) |
 
 ### Regression tests
 

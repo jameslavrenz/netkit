@@ -1,0 +1,10 @@
+.pio/
+sdkconfig
+sdkconfig.old
+sdkconfig.esp32_p4_ev
+sdkconfig.esp32_p4_ev_ref
+dependencies.lock
+managed_components/
+generated/.embed_stamp
+generated/*_aot.cpp
+generated/*_aot.hpp

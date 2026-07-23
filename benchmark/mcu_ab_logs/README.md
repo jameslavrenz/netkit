@@ -1,5 +1,9 @@
 # MCU A/B logs
 
+On-device peer captures for NUCLEO-F446RE, XIAO ESP32C3, and ESP32-P4-Function-EV.
+Published gallery: [README.md — Peer benchmarks](../../README.md#peer-benchmarks-mcu--mpu--cpu) ·
+[STATUS.md](../../docs/STATUS.md) · open issues: [KNOWN_ISSUES.md](../../docs/KNOWN_ISSUES.md).
+
 ## NUCLEO-F446RE
 
 Canonical **netkit vs TFLM vs microTVM** int8 results for MNIST CNN and DS-CNN.
@@ -58,3 +62,41 @@ Quant lowered AOT should be faster than embed but measured a hair slower on this
 | MNIST DS-CNN | **85.8 ms** | 392.3 ms | 4.57× |
 
 Board: ESP32-C3 @ 160 MHz. Matched C++ flags with `esp-tflite-micro` (`-O3`). No FPU (soft-float); peer A/B is int8 only.
+
+## Seeed ESP32-P4-Function-EV
+
+Canonical **netkit vs TFLM** for MNIST CNN and DS-CNN @ 360 MHz (FPU). Three published rounds:
+
+| Artifact | Contents |
+|----------|----------|
+| **[esp32_p4_ev/esp32_p4_ev_all_ab_results.txt](esp32_p4_ev/esp32_p4_ev_all_ab_results.txt)** | All three rounds side-by-side |
+| **[esp32_p4_ev/esp32_p4_ev_int8_ab_results.txt](esp32_p4_ev/esp32_p4_ev_int8_ab_results.txt)** | int8 · ESP-NN ON (portable) |
+| **[esp32_p4_ev/esp32_p4_ev_int8_ref_ab_results.txt](esp32_p4_ev/esp32_p4_ev_int8_ref_ab_results.txt)** | int8 · ESP-NN OFF (reference) |
+| **[esp32_p4_ev/esp32_p4_ev_float32_ab_results.txt](esp32_p4_ev/esp32_p4_ev_float32_ab_results.txt)** | float32 · reference (no ESP-NN float API) |
+| `esp32_p4_ev/*.log` / `ref_*.log` / `f32_*.log` | UART captures (order swaps) |
+
+Methodology: 10×10; discard first invoke; `nk→tflm` / `tflm→nk` swaps. ImageNet skipped (flash).
+Published summary: [docs/STATUS.md — MCU (Espressif ESP32-P4-Function-EV)](../../docs/STATUS.md#mcu-espressif-esp32-p4-function-ev).
+
+**Round 1 — int8 ESP-NN ON** (portable; P4 PIE asm off under PIO gas; all 10/10)
+
+| Model | netkit | TFLM | Gain (TFLM÷netkit) |
+|-------|-------:|-----:|-------------------:|
+| MNIST CNN | **78.9 ms** | 79.3 ms | 1.00× |
+| MNIST DS-CNN | **40.3 ms** | 41.1 ms | 1.02× |
+
+**Round 2 — int8 ESP-NN OFF** (reference; all 10/10)
+
+| Model | netkit | TFLM | Gain (TFLM÷netkit) |
+|-------|-------:|-----:|-------------------:|
+| MNIST CNN | **77.1 ms** | 485.4 ms | 6.29× |
+| MNIST DS-CNN | **39.6 ms** | 172.0 ms | 4.34× |
+
+**Round 3 — float32 reference** (ESP-NN N/A; netkit lowered AOT; all 10/10)
+
+| Model | netkit | TFLM | Gain (TFLM÷netkit) |
+|-------|-------:|-----:|-------------------:|
+| MNIST CNN | **97.5 ms** | 166.4 ms | 1.71× |
+| MNIST DS-CNN | **74.8 ms** | 102.6 ms | 1.37× |
+
+Board: ESP32-P4 @ 360 MHz. Matched `-O3` C++. Companion ESP32-C6 on kit is WiFi-only.

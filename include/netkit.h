@@ -563,12 +563,13 @@ nk_status_t nk_cnn_init_activation_buffers(nk_cnn_t* cnn,
                                            uint32_t in_w,
                                            uint32_t in_c);
 bool nk_cnn_has_activation_buffers(const nk_cnn_t* cnn);
-/** CMSIS-NN / ESP-NN / NMSIS-NN shared kernel scratch sized at `InitActivationBuffers` (0 if none). */
+/** CMSIS-NN / NMSIS-NN shared kernel scratch sized at `InitActivationBuffers` (0 for ESP-NN / XNNPACK / none). */
 size_t nk_cnn_kernel_workspace_bytes(const nk_cnn_t* cnn);
 /**
  * Classification knob: skip final Dense Softmax and write logits.
- * Quantized CNN: updates `CmsisQuantPlan::Runtime::omit_final_softmax` (used under
- * CMSIS-NN / ESP-NN / NMSIS-NN). Float CNN: no-op (no float `SetOmitFinalSoftmax`).
+ * Quantized CNN: updates shared `CmsisQuantPlan::Runtime::omit_final_softmax`
+ * (CMSIS-NN / ESP-NN / NMSIS-NN / XNNPACK qs8 / QuantOps reference).
+ * Float CNN: no-op (no float `SetOmitFinalSoftmax` — see KNOWN_ISSUES KI-005).
  * MLP: use `nk_mlp_set_omit_final_softmax` / `nk_model_set_omit_final_softmax`.
  */
 void nk_cnn_set_omit_final_softmax(nk_cnn_t* cnn, bool omit);
@@ -639,7 +640,7 @@ uint32_t nk_model_input_count(const nk_model_t* model);
 uint32_t nk_model_output_count(const nk_model_t* model);
 nk_network_kind_t nk_model_kind(const nk_model_t* model);
 bool nk_model_is_quantized(const nk_model_t* model);
-/** See `nk_mlp_set_omit_final_softmax`. For quantized CNN, updates the quant plan. */
+/** MLP + quantized CNN (shared quant plan). Float CNN: no-op (KNOWN_ISSUES KI-005). */
 void nk_model_set_omit_final_softmax(nk_model_t* model, bool omit);
 bool nk_model_omit_final_softmax(const nk_model_t* model);
 nk_status_t nk_model_run(const nk_model_t* model,

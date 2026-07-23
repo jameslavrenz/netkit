@@ -1,0 +1,101 @@
+-15,0,-9,-10,-8,1,-4,-2,0
+ESP-ROM:esp32p4-eco2-20240710
+Build:Jul 10 2024
+rst:0x1 (POWERON),boot:0x30f (SPI_FAST_FLASH_BOOT)
+SPI mode:DIO, clock div:1
+load:0x4ff33ce0,len:0x15f0
+load:0x4ff2abd0,len:0xd84
+load:0x4ff2cbd0,len:0x3310
+entry 0x4ff2abd0
+I (25) boot: ESP-IDF 5.4.2 2nd stage bootloader
+I (26) boot: compile time Jul 23 2026 13:32:21
+I (26) boot: Multicore bootloader
+I (27) boot: chip revision: v1.3
+I (29) boot: efuse block revision: v0.3
+I (32) boot.esp32p4: SPI Speed      : 80MHz
+I (36) boot.esp32p4: SPI Mode       : DIO
+I (40) boot.esp32p4: SPI Flash Size : 32MB
+I (44) boot: Enabling RNG early entropy source...
+I (48) boot: Partition Table:
+I (51) boot: ## Label            Usage          Type ST Offset   Length
+I (57) boot:  0 nvs              WiFi data        01 02 00009000 00006000
+I (63) boot:  1 phy_init         RF data          01 01 0000f000 00001000
+I (70) boot:  2 factory          factory app      00 00 00010000 00100000
+I (78) boot: End of partition table
+I (80) esp_image: segment 0: paddr=00010020 vaddr=40030020 size=46838h (288824) map
+I (136) esp_image: segment 1: paddr=00056860 vaddr=30100000 size=00044h (    68) load
+I (138) esp_image: segment 2: paddr=000568ac vaddr=4ff00000 size=0976ch ( 38764) load
+I (149) esp_image: segment 3: paddr=00060020 vaddr=40000020 size=25cf0h (154864) map
+I (176) esp_image: segment 4: paddr=00085d18 vaddr=4ff0976c size=03fc0h ( 16320) load
+I (181) esp_image: segment 5: paddr=00089ce0 vaddr=4ff0d780 size=01bf4h (  7156) load
+I (187) boot: Loaded app from partition at offset 0x10000
+I (187) boot: Disabling RNG early entropy source...
+I (202) cpu_start: Multicore app
+I (211) cpu_start: Pro cpu start user code
+I (212) cpu_start: cpu freq: 360000000 Hz
+I (212) app_init: Application information:
+I (212) app_init: Project name:     mnist_cnn_int8_esp32_p4_ev
+I (217) app_init: App version:      v0.1-136-ga81ee1902-dirty
+I (223) app_init: Compile time:     Jul 23 2026 13:32:03
+I (228) app_init: ELF file SHA256:  28e7a1922...
+I (232) app_init: ESP-IDF:          5.4.2
+I (236) efuse_init: Min chip rev:     v0.1
+I (240) efuse_init: Max chip rev:     v1.99 
+I (244) efuse_init: Chip rev:         v1.3
+I (247) heap_init: Initializing. RAM available for dynamic allocation:
+I (254) heap_init: At 4FF20EB0 len 0001A110 (104 KiB): RAM
+I (259) heap_init: At 4FF3AFC0 len 00004BF0 (18 KiB): RAM
+I (264) heap_init: At 4FF40000 len 00060000 (384 KiB): RAM
+I (269) heap_init: At 50108080 len 00007F80 (31 KiB): RTCRAM
+I (274) heap_init: At 30100044 len 00001FBC (7 KiB): TCM
+I (280) spi_flash: detected chip: generic
+W (283) spi_flash: Detected flash size > 16 MB, but access beyond 16 MB is not supported for this flash model yet.
+I (293) spi_flash: flash io: dio
+I (297) main_task: Started on CPU0
+I (300) main_task: Calling app_main()
+
+netkit ESP32-P4-Function-EV MNIST CNN int8 benchmark
+  backend:     netkit reference (MCU ESP32P4, interpreter embed)
+  weights:     flash (embedded .nk blob)
+  dtype:       int8 end-to-end
+  classify:    argmax(logits) — final Softmax omitted
+  images:      10 per run
+  runs:        10 (discard first invoke each run)
+  arena bytes: 65536
+  sysclk:      360000000 Hz
+  model:       loaded
+  probe:       label=0 pred=0 pred_i8=25 out_i8=25,-15,0,-9,-10,-8,1,-4,-2,0
+
+  per-digit results (final run):
+    image  label  pred  pred_i8  ok
+        0      0     0       25  yes
+DIGIT_SUMMARY runtime=netkit model=cnn_int8 image=0 label=0 pred=0 pred_i8=25 ok=1 out_i8=25,-15,0,-9,-10,-8,1,-4,-2,0
+        1      1     1       16  yes
+DIGIT_SUMMARY runtime=netkit model=cnn_int8 image=1 label=1 pred=1 pred_i8=16 ok=1 out_i8=-3,16,-5,-19,1,-7,-6,-5,-3,-11
+        2      2     2       31  yes
+DIGIT_SUMMARY runtime=netkit model=cnn_int8 image=2 label=2 pred=2 pred_i8=31 ok=1 out_i8=2,-1,31,-17,-13,-25,2,-11,3,-6
+        3      3     3       14  yes
+DIGIT_SUMMARY runtime=netkit model=cnn_int8 image=3 label=3 pred=3 pred_i8=14 ok=1 out_i8=-16,-11,-5,14,-24,10,-17,-9,3,-5
+        4      4     4       21  yes
+DIGIT_SUMMARY runtime=netkit model=cnn_int8 image=4 label=4 pred=4 pred_i8=21 ok=1 out_i8=-6,-13,-6,-13,21,-10,-19,-9,-4,6
+        5      5     5       20  yes
+DIGIT_SUMMARY runtime=netkit model=cnn_int8 image=5 label=5 pred=5 pred_i8=20 ok=1 out_i8=-5,-20,-13,-23,-22,20,8,-7,5,-4
+        6      6     6       32  yes
+DIGIT_SUMMARY runtime=netkit model=cnn_int8 image=6 label=6 pred=6 pred_i8=32 ok=1 out_i8=6,-22,-9,-16,-13,5,32,-10,-2,-15
+        7      7     7       18  yes
+DIGIT_SUMMARY runtime=netkit model=cnn_int8 image=7 label=7 pred=7 pred_i8=18 ok=1 out_i8=-6,-9,-6,-3,-2,-10,-23,18,0,1
+        8      8     8       33  yes
+DIGIT_SUMMARY runtime=netkit model=cnn_int8 image=8 label=8 pred=8 pred_i8=33 ok=1 out_i8=-11,-20,3,-19,-8,-5,-19,-20,33,1
+        9      9     9       21  yes
+DIGIT_SUMMARY runtime=netkit model=cnn_int8 image=9 label=9 pred=9 pred_i8=21 ok=1 out_i8=-12,-14,-5,-14,0,-3,-27,-13,6,21
+  accuracy:    10/10 on final run
+
+netkit MNIST cnn int8 benchmark summary (reference-int8)
+  method:      10 runs x 10 images, discard first invoke each run
+  per-run avg: avg of images 1-9 (us)
+
+  mean:   77148 us (77.148 ms)
+BENCHMARK_SUMMARY runtime=netkit model=cnn_int8 backend=reference-int8 mean_us=77148 runs=10
+
+DONE
+I (8317) main_task: Returned from app_main()

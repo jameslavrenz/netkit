@@ -1,0 +1,6 @@
+.pio/
+generated/
+sdkconfig
+sdkconfig.esp32_p4_ev
+dependencies.lock
+managed_components/

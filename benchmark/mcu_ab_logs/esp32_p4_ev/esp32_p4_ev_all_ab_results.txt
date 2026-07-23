@@ -1,0 +1,35 @@
+ESP32-P4-Function-EV — all peer A/B rounds (netkit vs TFLM)
+Target: ESP32-P4 @ 360 MHz (RISC-V, FPU) · companion ESP32-C6 on kit is WiFi-only
+Methodology (every round): 10 runs × 10 images, discard first invoke; order swaps nk↔tflm
+Compiler: matched -O3 C++ (mcu_esp_tflm_match_compile.cmake). ImageNet skipped (flash).
+
+================================================================================
+ROUND 1 — int8, ESP-NN ON (portable / generic_opt; P4 PIE asm disabled under PIO gas)
+Canonical: esp32_p4_ev_int8_ab_results.txt · logs: {nk,tflm}_then_*.log
+================================================================================
+  netkit cnn_int8      78.9 ms   TFLM  79.3 ms   gain 1.00×
+  netkit cnn_dw_int8   40.3 ms   TFLM  41.1 ms   gain 1.02×
+  Accuracy: all 10/10. netkit = interpreter embed.
+
+================================================================================
+ROUND 2 — int8, ESP-NN OFF (reference / QuantOps)
+Canonical: esp32_p4_ev_int8_ref_ab_results.txt · logs: ref_*.log
+================================================================================
+  netkit cnn_int8      77.1 ms   TFLM 485.4 ms   gain 6.29×
+  netkit cnn_dw_int8   39.6 ms   TFLM 172.0 ms   gain 4.34×
+  Accuracy: all 10/10. netkit = interpreter embed + QuantOps.
+
+================================================================================
+ROUND 3 — float32 (reference only; ESP-NN has no float API)
+Canonical: esp32_p4_ev_float32_ab_results.txt · logs: f32_*.log
+================================================================================
+  netkit cnn_f32       97.5 ms   TFLM 166.4 ms   gain 1.71×
+  netkit cnn_dw_f32    74.8 ms   TFLM 102.6 ms   gain 1.37×
+  Accuracy: all 10/10. netkit = lowered AOT (embed float mispredicts on this MCU).
+  Open issue: docs/KNOWN_ISSUES.md KI-001
+    (float32 interpreter embed mispredicts on-device).
+
+Runners:
+  boards/esp32-p4-function-ev/scripts/run_esp_int8_ab.sh
+  boards/esp32-p4-function-ev/scripts/run_esp_int8_ref_ab.sh
+  boards/esp32-p4-function-ev/scripts/run_esp_float32_ab.sh

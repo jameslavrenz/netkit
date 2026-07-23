@@ -14,11 +14,12 @@ Several Espressif boards can coexist — each `boards/…` tree pins its own
 |----------|-------|---------------|--------|
 | [STM32 NUCLEO-F446RE](#stm32-nucleo-f446re) | Arm MCU | `mcu_arm` + `NETKIT_ARCH=CM4` | Peer-benched (CMSIS-NN / reference vs TFLM / microTVM) |
 | [Seeed XIAO ESP32C3](#seeed-studio-xiao-esp32c3) | Espressif MCU (RISC-V → still `mcu_esp`) | `mcu_esp` + `NETKIT_ARCH=ESP32C3` | Peer-benched int8 CNN / DS-CNN vs TFLM (ESP-NN); MLP firmware too |
+| [ESP32-P4-Function-EV](#esp32-p4-function-ev) | Espressif MCU (RISC-V → still `mcu_esp`) | `mcu_esp` + `NETKIT_ARCH=ESP32P4` | Peer-benched int8 + float32 CNN / DS-CNN vs TFLM |
 | [Raspberry Pi Zero 2 W](#raspberry-pi-zero-2-w) | Arm MPU | `mpu_arm` | Peer-benched (XNNPACK ON/OFF vs TF Lite) |
-| Other Espressif ESP32* (S3 / P4 / …) | MCU | `mcu_esp` + matching `NETKIT_ARCH` | Runtime + host smoke; add a `boards/…` tree per board — [PLATFORMS.md](../docs/PLATFORMS.md#mcu_esp--espressif-mcu) |
+| Other Espressif ESP32* (S3 / …) | MCU | `mcu_esp` + matching `NETKIT_ARCH` | Runtime + host smoke; add a `boards/…` tree per board — [PLATFORMS.md](../docs/PLATFORMS.md#mcu_esp--espressif-mcu) |
 | RISC-V MCU (Nuclei / RV32) | MCU | `mcu_risc` | Runtime + host smoke; **no `boards/` tree yet** — [PLATFORMS.md](../docs/PLATFORMS.md#mcu_risc--risc-v-mcu) |
 
-Canonical latency tables: [../README.md](../README.md#peer-benchmarks-mcu--mpu--cpu), [docs/STATUS.md](../docs/STATUS.md).
+Canonical latency tables: [../README.md](../README.md#peer-benchmarks-mcu--mpu--cpu), [docs/STATUS.md](../docs/STATUS.md). Open issues: [docs/KNOWN_ISSUES.md](../docs/KNOWN_ISSUES.md).
 
 ---
 
@@ -83,11 +84,64 @@ Methodology: **10×10**, discard first invoke; order swaps `nk→tflm` / `tflm�
 Results: [ESP-NN](../benchmark/mcu_ab_logs/xiao_esp32c3/esp32c3_int8_ab_results.txt) · [reference](../benchmark/mcu_ab_logs/xiao_esp32c3/esp32c3_int8_ref_ab_results.txt) · [STATUS](../docs/STATUS.md#mcu-seeed-xiao-esp32c3).  
 Runners: [`run_esp_int8_ab.sh`](xiao-esp32c3/scripts/run_esp_int8_ab.sh) / [`run_esp_int8_ref_ab.sh`](xiao-esp32c3/scripts/run_esp_int8_ref_ab.sh).
 
-**ImageNet / MobileNetV4:** not on this part (weights exceed 1 MiB app partition).
+**ImageNet / MobileNetV4:** not on this part (weights exceed 1 MiB app partition). Int8 only (no FPU — float32 peer firmwares not used).
 
 ```bash
 PORT=/dev/cu.usbmodem* ./boards/xiao-esp32c3/scripts/run_esp_int8_ab.sh
 PORT=/dev/cu.usbmodem* ./boards/xiao-esp32c3/scripts/run_esp_int8_ref_ab.sh
+```
+
+---
+
+## ESP32-P4-Function-EV
+
+**Chip:** ESP32-P4 · RISC-V · **360 MHz** · **FPU** · companion ESP32-C6 on kit is WiFi-only  
+**netkit:** `NETKIT_TARGET=mcu_esp` + `NETKIT_ARCH=ESP32P4` + **ESP-NN** (portable; PIE asm off under PIO gas)  
+**Toolchain / flash:** PlatformIO ESP-IDF · USB-UART (CH34x)  
+**Index:** [`esp32-p4-function-ev/README.md`](esp32-p4-function-ev/README.md)
+
+| Board directory | Runtime | Model |
+|-----------------|---------|-------|
+| [`esp32-p4-function-ev-cnn-int8/`](esp32-p4-function-ev-cnn-int8/README.md) | netkit | MNIST CNN int8 (embed) |
+| [`esp32-p4-function-ev-cnn-dw-int8/`](esp32-p4-function-ev-cnn-dw-int8/README.md) | netkit | MNIST DS-CNN int8 (embed) |
+| [`esp32-p4-function-ev-tflm-cnn-int8/`](esp32-p4-function-ev-tflm-cnn-int8/README.md) | TFLM | MNIST CNN int8 |
+| [`esp32-p4-function-ev-tflm-cnn-dw-int8/`](esp32-p4-function-ev-tflm-cnn-dw-int8/README.md) | TFLM | MNIST DS-CNN int8 |
+| [`esp32-p4-function-ev-cnn/`](esp32-p4-function-ev-cnn/README.md) | netkit | MNIST CNN float32 (**lowered AOT**) |
+| [`esp32-p4-function-ev-cnn-dw/`](esp32-p4-function-ev-cnn-dw/README.md) | netkit | MNIST DS-CNN float32 (**lowered AOT**) |
+| [`esp32-p4-function-ev-tflm-cnn/`](esp32-p4-function-ev-tflm-cnn/README.md) | TFLM | MNIST CNN float32 |
+| [`esp32-p4-function-ev-tflm-cnn-dw/`](esp32-p4-function-ev-tflm-cnn-dw/README.md) | TFLM | MNIST DS-CNN float32 |
+
+Methodology: **10×10**, discard first invoke; order swaps. Results:
+[all rounds](../benchmark/mcu_ab_logs/esp32_p4_ev/esp32_p4_ev_all_ab_results.txt) ·
+[STATUS](../docs/STATUS.md#mcu-espressif-esp32-p4-function-ev) ·
+float embed bug: [KNOWN_ISSUES KI-001](../docs/KNOWN_ISSUES.md#ki-001--esp32-p4-float32-interpreter-embed-mispredicts-on-device).
+
+```bash
+PORT=/dev/cu.usbmodem* ./boards/esp32-p4-function-ev/scripts/run_esp_int8_ab.sh
+PORT=/dev/cu.usbmodem* ./boards/esp32-p4-function-ev/scripts/run_esp_int8_ref_ab.sh
+PORT=/dev/cu.usbmodem* ./boards/esp32-p4-function-ev/scripts/run_esp_float32_ab.sh
+```
+
+---
+
+## Seeed Studio XIAO ESP32C6
+
+**netkit:** `NETKIT_TARGET=mcu_esp` + `NETKIT_ARCH=ESP32C6` + **ESP-NN** (not NMSIS-NN)  
+**Toolchain / flash:** PlatformIO ESP-IDF · onboard USB Serial/JTAG  
+**Index:** [`xiao-esp32c6/README.md`](xiao-esp32c6/README.md)
+
+Same int8 peer suite as C3 (interpreter embed, matched `-O3` C++ flags, ESP-NN on/off):
+
+| Board directory | Runtime | Model |
+|-----------------|---------|-------|
+| [`xiao-esp32c6-cnn-int8/`](xiao-esp32c6-cnn-int8/README.md) | netkit | MNIST CNN int8 |
+| [`xiao-esp32c6-cnn-dw-int8/`](xiao-esp32c6-cnn-dw-int8/README.md) | netkit | MNIST DS-CNN int8 |
+| [`xiao-esp32c6-tflm-cnn-int8/`](xiao-esp32c6-tflm-cnn-int8/README.md) | TFLM | MNIST CNN int8 |
+| [`xiao-esp32c6-tflm-cnn-dw-int8/`](xiao-esp32c6-tflm-cnn-dw-int8/README.md) | TFLM | MNIST DS-CNN int8 |
+
+```bash
+PORT=/dev/cu.usbmodem* ./boards/xiao-esp32c6/scripts/run_esp_int8_ab.sh
+PORT=/dev/cu.usbmodem* ./boards/xiao-esp32c6/scripts/run_esp_int8_ref_ab.sh
 ```
 
 ---

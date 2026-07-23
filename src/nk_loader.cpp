@@ -22,6 +22,25 @@ namespace NkLoader
     {
         char g_error[256]{};
 
+        // ParsedModel is ~27 KiB. Never reset via `out = ParsedModel()` — that
+        // materializes a full temporary on the stack (broke ESP32-P4 / forced
+        // oversized FreeRTOS main stacks on C3). Clear in place instead.
+        void ClearParsedModel(ParsedModel& out)
+        {
+            std::memset(&out, 0, sizeof(out));
+        }
+
+#if defined(NETKIT_CLASS_MCU)
+        // MCU embed load: keep the catalog in BSS, not on the task stack.
+        ParsedModel g_parsed_model_scratch{};
+
+        ParsedModel& ResetParsedModelScratch()
+        {
+            ClearParsedModel(g_parsed_model_scratch);
+            return g_parsed_model_scratch;
+        }
+#endif
+
         void FreeWeightChannelScaleBlob(ParsedModel& parsed)
         {
 #if !defined(NETKIT_CLASS_MCU)
@@ -2609,7 +2628,7 @@ namespace NkLoader
 
     LoadResult ParseFile(const char* nk_path, ParsedModel& out)
     {
-        out = ParsedModel();
+        ClearParsedModel(out);
 
         std::FILE* file = std::fopen(nk_path, "rb");
         if (!file)
@@ -2712,7 +2731,7 @@ namespace NkLoader
 
     LoadResult ParseBuffer(const uint8_t* data, std::size_t size, ParsedModel& out)
     {
-        out = ParsedModel();
+        ClearParsedModel(out);
 
         if (!data || size == 0)
             return Fail(LoadStatus::ReadFailed, "Empty .nk buffer");
@@ -2777,7 +2796,11 @@ namespace NkLoader
     {
         out = TestSuite{};
 
+#if defined(NETKIT_CLASS_MCU)
+        ParsedModel& parsed = ResetParsedModelScratch();
+#else
         ParsedModel parsed{};
+#endif
         const LoadResult parse_result = ParseFile(nk_path, parsed);
         if (parse_result.status != LoadStatus::Ok)
             return parse_result;
@@ -3087,7 +3110,11 @@ namespace NkLoader
     {
         network = nullptr;
 
+#if defined(NETKIT_CLASS_MCU)
+        ParsedModel& parsed = ResetParsedModelScratch();
+#else
         ParsedModel parsed{};
+#endif
         LoadResult parse_result = ParseBuffer(data, size, parsed);
         if (parse_result.status != LoadStatus::Ok)
             return parse_result;
@@ -3152,7 +3179,11 @@ namespace NkLoader
     {
         network = nullptr;
 
+#if defined(NETKIT_CLASS_MCU)
+        ParsedModel& parsed = ResetParsedModelScratch();
+#else
         ParsedModel parsed{};
+#endif
         LoadResult parse_result = ParseBuffer(data, size, parsed);
         if (parse_result.status != LoadStatus::Ok)
             return parse_result;
@@ -3203,7 +3234,11 @@ namespace NkLoader
         mlp = nullptr;
         cnn = nullptr;
 
+#if defined(NETKIT_CLASS_MCU)
+        ParsedModel& parsed = ResetParsedModelScratch();
+#else
         ParsedModel parsed{};
+#endif
         LoadResult parse_result = ParseFile(nk_path, parsed);
         if (parse_result.status != LoadStatus::Ok)
             return parse_result;

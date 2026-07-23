@@ -217,9 +217,9 @@ PORT=/dev/cu.usbmodem* ./boards/xiao-esp32c3/scripts/run_esp_int8_ref_ab.sh  # E
 
 **CMake:** `-DNETKIT_TARGET=mcu_esp -DNETKIT_ARCH=ESP32S3 -DNETKIT_ESP_NN=ON`
 
-**Boards:** [boards/xiao-esp32c3/](../boards/xiao-esp32c3/README.md) — MLP / CNN / DS-CNN int8 (netkit + TFLM) on Seeed XIAO ESP32C3 (RISC-V silicon, **ESP-NN** profile). Peer firmwares use **interpreter embed** (`NETKIT_LOWERED=0`); arena default **64 KiB**, DS-CNN **96 KiB**.
+**Boards:** [boards/xiao-esp32c3/](../boards/xiao-esp32c3/README.md) (C3 peers **done**) · [boards/xiao-esp32c6/](../boards/xiao-esp32c6/README.md) (C6 peer suite; same embed / matched `-O3` methodology). Peer firmwares use **interpreter embed** (`NETKIT_LOWERED=0`); arena default **64 KiB**, DS-CNN **96 KiB**.
 
-**Maturity:** float32 + int8 runtime and host ANSI smoke are **done**. On-device peer A/B vs TFLM (CNN / DS-CNN int8, ESP-NN on + off) **done** — [STATUS.md](STATUS.md#mcu-seeed-xiao-esp32c3). Same C `nk_*` load/run as Arm MCU. Note: C3 has **no FPU** (soft-float); production peers are int8.
+**Maturity:** float32 + int8 runtime and host ANSI smoke are **done**. On-device peer A/B vs TFLM (CNN / DS-CNN int8, ESP-NN on + off) **done on C3** — [STATUS.md](STATUS.md#mcu-seeed-xiao-esp32c3); C6 uses the same runners. Same C `nk_*` load/run as Arm MCU. Note: C3/C6 have **no FPU** (soft-float); production peers are **int8 only**.
 
 **Override:** `NETKIT_ESP_NN=0` / `PIO_ENV=xiao_esp32c3_ref` → QuantOps reference only.
 

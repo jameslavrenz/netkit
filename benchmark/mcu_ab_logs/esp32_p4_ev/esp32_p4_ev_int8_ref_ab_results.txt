@@ -1,0 +1,19 @@
+ESP32-P4-Function-EV int8 peer A/B (ESP-NN OFF / reference)
+Target: ESP32-P4 @ 360 MHz (companion ESP32-C6 on kit is WiFi-only)
+Methodology: 10 runs × 10 images, discard first invoke each run; order swaps nk↔tflm
+
+Per-capture BENCHMARK_SUMMARY:
+  ref_nk_then_tflm_netkit_cnn.log: BENCHMARK_SUMMARY runtime=netkit model=cnn_int8 backend=reference-int8 mean_us=77148 runs=10
+  ref_nk_then_tflm_netkit_cnn_dw.log: BENCHMARK_SUMMARY runtime=netkit model=cnn_dw_int8 backend=reference-int8 mean_us=39635 runs=10
+  ref_nk_then_tflm_tflm_cnn.log: BENCHMARK_SUMMARY runtime=tflm model=cnn_int8 backend=reference mean_us=485401 runs=10
+  ref_nk_then_tflm_tflm_cnn_dw.log: BENCHMARK_SUMMARY runtime=tflm model=cnn_dw_int8 backend=reference mean_us=172040 runs=10
+  ref_tflm_then_nk_netkit_cnn.log: BENCHMARK_SUMMARY runtime=netkit model=cnn_int8 backend=reference-int8 mean_us=77148 runs=10
+  ref_tflm_then_nk_netkit_cnn_dw.log: BENCHMARK_SUMMARY runtime=netkit model=cnn_dw_int8 backend=reference-int8 mean_us=39635 runs=10
+  ref_tflm_then_nk_tflm_cnn.log: BENCHMARK_SUMMARY runtime=tflm model=cnn_int8 backend=reference mean_us=485400 runs=10
+  ref_tflm_then_nk_tflm_cnn_dw.log: BENCHMARK_SUMMARY runtime=tflm model=cnn_dw_int8 backend=reference mean_us=171987 runs=10
+
+Means (avg of order swaps):
+  netkit cnn_dw_int8  39.6 ms  ([39635, 39635])
+  netkit cnn_int8     77.1 ms  ([77148, 77148])
+  tflm   cnn_dw_int8  172.0 ms  ([172040, 171987])
+  tflm   cnn_int8     485.4 ms  ([485401, 485400])

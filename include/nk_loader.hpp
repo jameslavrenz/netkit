@@ -44,6 +44,9 @@ namespace NkLoader
         std::size_t weight_floats = 0;
     };
 
+    // Fixed worst-case catalog (~27 KiB): layer/tensor/quant descriptors, not
+    // weights. On MCU, Load*FromBuffer uses a file-scope static scratch so this
+    // is not placed on the FreeRTOS task stack (see nk_loader.cpp).
     struct ParsedModel
     {
         NkFormat::FileHeader header{};

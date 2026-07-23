@@ -244,9 +244,14 @@ Use these numbers for **relative regression tracking on the same machine** and f
 
 See also [docs/KERNELS.md](../docs/KERNELS.md) for reference conv optimizations (HWIO repack, input-stationary, im2col) that apply when CMSIS-NN is unavailable or falls back.
 
-## On-device MCU benchmarks (NUCLEO-F446RE)
+## On-device MCU benchmarks
 
-Host `compare.sh` numbers are not a direct preview of Cortex-M ratios. **Canonical three-way A/B** (netkit vs TFLM vs microTVM): [`mcu_ab_logs/mcu_int8_ab_results.txt`](mcu_ab_logs/mcu_int8_ab_results.txt) and [docs/STATUS.md](../docs/STATUS.md#mcu-nucleo-f446re).
+Host `compare.sh` numbers are not a direct preview of MCU ratios. Index of all UART logs:
+[`mcu_ab_logs/README.md`](mcu_ab_logs/README.md). Gallery: [root README](../README.md#peer-benchmarks-mcu--mpu--cpu).
+
+### NUCLEO-F446RE
+
+**Canonical three-way A/B** (netkit vs TFLM vs microTVM): [`mcu_ab_logs/mcu_int8_ab_results.txt`](mcu_ab_logs/mcu_int8_ab_results.txt) and [docs/STATUS.md](../docs/STATUS.md#mcu-nucleo-f446re).
 
 ### Int8 latency (10×10, discard first invoke; all 10/10)
 
@@ -300,6 +305,17 @@ python3 benchmark/tools/parse_mcu_cnn_int8_log.py --compare netkit_uart.log tflm
 ```
 
 Uses TFLite int8 softmax output spec (`scale=1/256`, `zero_point=-128`).
+
+### Seeed XIAO ESP32C3 / ESP32-P4-Function-EV
+
+Espressif MCU peers vs TFLM (matched `-O3` C++). Canonical logs and tables:
+
+| Board | Results |
+|-------|---------|
+| XIAO ESP32C3 | [`mcu_ab_logs/xiao_esp32c3/`](mcu_ab_logs/xiao_esp32c3/) · [STATUS](../docs/STATUS.md#mcu-seeed-xiao-esp32c3) |
+| ESP32-P4-Function-EV | [`mcu_ab_logs/esp32_p4_ev/`](mcu_ab_logs/esp32_p4_ev/) (int8 ESP-NN / int8 ref / float32) · [STATUS](../docs/STATUS.md#mcu-espressif-esp32-p4-function-ev) |
+
+P4 float embed bug: [KNOWN_ISSUES KI-001](../docs/KNOWN_ISSUES.md#ki-001--esp32-p4-float32-interpreter-embed-mispredicts-on-device).
 
 ## Layout
 

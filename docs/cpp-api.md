@@ -44,7 +44,7 @@ See [BUILD_TARGETS.md](BUILD_TARGETS.md). Same macros apply to the C API — [c-
 | `netkit_config.h` | Compile-time target and arena macros (C and C++) |
 | `arena.hpp` | Bump-pointer arena allocator |
 | `arena_util.hpp` | `ArenaUtil::Init`, `Scoped`, model capacity helpers |
-| `netkit_util.hpp` | `NetkitUtil::ArgMaxInt8` / `ArgMaxF32`, `CopyInt8` / `CopyF32` (C mirrors: `nk_argmax_i8` / `nk_argmax_f32`) |
+| `netkit_util.hpp` | `NetkitUtil::ArgMaxInt8` / `ArgMaxF32` (C: `nk_argmax_i8` / `nk_argmax_f32`); `CopyInt8` / `CopyF32` (C++-only — use `memcpy` in C) |
 | `tensor.hpp` | `Tensor`, `DataType`, `kMaxTensorRank` |
 | `tensor_factory.hpp` | Tensor creation, fill, print |
 | `tensor_access.hpp` | Typed data accessors + NHWC indexing |
@@ -354,7 +354,7 @@ public:
     bool IsValid() const;
     bool IsQuantized() const;
     bool HasActivationBuffers() const;
-    std::size_t KernelWorkspaceBytes() const;  // CMSIS-NN / ESP-NN / NMSIS-NN shared scratch after InitActivationBuffers
+    std::size_t KernelWorkspaceBytes() const;  // CMSIS-NN / NMSIS-NN shared scratch after InitActivationBuffers (0 for ESP-NN / XNNPACK)
 
     bool InitActivationBuffers(Arena& arena, uint32_t in_h, uint32_t in_w, uint32_t in_c);  // LoadCNN
 
@@ -434,7 +434,7 @@ public:
 };
 ```
 
-Spatial tensors stay NHWC until flatten; dense head output is `[1, units]`. Returns null `data` on arena overflow. For quantized CNNs, omit final Softmax via the quant runtime (`SetQuantRuntime` / `Runtime::omit_final_softmax`); C exposes that as `nk_cnn_set_omit_final_softmax`.
+Spatial tensors stay NHWC until flatten; dense head output is `[1, units]`. Returns null `data` on arena overflow. For quantized CNNs, omit final Softmax via the quant runtime (`SetQuantRuntime` / `Runtime::omit_final_softmax`, honored under CMSIS / ESP / NMSIS / XNNPACK qs8 / QuantOps); C exposes that as `nk_cnn_set_omit_final_softmax`. **Float CNN has no omit API** — Softmax always runs (KNOWN_ISSUES KI-005); the C setter is a no-op on float.
 
 `NkLoader::LoadCNN` builds full pipelines from `.nk` files (including `models/mnist_cnn.nk`).
 
@@ -445,7 +445,7 @@ Layer dispatch uses `NkOpList<Ops...>::View()` for compile-time op tables — se
 1. **`Arena::init`** — bind caller-owned memory (size with `inspect --full` or `nk_inspect_model` when possible).
 2. **`CNNNetwork(num_layers, arena)`** — allocates the block array from the arena.
 3. **`Init*Layer(layer_idx, …)`** for each index **`0 … num_layers - 1` in forward order** — configure one block type per index. Primitive layers only need weight pointers; **composite blocks** also take `Arena&` plus **`spatial_h` / `spatial_w`** (the feature-map height/width **at that layer's input**) and may allocate fused scratch from the arena during this call.
-4. **`InitActivationBuffers(arena, in_h, in_w, in_c)`** — **after every layer is configured**. Uses the **network input** NHWC shape (same as the tensor passed to `forward`), not the last layer's output shape. Allocates ping-pong activation buffers and (on CMSIS-NN builds) the shared kernel workspace — see [ARENA.md](ARENA.md#kernel-workspace-cmsis-nn).
+4. **`InitActivationBuffers(arena, in_h, in_w, in_c)`** — **after every layer is configured**. Uses the **network input** NHWC shape (same as the tensor passed to `forward`), not the last layer's output shape. Allocates ping-pong activation buffers and (on CMSIS-NN / NMSIS-NN builds) the shared kernel workspace — see [ARENA.md](ARENA.md#kernel-workspace-cmsis-nn).
 5. **`forward(input, arena)`** — input must be rank-3 NHWC until a `Flatten` block; result is in **`GetOutput()`** (also returned by reference). Returns a tensor with null `data` on arena overflow.
 
 **Hybrid primitive pipeline** (conv → pool → batch norm → flatten → dense):

@@ -10,7 +10,7 @@ This guide takes you from clone to your first inference in a few minutes.
 
 **New here?** Read [PHILOSOPHY.md](PHILOSOPHY.md) for the big picture, then [STATUS.md](STATUS.md) for what is done on each target.
 
-**Related docs:** [Status](STATUS.md) · [CLI](CLI.md) · [Build targets](BUILD_TARGETS.md) · [Arena](ARENA.md) · [C API](c-api.md) · [C++ API](cpp-api.md) · [Testing](TESTING.md)
+**Related docs:** [Status](STATUS.md) · [Known issues](KNOWN_ISSUES.md) · [CLI](CLI.md) · [Build targets](BUILD_TARGETS.md) · [Arena](ARENA.md) · [C API](c-api.md) · [C++ API](cpp-api.md) · [API parity](API_PARITY.md) · [Testing](TESTING.md)
 
 ---
 

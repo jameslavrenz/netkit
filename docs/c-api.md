@@ -380,7 +380,7 @@ C++ equivalent: [cpp-api.md](cpp-api.md#manual-construction-call-order).
 | `nk_cnn_init_activation_buffers` | `CNNNetwork::InitActivationBuffers` |
 | `nk_cnn_has_activation_buffers` | `CNNNetwork::HasActivationBuffers` |
 | `nk_cnn_kernel_workspace_bytes` | `CNNNetwork::KernelWorkspaceBytes` |
-| `nk_cnn_set_omit_final_softmax` / `nk_cnn_omit_final_softmax` | quant `Runtime::omit_final_softmax` |
+| `nk_cnn_set_omit_final_softmax` / `nk_cnn_omit_final_softmax` | quant `Runtime::omit_final_softmax` (all int8 backends via shared plan); **float CNN: no-op** (getter stays false) |
 | `nk_cnn_forward` | `CNNNetwork::forward` |
 
 ```c
@@ -410,7 +410,7 @@ nk_status_t nk_cnn_init_batch_norm_layer(nk_cnn_t* cnn, uint32_t layer_idx,
 1. `nk_arena_init` — bind memory.
 2. `nk_cnn_create(&arena, num_layers, &cnn)` — allocate block table.
 3. `nk_cnn_init_*_layer(&cnn, …)` for each **`layer_idx` from `0` to `num_layers - 1` in forward order** — one init function per block type (see `nk_cnn_block_type_t`). Composite inits (`nk_cnn_init_convnextv2_block_layer`, `nk_cnn_init_mobilenetv4_uib_layer`, `nk_cnn_init_resnet_basic_block_layer`, `nk_cnn_init_yolox_decoupled_head_layer`, `nk_cnn_init_feature_tap_layer`, `nk_cnn_init_yolox_pafpn_layer`) also take `&arena` and **`spatial_h` / `spatial_w`** (feature-map size at that layer's input) where applicable; fused scratch is allocated during the init call.
-4. `nk_cnn_init_activation_buffers(&cnn, &arena, in_h, in_w, in_c)` — **after all layers**; `in_h`, `in_w`, `in_c` are the **network input** NHWC shape (same tensor you pass to forward). Allocates ping-pong buffers and CMSIS kernel workspace when applicable.
+4. `nk_cnn_init_activation_buffers(&cnn, &arena, in_h, in_w, in_c)` — **after all layers**; `in_h`, `in_w`, `in_c` are the **network input** NHWC shape (same tensor you pass to forward). Allocates ping-pong buffers and CMSIS-NN / NMSIS-NN kernel workspace when applicable (ESP-NN / XNNPACK: 0).
 5. `nk_cnn_forward(&cnn, &arena, &input, &output)` — `input` rank-3 NHWC until flatten; `output` is filled from the network result.
 
 **Primitive hybrid pipeline** (conv → pool → batch norm → flatten → dense):
@@ -578,7 +578,7 @@ Float32 and int8 are separate I/O paths — there is no runtime float↔int8 con
 | `nk_model_is_quantized` | `true` after loading an int8 `.nk` |
 | `nk_model_run` | float32 models only; returns `NK_ERR_INVALID_ARGUMENT` on int8 models |
 | `nk_model_run_int8` | int8 models only; prequantized `int8_t` in → `int8_t` out |
-| `nk_model_set_omit_final_softmax` | Skip final Dense Softmax and write logits (MLP + quantized CNN) |
+| `nk_model_set_omit_final_softmax` | Skip final Dense Softmax and write logits (MLP + quantized CNN; no-op on float CNN) |
 | `nk_argmax_i8` / `nk_argmax_f32` | Classify logits (mirror C++ `NetkitUtil::ArgMax*`) |
 
 Prequantize inputs in Python at export / fixture time. Then call `nk_model_run_int8` (or C++ `forward_quantized` / `nk_model_run_int8`). Host: XNNPACK qs8 when `NETKIT_XNNPACK=1`, else QuantOps reference. MCU: CMSIS-NN (`mcu_arm`), ESP-NN (`mcu_esp`), or NMSIS-NN (`mcu_risc`) — same C entry point on every target; backend is compile-time only ([PLATFORMS.md](PLATFORMS.md)).

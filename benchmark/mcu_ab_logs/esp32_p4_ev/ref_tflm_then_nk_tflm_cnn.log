@@ -1,0 +1,99 @@
+ESP-ROM:esp32p4-eco2-20240710
+Build:Jul 10 2024
+rst:0x1 (POWERON),boot:0x30f (SPI_FAST_FLASH_BOOT)
+SPI mode:DIO, clock div:1
+load:0x4ff33ce0,len:0x15f0
+load:0x4ff2abd0,len:0xd84
+load:0x4ff2cbd0,len:0x3310
+entry 0x4ff2abd0
+I (25) boot: ESP-IDF 5.4.2 2nd stage bootloader
+I (26) boot: compile time Jul 23 2026 13:36:27
+I (26) boot: Multicore bootloader
+I (27) boot: chip revision: v1.3
+I (29) boot: efuse block revision: v0.3
+I (32) boot.esp32p4: SPI Speed      : 80MHz
+I (36) boot.esp32p4: SPI Mode       : DIO
+I (40) boot.esp32p4: SPI Flash Size : 32MB
+I (44) boot: Enabling RNG early entropy source...
+I (48) boot: Partition Table:
+I (51) boot: ## Label            Usage          Type ST Offset   Length
+I (57) boot:  0 nvs              WiFi data        01 02 00009000 00006000
+I (63) boot:  1 phy_init         RF data          01 01 0000f000 00001000
+I (70) boot:  2 factory          factory app      00 00 00010000 00100000
+I (78) boot: End of partition table
+I (80) esp_image: segment 0: paddr=00010020 vaddr=40030020 size=48460h (296032) map
+I (138) esp_image: segment 1: paddr=00058488 vaddr=30100000 size=00044h (    68) load
+I (139) esp_image: segment 2: paddr=000584d4 vaddr=4ff00000 size=07b44h ( 31556) load
+I (149) esp_image: segment 3: paddr=00060020 vaddr=40000020 size=23d38h (146744) map
+I (175) esp_image: segment 4: paddr=00083d60 vaddr=4ff07b44 size=05be8h ( 23528) load
+I (181) esp_image: segment 5: paddr=00089950 vaddr=4ff0d780 size=01bf4h (  7156) load
+I (187) boot: Loaded app from partition at offset 0x10000
+I (187) boot: Disabling RNG early entropy source...
+I (200) cpu_start: Multicore app
+I (210) cpu_start: Pro cpu start user code
+I (210) cpu_start: cpu freq: 360000000 Hz
+I (210) app_init: Application information:
+I (210) app_init: Project name:     mnist_cnn_int8_tflm_esp32_p4_ev
+I (216) app_init: App version:      v0.1-136-ga81ee1902-dirty
+I (222) app_init: Compile time:     Jul 23 2026 13:36:09
+I (227) app_init: ELF file SHA256:  9c180c8c7...
+I (231) app_init: ESP-IDF:          5.4.2
+I (235) efuse_init: Min chip rev:     v0.1
+I (239) efuse_init: Max chip rev:     v1.99 
+I (243) efuse_init: Chip rev:         v1.3
+I (246) heap_init: Initializing. RAM available for dynamic allocation:
+I (253) heap_init: At 4FF28AB0 len 00012510 (73 KiB): RAM
+I (258) heap_init: At 4FF3AFC0 len 00004BF0 (18 KiB): RAM
+I (263) heap_init: At 4FF40000 len 00060000 (384 KiB): RAM
+I (268) heap_init: At 50108080 len 00007F80 (31 KiB): RTCRAM
+I (273) heap_init: At 30100044 len 00001FBC (7 KiB): TCM
+I (279) spi_flash: detected chip: generic
+W (282) spi_flash: Detected flash size > 16 MB, but access beyond 16 MB is not supported for this flash model yet.
+I (292) spi_flash: flash io: dio
+I (296) main_task: Started on CPU0
+I (299) main_task: Calling app_main()
+
+TFLM ESP32-P4-Function-EV MNIST CNN int8 benchmark
+  backend:     tflm reference int8 (MCU ESP32P4)
+  model bytes: 235384
+  input type:  int8 (prequantized test vectors)
+  output type: int8
+  images:      10 per run
+  runs:        10 (discard first invoke each run)
+  arena bytes: 98304
+  sysclk:      360000000 Hz
+  probe:       label=0 pred=0 pred_i8=127 out_i8=127,-128,-128,-128,-128,-128,-128,-128,-128,-128
+
+  per-digit results (final run):
+    image  label  pred  pred_i8  ok
+        0      0     0      127  yes
+DIGIT_SUMMARY runtime=tflm model=cnn_int8 image=0 label=0 pred=0 pred_i8=127 ok=1 out_i8=127,-128,-128,-128,-128,-128,-128,-128,-128,-128
+        1      1     1      127  yes
+DIGIT_SUMMARY runtime=tflm model=cnn_int8 image=1 label=1 pred=1 pred_i8=127 ok=1 out_i8=-128,127,-128,-128,-128,-128,-128,-128,-128,-128
+        2      2     2      127  yes
+DIGIT_SUMMARY runtime=tflm model=cnn_int8 image=2 label=2 pred=2 pred_i8=127 ok=1 out_i8=-128,-128,127,-128,-128,-128,-128,-128,-128,-128
+        3      3     3      123  yes
+DIGIT_SUMMARY runtime=tflm model=cnn_int8 image=3 label=3 pred=3 pred_i8=123 ok=1 out_i8=-128,-128,-128,123,-128,-123,-128,-128,-128,-128
+        4      4     4      127  yes
+DIGIT_SUMMARY runtime=tflm model=cnn_int8 image=4 label=4 pred=4 pred_i8=127 ok=1 out_i8=-128,-128,-128,-128,127,-128,-128,-128,-128,-128
+        5      5     5      127  yes
+DIGIT_SUMMARY runtime=tflm model=cnn_int8 image=5 label=5 pred=5 pred_i8=127 ok=1 out_i8=-128,-128,-128,-128,-128,127,-128,-128,-128,-128
+        6      6     6      127  yes
+DIGIT_SUMMARY runtime=tflm model=cnn_int8 image=6 label=6 pred=6 pred_i8=127 ok=1 out_i8=-128,-128,-128,-128,-128,-128,127,-128,-128,-128
+        7      7     7      127  yes
+DIGIT_SUMMARY runtime=tflm model=cnn_int8 image=7 label=7 pred=7 pred_i8=127 ok=1 out_i8=-128,-128,-128,-128,-128,-128,-128,127,-128,-128
+        8      8     8      127  yes
+DIGIT_SUMMARY runtime=tflm model=cnn_int8 image=8 label=8 pred=8 pred_i8=127 ok=1 out_i8=-128,-128,-128,-128,-128,-128,-128,-128,127,-128
+        9      9     9      127  yes
+DIGIT_SUMMARY runtime=tflm model=cnn_int8 image=9 label=9 pred=9 pred_i8=127 ok=1 out_i8=-128,-128,-128,-128,-128,-128,-128,-128,-128,127
+  accuracy:    10/10 on final run
+
+TFLM MNIST cnn int8 benchmark summary (reference)
+  method:      10 runs x 10 images, discard first invoke each run
+  per-run avg: avg of images 1-9 (us)
+
+  mean:   485400 us (485.400 ms)
+BENCHMARK_SUMMARY runtime=tflm model=cnn_int8 backend=reference mean_us=485400 runs=10
+
+DONE
+I (49541) main_task: Returned from app_main()

@@ -1,0 +1,107 @@
+
+I (369) heap_init: At 4FF40000 len 00060000 (384 KiB): RAM
+I (374) heap_init: At 50108080 len 00007F80 (31 KiB): RTCRAM
+I (379) heap_init: At 30100044 len 00001FBC (7 KiB): TCM
+I (385) spi_flash: detected chip: generic
+W (388) spi_flash: Detected flash size > 16 MB, but access beyond 16 MB is not supported for this flash model yet.
+I (398) spi_flash: flash io: dio
+I (402) main_task: Started on CPU0
+I (405) main_task: Calling app_main()
+
+netkit ESP32-P4-Function-EV MNIST CNN float32 benchmark
+  backend:     netkit reference (MCU ESP32P4 FPU, lowered AOT)
+  weights:     flash (lowered static arrays)
+  dtype:       float32 end-to-end
+  classify:    argmax(logits) — final Softmax omitted
+  images:      10 per run
+  runs:        10 (discard first invoke each run)
+  arena bytes: 262144
+  sysclk:      360000000 Hz
+  model:       loaded
+ESP-ROM:esp32p4-eco2-20240710
+Build:Jul 10 2024
+rst:0x1 (POWERON),boot:0x30f (SPI_FAST_FLASH_BOOT)
+SPI mode:DIO, clock div:1
+load:0x4ff33ce0,len:0x15f0
+load:0x4ff2abd0,len:0xd84
+load:0x4ff2cbd0,len:0x3310
+entry 0x4ff2abd0
+I (25) boot: ESP-IDF 5.4.2 2nd stage bootloader
+I (26) boot: compile time Jul 23 2026 14:38:03
+I (26) boot: Multicore bootloader
+I (27) boot: chip revision: v1.3
+I (29) boot: efuse block revision: v0.3
+I (32) boot.esp32p4: SPI Speed      : 80MHz
+I (36) boot.esp32p4: SPI Mode       : DIO
+I (40) boot.esp32p4: SPI Flash Size : 32MB
+I (44) boot: Enabling RNG early entropy source...
+I (48) boot: Partition Table:
+I (51) boot: ## Label            Usage          Type ST Offset   Length
+I (57) boot:  0 nvs              WiFi data        01 02 00009000 00006000
+I (63) boot:  1 phy_init         RF data          01 01 0000f000 00001000
+I (70) boot:  2 factory          factory app      00 00 00010000 00400000
+I (78) boot: End of partition table
+I (80) esp_image: segment 0: paddr=00010020 vaddr=40020020 size=ed310h (971536) map
+I (249) esp_image: segment 1: paddr=000fd338 vaddr=30100000 size=00044h (    68) load
+I (251) esp_image: segment 2: paddr=000fd384 vaddr=4ff00000 size=02c94h ( 11412) load
+I (257) esp_image: segment 3: paddr=00100020 vaddr=40000020 size=199bch (104892) map
+I (279) esp_image: segment 4: paddr=001199e4 vaddr=4ff02c94 size=0aa98h ( 43672) load
+I (289) esp_image: segment 5: paddr=00124484 vaddr=4ff0d780 size=01bf4h (  7156) load
+I (295) boot: Loaded app from partition at offset 0x10000
+I (296) boot: Disabling RNG early entropy source...
+I (307) cpu_start: Multicore app
+I (317) cpu_start: Pro cpu start user code
+I (317) cpu_start: cpu freq: 360000000 Hz
+I (317) app_init: Application information:
+I (317) app_init: Project name:     mnist_cnn_esp32_p4_ev
+I (322) app_init: App version:      v0.1-136-ga81ee1902-dirty
+I (327) app_init: Compile time:     Jul 23 2026 14:37:43
+I (332) app_init: ELF file SHA256:  ac62fb21f...
+I (337) app_init: ESP-IDF:          5.4.2
+I (340) efuse_init: Min chip rev:     v0.1
+I (344) efuse_init: Max chip rev:     v1.99 
+I (348) efuse_init: Chip rev:         v1.3
+I (352) heap_init: Initializing. RAM available for dynamic allocation:
+I (358) heap_init: At 4FF116F0 len 000298D0 (166 KiB): RAM
+I (364) heap_init: At 4FF3AFC0 len 00004BF0 (18 KiB): RAM
+I (369) heap_init: At 4FF40000 len 00060000 (384 KiB): RAM
+I (374) heap_init: At 50108080 len 00007F80 (31 KiB): RTCRAM
+I (379) heap_init: At 30100044 len 00001FBC (7 KiB): TCM
+I (385) spi_flash: detected chip: generic
+W (388) spi_flash: Detected flash size > 16 MB, but access beyond 16 MB is not supported for this flash model yet.
+I (398) spi_flash: flash io: dio
+I (402) main_task: Started on CPU0
+I (405) main_task: Calling app_main()
+
+netkit ESP32-P4-Function-EV MNIST CNN float32 benchmark
+  backend:     netkit reference (MCU ESP32P4 FPU, lowered AOT)
+  weights:     flash (lowered static arrays)
+  dtype:       float32 end-to-end
+  classify:    argmax(logits) — final Softmax omitted
+  images:      10 per run
+  runs:        10 (discard first invoke each run)
+  arena bytes: 262144
+  sysclk:      360000000 Hz
+  model:       loaded
+  probe:       label=0 pred=0 pred_f=24.7498 out_f=24.7498,-15.0687,0.4478,-9.1600,-10.3290,-7.5756,1.3985,-4.3135,-2.0601,0.2746
+
+  per-digit results (final run):
+DIGIT_SUMMARY runtime=netkit model=cnn_f32 image=0 label=0 pred=0 pred_f=24.7498 ok=1 out_f=24.7498,-15.0687,0.4478,-9.1600,-10.3290,-7.5756,1.3985,-4.3135,-2.0601,0.2746
+DIGIT_SUMMARY runtime=netkit model=cnn_f32 image=1 label=1 pred=1 pred_f=15.9448 ok=1 out_f=-2.9977,15.9448,-5.0938,-19.2039,1.1358,-6.7327,-5.9296,-5.0612,-3.2612,-10.7317
+DIGIT_SUMMARY runtime=netkit model=cnn_f32 image=2 label=2 pred=2 pred_f=30.8438 ok=1 out_f=2.5140,-0.8088,30.8438,-16.6140,-13.1431,-25.4350,1.8294,-11.2969,3.3317,-5.9337
+DIGIT_SUMMARY runtime=netkit model=cnn_f32 image=3 label=3 pred=3 pred_f=13.9609 ok=1 out_f=-16.3021,-10.9601,-4.7671,13.9609,-23.4680,10.1755,-16.9888,-9.0099,2.7219,-5.1042
+DIGIT_SUMMARY runtime=netkit model=cnn_f32 image=4 label=4 pred=4 pred_f=21.3081 ok=1 out_f=-6.4738,-13.2824,-5.7155,-12.9696,21.3081,-10.1538,-18.9442,-9.2237,-4.4743,5.5762
+DIGIT_SUMMARY runtime=netkit model=cnn_f32 image=5 label=5 pred=5 pred_f=19.9522 ok=1 out_f=-5.0282,-20.1841,-12.7509,-22.7462,-21.9028,19.9522,7.8542,-6.8268,4.6179,-3.9321
+DIGIT_SUMMARY runtime=netkit model=cnn_f32 image=6 label=6 pred=6 pred_f=31.4672 ok=1 out_f=6.1138,-21.8437,-9.3361,-15.6295,-13.1217,4.7125,31.4672,-10.3738,-1.6438,-14.9423
+DIGIT_SUMMARY runtime=netkit model=cnn_f32 image=7 label=7 pred=7 pred_f=18.6567 ok=1 out_f=-5.6949,-9.0835,-5.5444,-3.0205,-1.7620,-9.7540,-22.9260,18.6567,-0.4895,1.2588
+DIGIT_SUMMARY runtime=netkit model=cnn_f32 image=8 label=8 pred=8 pred_f=33.1221 ok=1 out_f=-11.2351,-19.6199,2.8501,-18.9461,-8.3735,-4.7454,-19.1694,-20.2188,33.1221,1.4035
+DIGIT_SUMMARY runtime=netkit model=cnn_f32 image=9 label=9 pred=9 pred_f=21.4012 ok=1 out_f=-12.1559,-14.4131,-4.6455,-13.8001,-0.4114,-2.8910,-26.8577,-12.6977,6.2492,21.4012
+  accuracy:    10/10 on final run
+
+netkit MNIST cnn_f32 float32 benchmark summary (reference)
+  method:      10 runs x 10 images, discard first invoke each run
+  mean:   97501 us (97.501 ms)
+BENCHMARK_SUMMARY runtime=netkit model=cnn_f32 backend=reference-f32 mean_us=97501 runs=10
+
+DONE
+I (10484) main_task: Returned from app_main()

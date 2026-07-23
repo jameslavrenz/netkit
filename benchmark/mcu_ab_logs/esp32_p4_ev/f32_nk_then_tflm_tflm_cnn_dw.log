@@ -1,0 +1,93 @@
+eyond 16 MB is not supported for this flash model yet.
+I (400) spi_flash: flash io: dio
+I (403) main_task: Started on CPU0
+I (406) main_task: Calling app_main()
+
+TFLM ESP32-P4-Function-EV MNIST DS-CNN float32 benchmark
+  backend:     tflm reference float32 (MCU ESP32P4 FPU)
+  model bytes: 841340
+  arena bytes: 262144
+  images:      10 per run
+  runs:        10 (discard first invoke each run)
+  sysclk:      360000000 Hz
+ESP-ROM:esp32p4-eco2-20240710
+Build:Jul 10 2024
+rst:0x1 (POWERON),boot:0x30f (SPI_FAST_FLASH_BOOT)
+SPI mode:DIO, clock div:1
+load:0x4ff33ce0,len:0x15f0
+load:0x4ff2abd0,len:0xd84
+load:0x4ff2cbd0,len:0x3310
+entry 0x4ff2abd0
+I (25) boot: ESP-IDF 5.4.2 2nd stage bootloader
+I (26) boot: compile time Jul 23 2026 14:37:24
+I (26) boot: Multicore bootloader
+I (27) boot: chip revision: v1.3
+I (29) boot: efuse block revision: v0.3
+I (32) boot.esp32p4: SPI Speed      : 80MHz
+I (36) boot.esp32p4: SPI Mode       : DIO
+I (40) boot.esp32p4: SPI Flash Size : 32MB
+I (44) boot: Enabling RNG early entropy source...
+I (48) boot: Partition Table:
+I (51) boot: ## Label            Usage          Type ST Offset   Length
+I (57) boot:  0 nvs              WiFi data        01 02 00009000 00006000
+I (63) boot:  1 phy_init         RF data          01 01 0000f000 00001000
+I (70) boot:  2 factory          factory app      00 00 00010000 00400000
+I (78) boot: End of partition table
+I (80) esp_image: segment 0: paddr=00010020 vaddr=40030020 size=e2638h (927288) map
+I (242) esp_image: segment 1: paddr=000f2660 vaddr=30100000 size=00044h (    68) load
+I (244) esp_image: segment 2: paddr=000f26ac vaddr=4ff00000 size=0d72ch ( 55084) load
+I (258) esp_image: segment 3: paddr=000ffde0 vaddr=4ff0d780 size=00238h (   568) load
+I (260) esp_image: segment 4: paddr=00100020 vaddr=40000020 size=29124h (168228) map
+I (291) esp_image: segment 5: paddr=0012914c vaddr=4ff0d9b8 size=019bch (  6588) load
+I (296) boot: Loaded app from partition at offset 0x10000
+I (297) boot: Disabling RNG early entropy source...
+I (308) cpu_start: Multicore app
+I (318) cpu_start: Pro cpu start user code
+I (318) cpu_start: cpu freq: 360000000 Hz
+I (318) app_init: Application information:
+I (318) app_init: Project name:     mnist_cnn_dw_tflm_esp32_p4_ev
+I (324) app_init: App version:      v0.1-136-ga81ee1902-dirty
+I (329) app_init: Compile time:     Jul 23 2026 14:37:07
+I (334) app_init: ELF file SHA256:  e8b9bcca2...
+I (339) app_init: ESP-IDF:          5.4.2
+I (342) efuse_init: Min chip rev:     v0.1
+I (346) efuse_init: Max chip rev:     v1.99 
+I (350) efuse_init: Chip rev:         v1.3
+I (354) heap_init: Initializing. RAM available for dynamic allocation:
+I (360) heap_init: At 4FF10AC0 len 0002A500 (169 KiB): RAM
+I (365) heap_init: At 4FF3AFC0 len 00004BF0 (18 KiB): RAM
+I (371) heap_init: At 4FF40000 len 00060000 (384 KiB): RAM
+I (376) heap_init: At 50108080 len 00007F80 (31 KiB): RTCRAM
+I (381) heap_init: At 30100044 len 00001FBC (7 KiB): TCM
+I (387) spi_flash: detected chip: generic
+W (390) spi_flash: Detected flash size > 16 MB, but access beyond 16 MB is not supported for this flash model yet.
+I (400) spi_flash: flash io: dio
+I (403) main_task: Started on CPU0
+I (406) main_task: Calling app_main()
+
+TFLM ESP32-P4-Function-EV MNIST DS-CNN float32 benchmark
+  backend:     tflm reference float32 (MCU ESP32P4 FPU)
+  model bytes: 841340
+  arena bytes: 262144
+  images:      10 per run
+  runs:        10 (discard first invoke each run)
+  sysclk:      360000000 Hz
+  probe:       label=0 pred=0 pred_f=1.0000
+DIGIT_SUMMARY runtime=tflm model=cnn_dw_f32 image=0 label=0 pred=0 pred_f=1.0000 ok=1 out_f=1.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000
+DIGIT_SUMMARY runtime=tflm model=cnn_dw_f32 image=1 label=1 pred=1 pred_f=1.0000 ok=1 out_f=0.0000,1.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000
+DIGIT_SUMMARY runtime=tflm model=cnn_dw_f32 image=2 label=2 pred=2 pred_f=1.0000 ok=1 out_f=0.0000,0.0000,1.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000
+DIGIT_SUMMARY runtime=tflm model=cnn_dw_f32 image=3 label=3 pred=3 pred_f=0.7761 ok=1 out_f=0.0003,0.0000,0.0032,0.7761,0.0000,0.1984,0.0001,0.0000,0.0150,0.0069
+DIGIT_SUMMARY runtime=tflm model=cnn_dw_f32 image=4 label=4 pred=4 pred_f=1.0000 ok=1 out_f=0.0000,0.0000,0.0000,0.0000,1.0000,0.0000,0.0000,0.0000,0.0000,0.0000
+DIGIT_SUMMARY runtime=tflm model=cnn_dw_f32 image=5 label=5 pred=5 pred_f=0.9998 ok=1 out_f=0.0000,0.0000,0.0000,0.0000,0.0000,0.9998,0.0001,0.0000,0.0001,0.0000
+DIGIT_SUMMARY runtime=tflm model=cnn_dw_f32 image=6 label=6 pred=6 pred_f=1.0000 ok=1 out_f=0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,1.0000,0.0000,0.0000,0.0000
+DIGIT_SUMMARY runtime=tflm model=cnn_dw_f32 image=7 label=7 pred=7 pred_f=1.0000 ok=1 out_f=0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,1.0000,0.0000,0.0000
+DIGIT_SUMMARY runtime=tflm model=cnn_dw_f32 image=8 label=8 pred=8 pred_f=1.0000 ok=1 out_f=0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,1.0000,0.0000
+DIGIT_SUMMARY runtime=tflm model=cnn_dw_f32 image=9 label=9 pred=9 pred_f=1.0000 ok=1 out_f=0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,1.0000
+  accuracy:    10/10 on final run
+
+TFLM MNIST cnn_dw_f32 float32 benchmark summary (reference)
+  mean:   102554 us (102.554 ms)
+BENCHMARK_SUMMARY runtime=tflm model=cnn_dw_f32 backend=reference-f32 mean_us=102554 runs=10
+
+DONE
+I (10964) main_task: Returned from app_main()

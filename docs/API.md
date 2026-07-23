@@ -19,7 +19,7 @@ Both APIs share:
 
 Core inference, loading, tensor/ops, MLP/CNN construction (including FeatureTap / PAFPN), regression, and CLI entry points have documented C equivalents — see [API_PARITY.md](API_PARITY.md). Some C++ helpers (block introspection, op trimming, timed forward) remain C++-only.
 
-**MCU peers:** NUCLEO-F446RE **int8** CNN/DS-CNN vs TFLM and microTVM (CMSIS-NN / reference); XIAO ESP32C3 **int8** CNN/DS-CNN vs TFLM (ESP-NN on + off; interpreter embed). Float32 MNIST CNN/DS-CNN exceed typical MCU flash budgets — [STATUS.md](STATUS.md).
+**MCU peers:** NUCLEO-F446RE **int8** CNN/DS-CNN vs TFLM and microTVM (CMSIS-NN / reference); XIAO ESP32C3 **int8** CNN/DS-CNN vs TFLM (ESP-NN on + off; interpreter embed); ESP32-P4-Function-EV **int8** + **float32** CNN/DS-CNN vs TFLM (float peers: lowered AOT — [KNOWN_ISSUES KI-001](KNOWN_ISSUES.md#ki-001--esp32-p4-float32-interpreter-embed-mispredicts-on-device)). Gallery: [README.md](../README.md#peer-benchmarks-mcu--mpu--cpu).
 
 ## Documentation map
 
@@ -27,6 +27,7 @@ Core inference, loading, tensor/ops, MLP/CNN construction (including FeatureTap 
 |----------|----------|
 | [PHILOSOPHY.md](PHILOSOPHY.md) | Interpreter vs compiled deployment; Phase 1 runtime vs Phase 2 packager; memory and roadmap |
 | [STATUS.md](STATUS.md) | Dtype + platform maturity; recent peer-bench results |
+| [KNOWN_ISSUES.md](KNOWN_ISSUES.md) | Open bugs, anomalies, deferred follow-ups |
 | [GETTING_STARTED.md](GETTING_STARTED.md) | Clone, build, CLI, integrate C/C++ |
 | [BUILD_TARGETS.md](BUILD_TARGETS.md) | `NETKIT_TARGET` profiles, arena flags, backend defaults |
 | [PLATFORMS.md](PLATFORMS.md) | Per-device configuration (cpu / Arm / RISC / Espressif) |

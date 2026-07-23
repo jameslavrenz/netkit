@@ -1,0 +1,11 @@
+.pio/
+sdkconfig
+sdkconfig.old
+sdkconfig.esp32_p4_ev
+sdkconfig.esp32_p4_ev_ref
+dependencies.lock
+managed_components/
+components/esp-tflite-micro
+components/esp-nn
+.esp_nn_p4_portable_stamp
+generated/

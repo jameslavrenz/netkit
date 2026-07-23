@@ -15,7 +15,7 @@ netkit is a **multi-modal inference engine** (image / vision today; voice next) 
 
 Targets follow **vendor + NN backend**, not ISA alone — Espressif RISC-V chips stay on `mcu_esp` ([PLATFORMS.md](docs/PLATFORMS.md#target--cpu-isa)).
 
-The inference engine is **peer-benched end-to-end** across **Arm MCU** (NUCLEO-F446RE vs TFLM and microTVM), **Espressif MCU** (XIAO ESP32C3 vs TFLM / ESP-NN), **Arm MPU** (Raspberry Pi Zero 2 W vs TF Lite), and **CPU** (Apple M4 vs TF Lite + ONNX Runtime) for latency and flash/RAM — see [docs/STATUS.md](docs/STATUS.md) and the gallery below. RISC-V MCU (`mcu_risc`) is runtime-complete with host smoke; on-device peers TBD. **YOLOX** detection (MobileNetV4 + PAFPN) is supported and latency-competitive on host; **detector accuracy still needs more training / calibration**. Next: voice fixtures and broader quantization.
+The inference engine is **peer-benched end-to-end** across **Arm MCU** (NUCLEO-F446RE vs TFLM and microTVM), **Espressif MCU** (XIAO ESP32C3 + ESP32-P4-Function-EV vs TFLM / ESP-NN), **Arm MPU** (Raspberry Pi Zero 2 W vs TF Lite), and **CPU** (Apple M4 vs TF Lite + ONNX Runtime) for latency and flash/RAM — see [docs/STATUS.md](docs/STATUS.md) and the gallery below. RISC-V MCU (`mcu_risc`) is runtime-complete with host smoke; on-device peers TBD. **YOLOX** detection (MobileNetV4 + PAFPN) is supported and latency-competitive on host; **detector accuracy still needs more training / calibration**. Open issues: [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md).
 
 Configure any device: [docs/PLATFORMS.md](docs/PLATFORMS.md). Models load from binary **`.nk`** files (architecture + weights). Convert from ONNX with `python -m netkit convert`, or embed a `.nk` in firmware with `python -m netkit aot`.
 
@@ -45,6 +45,43 @@ netkit embed vs TFLM vs microTVM. Methodology: 10×10; discard first invoke. Bui
 #### Float32
 
 Deferred on this board — MNIST CNN / DS-CNN float models exceed 512 KiB flash. On-device digit peers remain int8.
+
+### MCU — Seeed XIAO ESP32C3 @ 160 MHz
+
+netkit vs TFLM (ESP-NN on / off). Methodology: 10×10; discard first invoke; order swaps. Build / flash: [boards/README.md](boards/README.md#seeed-studio-xiao-esp32c3). Logs: [`benchmark/mcu_ab_logs/xiao_esp32c3/`](benchmark/mcu_ab_logs/xiao_esp32c3/).
+
+#### Int8 (all 10/10; interpreter embed)
+
+| Model | Mode | netkit | TFLM |
+|-------|------|-------:|-----:|
+| MNIST CNN | ESP-NN | 252.0 ms | **251.4 ms** |
+| MNIST DS-CNN | ESP-NN | 87.7 ms | **87.5 ms** |
+| MNIST CNN | reference | **226.8 ms** | 1205.5 ms |
+| MNIST DS-CNN | reference | **85.8 ms** | 392.3 ms |
+
+No FPU — float32 peer A/B not used on this part. ImageNet skipped (flash).
+
+### MCU — ESP32-P4-Function-EV @ 360 MHz (FPU)
+
+netkit vs TFLM. Methodology: 10×10; discard first invoke; order swaps. Build / flash: [boards/esp32-p4-function-ev/README.md](boards/esp32-p4-function-ev/README.md). All rounds: [`esp32_p4_ev_all_ab_results.txt`](benchmark/mcu_ab_logs/esp32_p4_ev/esp32_p4_ev_all_ab_results.txt).
+
+#### Int8 (all 10/10; interpreter embed; ESP-NN portable — P4 PIE asm off under PIO gas)
+
+| Model | Mode | netkit | TFLM |
+|-------|------|-------:|-----:|
+| MNIST CNN | ESP-NN | **78.9 ms** | 79.3 ms |
+| MNIST DS-CNN | ESP-NN | **40.3 ms** | 41.1 ms |
+| MNIST CNN | reference | **77.1 ms** | 485.4 ms |
+| MNIST DS-CNN | reference | **39.6 ms** | 172.0 ms |
+
+#### Float32 (all 10/10; reference — ESP-NN has no float API; netkit **lowered AOT**)
+
+| Model | netkit | TFLM |
+|-------|-------:|-----:|
+| MNIST CNN | **97.5 ms** | 166.4 ms |
+| MNIST DS-CNN | **74.8 ms** | 102.6 ms |
+
+Float interpreter embed is incorrect on this MCU (~2/10) — [KNOWN_ISSUES.md KI-001](docs/KNOWN_ISSUES.md#ki-001--esp32-p4-float32-interpreter-embed-mispredicts-on-device). ImageNet skipped (flash). Companion ESP32-C6 on the kit is WiFi-only.
 
 ### MPU — Raspberry Pi Zero 2 W (aarch64)
 
@@ -112,7 +149,8 @@ On-device firmware and peer setups live under [`boards/`](boards/). Full index (
 |----------|-------|--------|-----------------|
 | **STM32 NUCLEO-F446RE** | Arm MCU | `mcu_arm` + `CM4` | [boards/README.md § NUCLEO](boards/README.md#stm32-nucleo-f446re) — netkit + TFLM + microTVM trees |
 | **Raspberry Pi Zero 2 W** | Arm MPU | `mpu_arm` | [boards/pi-zero-2w/README.md](boards/pi-zero-2w/README.md) — cross-build, SSH, TF Lite A/B |
-| **Seeed XIAO ESP32C3** (and other ESP32*) | Espressif MCU | `mcu_esp` | [xiao-esp32c3/](boards/xiao-esp32c3/README.md) (CNN/DS-CNN/MLP int8 + TFLM peers) · [STATUS](docs/STATUS.md#mcu-seeed-xiao-esp32c3) · [PLATFORMS.md (Espressif)](docs/PLATFORMS.md#mcu_esp--espressif-mcu) — RISC-V C3 still uses ESP-NN, not `mcu_risc` |
+| **Seeed XIAO ESP32C3** | Espressif MCU | `mcu_esp` | [xiao-esp32c3/](boards/xiao-esp32c3/README.md) · [STATUS](docs/STATUS.md#mcu-seeed-xiao-esp32c3) — RISC-V still uses ESP-NN, not `mcu_risc` |
+| **ESP32-P4-Function-EV** | Espressif MCU | `mcu_esp` | [esp32-p4-function-ev/](boards/esp32-p4-function-ev/README.md) · [STATUS](docs/STATUS.md#mcu-espressif-esp32-p4-function-ev) — int8 + float32 peers |
 | RISC-V MCU (Nuclei / RV32) | MCU | `mcu_risc` | No `boards/` tree yet — [PLATFORMS.md (RISC-V MCU)](docs/PLATFORMS.md#mcu_risc--risc-v-mcu) |
 
 ### NUCLEO-F446RE (quick links)
@@ -135,6 +173,7 @@ Each board README covers toolchain, `make` / flash / UART (or SSH for the Pi), m
 | **[Third-party notices](THIRD_PARTY_NOTICES.md)** | Licenses for CMSIS, ESP-NN, NMSIS, XNNPACK, ONNX/ORT, TF Lite / TFLM, TVM, … |
 | **[Philosophy](docs/PHILOSOPHY.md)** | Interpreter vs compiled deployment; Phase 1 runtime vs Phase 2 packager |
 | **[Status](docs/STATUS.md)** | Dtype + platform maturity; MCU / MPU / CPU peer-bench results |
+| **[Known issues](docs/KNOWN_ISSUES.md)** | Open bugs, anomalies, deferred follow-ups |
 | **[Getting Started](docs/GETTING_STARTED.md)** | Build, test, CLI, and first inference for new users |
 | **[API Overview](docs/API.md)** | C vs C++ APIs, linking, memory model |
 | **[Build Targets](docs/BUILD_TARGETS.md)** | CPU / MCU / MPU flags and arena defaults |
@@ -381,7 +420,7 @@ See [PHILOSOPHY.md](docs/PHILOSOPHY.md) for the full narrative — including [in
 
 ## Roadmap
 
-**Phase 1 (today):** **Float32** and **int8** inference are **complete** for image/vision — `.nk` load or AOT embed, MLP/CNN + fused blocks (ResNet, MobileNetV4, ConvNeXt), depthwise conv, asymmetric padding, and **YOLOX** detection (PAFPN). **Peer A/B of the inference engine is finished** on **Arm MCU** (NUCLEO-F446RE vs TFLM / microTVM), **Espressif MCU** (XIAO ESP32C3 vs TFLM / ESP-NN), **Arm MPU** (Pi Zero 2 W vs TF Lite), and **CPU** (vs TF Lite / ORT). Production int8 kernels: **CMSIS-NN** (Arm MCU), **ESP-NN** (Espressif), **NMSIS-NN** (RISC-V MCU), **XNNPACK** (cpu / MPU). Next on-device peers: ESP32-S3 / P4 and `mcu_risc` — [STATUS.md](docs/STATUS.md), [PLATFORMS.md](docs/PLATFORMS.md), [KERNELS.md](docs/KERNELS.md).
+**Phase 1 (today):** **Float32** and **int8** inference are **complete** for image/vision — `.nk` load or AOT embed, MLP/CNN + fused blocks (ResNet, MobileNetV4, ConvNeXt), depthwise conv, asymmetric padding, and **YOLOX** detection (PAFPN). **Peer A/B of the inference engine is finished** on **Arm MCU** (NUCLEO-F446RE vs TFLM / microTVM), **Espressif MCU** (XIAO ESP32C3 + ESP32-P4-Function-EV vs TFLM / ESP-NN), **Arm MPU** (Pi Zero 2 W vs TF Lite), and **CPU** (vs TF Lite / ORT). Production int8 kernels: **CMSIS-NN** (Arm MCU), **ESP-NN** (Espressif), **NMSIS-NN** (RISC-V MCU), **XNNPACK** (cpu / MPU). Next on-device peers: ESP32-S3 and `mcu_risc` — [STATUS.md](docs/STATUS.md), [KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md), [PLATFORMS.md](docs/PLATFORMS.md), [KERNELS.md](docs/KERNELS.md).
 
 **Phase 2 (next):**
 
