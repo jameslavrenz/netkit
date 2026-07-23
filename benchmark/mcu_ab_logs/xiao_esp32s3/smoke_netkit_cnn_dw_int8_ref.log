@@ -1,0 +1,107 @@
+ESP-ROM:esp32s3-20210327
+Build:Mar 27 2021
+rst:0x15 (USB_UART_CHIP_RESET),boot:0x8 (SPI_FAST_FLASH_BOOT)
+Saved PC:0x4200917b
+SPIWP:0xee
+Octal Flash Mode Enabled
+For OPI Flash, Use Default Flash Boot Mode
+mode:SLOW_RD, clock div:1
+load:0x3fce2820,len:0x1564
+load:0x403c8700,len:0x4
+load:0x403c8704,len:0xc80
+load:0x403cb700,len:0x2ee0
+entry 0x403c890c
+I (33) boot: ESP-IDF 5.4.2 2nd stage bootloader
+I (33) boot: compile time Jul 23 2026 16:20:48
+I (33) boot: Multicore bootloader
+I (33) boot: chip revision: v0.2
+I (34) boot: efuse block revision: v1.4
+I (34) boot.esp32s3: Boot SPI Speed : 80MHz
+I (34) boot.esp32s3: SPI Mode       : SLOW READ
+I (34) boot.esp32s3: SPI Flash Size : 8MB
+I (34) boot: Enabling RNG early entropy source...
+I (35) boot: Partition Table:
+I (35) boot: ## Label            Usage          Type ST Offset   Length
+I (35) boot:  0 nvs              WiFi data        01 02 00009000 00006000
+I (35) boot:  1 phy_init         RF data          01 01 0000f000 00001000
+I (36) boot:  2 factory          factory app      00 00 00010000 00100000
+I (36) boot: End of partition table
+I (36) esp_image: segment 0: paddr=00010020 vaddr=3c030020 size=42940h (272704) map
+I (101) esp_image: segment 1: paddr=00052968 vaddr=3fc91000 size=08e40h ( 36416) load
+I (110) esp_image: segment 2: paddr=0005b7b0 vaddr=40374000 size=04868h ( 18536) load
+I (116) esp_image: segment 3: paddr=00060020 vaddr=42000020 size=22ddch (142812) map
+I (150) esp_image: segment 4: paddr=00082e04 vaddr=40378868 size=086b4h ( 34484) load
+I (160) esp_image: segment 5: paddr=0008b4c0 vaddr=600fe000 size=0001ch (    28) load
+I (166) boot: Loaded app from partition at offset 0x10000
+I (167) boot: Disabling RNG early entropy source...
+I (168) cpu_start: Multicore app
+I (177) cpu_start: Pro cpu start user code
+I (177) cpu_start: cpu freq: 240000000 Hz
+I (177) app_init: Application information:
+I (177) app_init: Project name:     mnist_cnn_dw_int8_xiao_esp32s3
+I (177) app_init: App version:      v0.1-137-gf4dbcf3a6-dirty
+I (177) app_init: Compile time:     Jul 23 2026 16:20:29
+I (178) app_init: ELF file SHA256:  7c1a39890...
+I (178) app_init: ESP-IDF:          5.4.2
+I (178) efuse_init: Min chip rev:     v0.0
+I (178) efuse_init: Max chip rev:     v0.99 
+I (178) efuse_init: Chip rev:         v0.2
+I (178) heap_init: Initializing. RAM available for dynamic allocation:
+I (179) heap_init: At 3FCB2AE8 len 00036C28 (219 KiB): RAM
+I (179) heap_init: At 3FCE9710 len 00005724 (21 KiB): RAM
+I (179) heap_init: At 3FCF0000 len 00008000 (32 KiB): DRAM
+I (179) heap_init: At 600FE01C len 00001FCC (7 KiB): RTCRAM
+W (180) spi_flash: Octal flash chip is using but dio mode is selected, will automatically switch to Octal mode
+I (180) spi_flash: detected chip: mxic (opi)
+I (180) spi_flash: flash io: opi_str
+W (180) spi_flash: Detected size(32768k) larger than the size in the binary image header(8192k). Using the size in the binary image header.
+I (181) sleep_gpio: Configure to isolate all GPIO pins in sleep state
+I (181) sleep_gpio: Enable automatic switching of GPIO sleep configuration
+I (181) main_task: Started on CPU0
+I (182) main_task: Calling app_main()
+
+netkit XIAO ESP32S3 MNIST DS-CNN int8 benchmark
+  backend:     netkit reference (MCU ESP32S3, interpreter embed)
+  weights:     flash (embedded .nk blob)
+  dtype:       int8 end-to-end
+  classify:    argmax(logits) — final Softmax omitted
+  images:      10 per run
+  runs:        10 (discard first invoke each run)
+  arena bytes: 98304
+  sysclk:      240000000 Hz
+  model:       loaded
+  probe:       label=0 pred=0 pred_i8=17 out_i8=17,-9,-3,-10,-7,-6,6,-7,1,2
+
+  per-digit results (final run):
+    image  label  pred  pred_i8  ok
+        0      0     0       17  yes
+DIGIT_SUMMARY runtime=netkit model=cnn_dw_int8 image=0 label=0 pred=0 pred_i8=17 ok=1 out_i8=17,-9,-3,-10,-7,-6,6,-7,1,2
+        1      1     1       12  yes
+DIGIT_SUMMARY runtime=netkit model=cnn_dw_int8 image=1 label=1 pred=1 pred_i8=12 ok=1 out_i8=-5,12,-6,-10,-2,-3,-5,1,-4,-8
+        2      2     2       21  yes
+DIGIT_SUMMARY runtime=netkit model=cnn_dw_int8 image=2 label=2 pred=2 pred_i8=21 ok=1 out_i8=1,1,21,-5,-4,-13,-3,-7,-3,-6
+        3      3     3        5  yes
+DIGIT_SUMMARY runtime=netkit model=cnn_dw_int8 image=3 label=3 pred=3 pred_i8=5 ok=1 out_i8=-3,-6,0,5,-14,4,-4,-6,1,0
+        4      4     4       19  yes
+DIGIT_SUMMARY runtime=netkit model=cnn_dw_int8 image=4 label=4 pred=4 pred_i8=19 ok=1 out_i8=-10,-4,-2,-13,19,-9,-6,-6,2,4
+        5      5     5       13  yes
+DIGIT_SUMMARY runtime=netkit model=cnn_dw_int8 image=5 label=5 pred=5 pred_i8=13 ok=1 out_i8=-1,-10,-3,-8,-3,13,4,-10,4,2
+        6      6     6       22  yes
+DIGIT_SUMMARY runtime=netkit model=cnn_dw_int8 image=6 label=6 pred=6 pred_i8=22 ok=1 out_i8=5,-9,-6,-9,-4,0,22,-11,4,-5
+        7      7     7       18  yes
+DIGIT_SUMMARY runtime=netkit model=cnn_dw_int8 image=7 label=7 pred=7 pred_i8=18 ok=1 out_i8=-4,-3,-1,0,-6,-3,-20,18,-7,-1
+        8      8     8       19  yes
+DIGIT_SUMMARY runtime=netkit model=cnn_dw_int8 image=8 label=8 pred=8 pred_i8=19 ok=1 out_i8=-7,-16,8,-2,-5,-3,-8,-10,19,5
+        9      9     9       19  yes
+DIGIT_SUMMARY runtime=netkit model=cnn_dw_int8 image=9 label=9 pred=9 pred_i8=19 ok=1 out_i8=-11,-3,-1,-2,2,-4,-14,-10,5,19
+  accuracy:    10/10 on final run
+
+netkit MNIST cnn_dw int8 benchmark summary (reference-int8)
+  method:      10 runs x 10 images, discard first invoke each run
+  per-run avg: avg of images 1-9 (us)
+
+  mean:   64307 us (64.307 ms)
+BENCHMARK_SUMMARY runtime=netkit model=cnn_dw_int8 backend=reference-int8 mean_us=64307 runs=10
+
+DONE
+I (6697) main_task: Returned from app_main()

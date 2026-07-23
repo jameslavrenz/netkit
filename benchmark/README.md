@@ -313,9 +313,10 @@ Espressif MCU peers vs TFLM (matched `-O3` C++). Canonical logs and tables:
 | Board | Results |
 |-------|---------|
 | XIAO ESP32C3 | [`mcu_ab_logs/xiao_esp32c3/`](mcu_ab_logs/xiao_esp32c3/) · [STATUS](../docs/STATUS.md#mcu-seeed-xiao-esp32c3) |
+| XIAO ESP32-S3 | [`mcu_ab_logs/xiao_esp32s3/`](mcu_ab_logs/xiao_esp32s3/) (int8 ESP-NN / int8 ref / float32) · [STATUS](../docs/STATUS.md#mcu-seeed-xiao-esp32s3) |
 | ESP32-P4-Function-EV | [`mcu_ab_logs/esp32_p4_ev/`](mcu_ab_logs/esp32_p4_ev/) (int8 ESP-NN / int8 ref / float32) · [STATUS](../docs/STATUS.md#mcu-espressif-esp32-p4-function-ev) |
 
-P4 float embed bug: [KNOWN_ISSUES KI-001](../docs/KNOWN_ISSUES.md#ki-001--esp32-p4-float32-interpreter-embed-mispredicts-on-device).
+Float embed bug on **P4 and S3**: [KNOWN_ISSUES KI-001](../docs/KNOWN_ISSUES.md#ki-001--espressif-mcu-float32-interpreter-embed-mispredicts-on-device).
 
 ## Layout
 

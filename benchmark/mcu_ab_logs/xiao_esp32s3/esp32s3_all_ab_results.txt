@@ -1,0 +1,47 @@
+# XIAO ESP32-S3 — netkit vs TFLM peer A/B (all rounds)
+# Chip: ESP32-S3 @ 240 MHz (Xtensa, FPU) · 16 MB PSRAM · 32 MB OPI flash
+# Methodology: 10 runs × 10 images, discard first invoke each run; all accuracy 10/10
+# except float embed probe (KI-001). Date: 2026-07-23.
+# Index: boards/xiao-esp32s3/README.md · docs/STATUS.md · docs/KNOWN_ISSUES.md KI-001
+
+## Round 1 — int8 ESP-NN (S3 asm)
+# netkit: interpreter embed + NETKIT_ESP_NN_USE_S3_ASM=1
+# TFLM: esp-tflite-micro + ESP-NN
+
+Model          netkit_ms   tflm_ms   gain(TFLM/nk)
+MNIST CNN         34.720     34.851           1.00x
+MNIST DS-CNN      31.428     31.693           1.01x
+
+## Round 2 — int8 reference (ESP-NN off)
+# netkit: QuantOps reference · TFLM: reference kernels
+
+Model          netkit_ms   tflm_ms   gain(TFLM/nk)
+MNIST CNN        112.069   1113.036           9.93x
+MNIST DS-CNN      64.307    362.838           5.64x
+
+## Round 3 — float32 reference (ESP-NN N/A)
+# netkit: lowered AOT (required — see KI-001) · TFLM: reference float32
+
+Model          netkit_ms   tflm_ms   gain(TFLM/nk)
+MNIST CNN        308.166    525.624           1.71x
+MNIST DS-CNN      63.403    166.353           2.62x
+
+## KI-001 — float32 interpreter embed (not a published peer)
+# --no-lower float CNN on S3: 2/10 accuracy, many exact-zero logits
+# Log: cnn_f32_netkit_embed.txt
+# Same class of failure as ESP32-P4-Function-EV. Workaround: lowered AOT.
+
+## Logs
+smoke_netkit_cnn_int8_espnn_s3asm.log
+smoke_tflm_cnn_int8.log
+smoke_netkit_cnn_int8_ref.log
+smoke_tflm_cnn_int8_ref.log
+smoke_netkit_cnn_dw_int8_espnn.log
+smoke_tflm_cnn_dw_int8.log
+smoke_netkit_cnn_dw_int8_ref.log
+smoke_tflm_cnn_dw_int8_ref.log
+cnn_f32_netkit.txt
+cnn_f32_tflm.txt
+cnn_dw_f32_netkit.txt
+cnn_dw_f32_tflm.txt
+cnn_f32_netkit_embed.txt

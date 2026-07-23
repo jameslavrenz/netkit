@@ -1,0 +1,110 @@
+ESP-ROM:esp32s3-20210327
+Build:Mar 27 2021
+rst:0x15 (USB_UART_CHIP_RESET),boot:0x8 (SPI_FAST_FLASH_BOOT)
+Saved PC:0x42003103
+SPIWP:0xee
+Octal Flash Mode Enabled
+For OPI Flash, Use Default Flash Boot Mode
+mode:SLOW_RD, clock div:1
+load:0x3fce2820,len:0x1564
+load:0x403c8700,len:0x4
+load:0x403c8704,len:0xc80
+load:0x403cb700,len:0x2ee0
+entry 0x403c890c
+I (33) boot: ESP-IDF 5.4.2 2nd stage bootloader
+I (33) boot: compile time Jul 23 2026 16:30:05
+I (33) boot: Multicore bootloader
+I (33) boot: chip revision: v0.2
+I (34) boot: efuse block revision: v1.4
+I (34) boot.esp32s3: Boot SPI Speed : 80MHz
+I (34) boot.esp32s3: SPI Mode       : SLOW READ
+I (34) boot.esp32s3: SPI Flash Size : 8MB
+I (34) boot: Enabling RNG early entropy source...
+I (35) boot: Partition Table:
+I (35) boot: ## Label            Usage          Type ST Offset   Length
+I (35) boot:  0 nvs              WiFi data        01 02 00009000 00006000
+I (35) boot:  1 phy_init         RF data          01 01 0000f000 00001000
+I (36) boot:  2 factory          factory app      00 00 00010000 00400000
+I (36) boot: End of partition table
+I (36) esp_image: segment 0: paddr=00010020 vaddr=3c030020 size=f6478h (1008760) map
+I (273) esp_image: segment 1: paddr=001064a0 vaddr=3fc92100 size=09414h ( 37908) load
+I (283) esp_image: segment 2: paddr=0010f8bc vaddr=40374000 size=0075ch (  1884) load
+I (284) esp_image: segment 3: paddr=00110020 vaddr=42000020 size=2988ch (170124) map
+I (325) esp_image: segment 4: paddr=001398b4 vaddr=4037475c size=0d954h ( 55636) load
+I (340) esp_image: segment 5: paddr=00147210 vaddr=600fe000 size=0001ch (    28) load
+I (347) boot: Loaded app from partition at offset 0x10000
+I (347) boot: Disabling RNG early entropy source...
+I (349) octal_psram: vendor id    : 0x0d (AP)
+I (349) octal_psram: dev id       : 0x03 (generation 4)
+I (349) octal_psram: density      : 0x05 (128 Mbit)
+I (349) octal_psram: good-die     : 0x01 (Pass)
+I (349) octal_psram: Latency      : 0x01 (Fixed)
+I (350) octal_psram: VCC          : 0x00 (1.8V)
+I (350) octal_psram: SRF          : 0x01 (Fast Refresh)
+I (350) octal_psram: BurstType    : 0x01 (Hybrid Wrap)
+I (350) octal_psram: BurstLen     : 0x01 (32 Byte)
+I (350) octal_psram: Readlatency  : 0x02 (10 cycles@Fixed)
+I (351) octal_psram: DriveStrength: 0x00 (1/1)
+I (351) MSPI Timing: PSRAM timing tuning index: 6
+I (352) esp_psram: Found 16MB PSRAM device
+I (352) esp_psram: Speed: 80MHz
+I (352) cpu_start: Multicore app
+I (1165) esp_psram: SPI SRAM memory test OK
+I (1174) cpu_start: Pro cpu start user code
+I (1174) cpu_start: cpu freq: 240000000 Hz
+I (1174) app_init: Application information:
+I (1174) app_init: Project name:     mnist_cnn_xiao_esp32s3
+I (1174) app_init: App version:      v0.1-137-gf4dbcf3a6-dirty
+I (1174) app_init: Compile time:     Jul 23 2026 16:29:46
+I (1174) app_init: ELF file SHA256:  ff25e93ce...
+I (1174) app_init: ESP-IDF:          5.4.2
+I (1175) efuse_init: Min chip rev:     v0.0
+I (1175) efuse_init: Max chip rev:     v0.99 
+I (1175) efuse_init: Chip rev:         v0.2
+I (1175) heap_init: Initializing. RAM available for dynamic allocation:
+I (1175) heap_init: At 3FC9CBE8 len 0004CB28 (306 KiB): RAM
+I (1175) heap_init: At 3FCE9710 len 00005724 (21 KiB): RAM
+I (1175) heap_init: At 3FCF0000 len 00008000 (32 KiB): DRAM
+I (1176) heap_init: At 600FE01C len 00001FCC (7 KiB): RTCRAM
+I (1176) esp_psram: Adding pool of 16384K of PSRAM memory to heap allocator
+W (1176) spi_flash: Octal flash chip is using but dio mode is selected, will automatically switch to Octal mode
+I (1177) spi_flash: detected chip: mxic (opi)
+I (1177) spi_flash: flash io: opi_str
+W (1177) spi_flash: Detected size(32768k) larger than the size in the binary image header(8192k). Using the size in the binary image header.
+I (1177) sleep_gpio: Configure to isolate all GPIO pins in sleep state
+I (1178) sleep_gpio: Enable automatic switching of GPIO sleep configuration
+I (1178) main_task: Started on CPU0
+I (1179) main_task: Calling app_main()
+
+netkit XIAO ESP32S3 MNIST CNN float32 benchmark
+  backend:     netkit reference (MCU ESP32S3 FPU, interpreter embed)
+  weights:     flash (embedded .nk blob)
+  dtype:       float32 end-to-end
+  classify:    argmax(logits) — final Softmax omitted
+  images:      10 per run
+  runs:        10 (discard first invoke each run)
+  arena bytes: 278528
+  sysclk:      240000000 Hz
+  model:       loaded
+  probe:       label=0 pred=0 pred_f=0.0000 out_f=0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000
+
+  per-digit results (final run):
+DIGIT_SUMMARY runtime=netkit model=cnn_f32 image=0 label=0 pred=0 pred_f=0.0000 ok=1 out_f=0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000
+DIGIT_SUMMARY runtime=netkit model=cnn_f32 image=1 label=1 pred=0 pred_f=0.0000 ok=0 out_f=0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000
+DIGIT_SUMMARY runtime=netkit model=cnn_f32 image=2 label=2 pred=1 pred_f=1.2819 ok=0 out_f=0.3179,1.2819,0.0000,0.2192,0.0000,0.0000,0.1330,0.0000,0.0000,0.0000
+DIGIT_SUMMARY runtime=netkit model=cnn_f32 image=3 label=3 pred=0 pred_f=1.7734 ok=0 out_f=1.7734,0.0000,0.0000,0.1704,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000
+DIGIT_SUMMARY runtime=netkit model=cnn_f32 image=4 label=4 pred=0 pred_f=0.0000 ok=0 out_f=0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000
+DIGIT_SUMMARY runtime=netkit model=cnn_f32 image=5 label=5 pred=0 pred_f=0.0000 ok=0 out_f=0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000
+DIGIT_SUMMARY runtime=netkit model=cnn_f32 image=6 label=6 pred=6 pred_f=0.6011 ok=1 out_f=0.0000,0.0000,0.0000,0.1140,0.0000,0.0000,0.6011,0.0000,0.0000,0.0000
+DIGIT_SUMMARY runtime=netkit model=cnn_f32 image=7 label=7 pred=0 pred_f=1.1948 ok=0 out_f=1.1948,0.0000,0.0629,0.0464,0.0000,0.0000,0.0000,0.0000,0.1952,0.0000
+DIGIT_SUMMARY runtime=netkit model=cnn_f32 image=8 label=8 pred=0 pred_f=0.0000 ok=0 out_f=0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000
+DIGIT_SUMMARY runtime=netkit model=cnn_f32 image=9 label=9 pred=0 pred_f=0.0000 ok=0 out_f=0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000
+  accuracy:    2/10 on final run
+
+netkit MNIST cnn_f32 float32 benchmark summary (reference)
+  method:      10 runs x 10 images, discard first invoke each run
+  mean:   288550 us (288.550 ms)
+BENCHMARK_SUMMARY runtime=netkit model=cnn_f32 backend=reference-f32 mean_us=288550 runs=10
+
+DONE
+I (30360) main_task: Returned from app_main()

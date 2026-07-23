@@ -430,6 +430,7 @@ namespace
         plan.ready = true;
         CmsisNnQuant::FinalizeConv2DPlan(plan);
         NmsisNnQuant::FinalizeConv2DPlan(plan);
+        EspNnQuant::FinalizeConv2DPlan(plan);
         return true;
     }
 
@@ -581,6 +582,7 @@ namespace
         plan.ready = true;
         CmsisNnQuant::FinalizeDepthwiseConv2DPlan(plan);
         NmsisNnQuant::FinalizeDepthwiseConv2DPlan(plan);
+        EspNnQuant::FinalizeDepthwiseConv2DPlan(plan);
         return true;
     }
 
@@ -1235,8 +1237,9 @@ bool BuildRuntime(CNNNetwork& network, Arena& arena, uint32_t in_h, uint32_t in_
 
     if (workspace_bytes > 0)
     {
-        runtime->workspace = static_cast<uint8_t*>(
-            arena.alloc(workspace_bytes, alignof(std::max_align_t)));
+        // ESP-NN S3 asm wants ≥16-byte alignment for scratch.
+        constexpr std::size_t kWsAlign = 16;
+        runtime->workspace = static_cast<uint8_t*>(arena.alloc(workspace_bytes, kWsAlign));
         if (!runtime->workspace)
         {
 #if defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN && NETKIT_CMSIS_NN_ALLOWED
@@ -1246,8 +1249,7 @@ bool BuildRuntime(CNNNetwork& network, Arena& arena, uint32_t in_h, uint32_t in_
             const std::size_t rem = arena.remaining();
             if (rem > 0)
             {
-                runtime->workspace = static_cast<uint8_t*>(
-                    arena.alloc(rem, alignof(std::max_align_t)));
+                runtime->workspace = static_cast<uint8_t*>(arena.alloc(rem, kWsAlign));
                 runtime->workspace_bytes = runtime->workspace ? rem : 0;
             }
 #endif

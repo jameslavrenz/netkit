@@ -254,7 +254,7 @@ High-level combined handle (C convenience):
 | `NETKIT_MCU_ACCEL_ONLY` (`NETKIT_MCU_CMSIS_ONLY`) | Default on MCU class when `REFERENCE_QUANT_LOOPS=0` — QuantOps reference loops omitted (CMSIS-NN / ESP-NN / NMSIS-NN production) |
 | `NETKIT_DISABLE_IOSTREAM` | Default on MCU — `nk_arch_print` / `PrintNetworkSummary` are no-ops |
 | NUCLEO-F446RE peers | **int8** CNN / DS-CNN vs TFLM + microTVM (CMSIS-NN and reference); float32 CNN/DS-CNN exceed 512 KiB flash — [STATUS.md](STATUS.md) |
-| Espressif MCU (`mcu_esp`) | ESP-NN int8 production (ESP32 / S3 / C3 / C6 / P4); float32 reference (ESP-NN has no float API); same C `nk_*` load/run as Arm MCU. On-device peers: [XIAO ESP32C3](../boards/xiao-esp32c3/README.md) CNN/DS-CNN vs TFLM — **interpreter embed** default (ESP-NN on + off); [STATUS.md](STATUS.md#mcu-seeed-xiao-esp32c3), [`esp32c3_int8_ab_results.txt`](../benchmark/mcu_ab_logs/xiao_esp32c3/esp32c3_int8_ab_results.txt), [`esp32c3_int8_ref_ab_results.txt`](../benchmark/mcu_ab_logs/xiao_esp32c3/esp32c3_int8_ref_ab_results.txt) |
+| Espressif MCU (`mcu_esp`) | ESP-NN int8 production (ESP32 / S3 / C3 / C6 / P4); float32 reference (ESP-NN has no float API); same C `nk_*` load/run as Arm MCU. On-device peers: [C3](../boards/xiao-esp32c3/README.md) int8 embed · [S3](../boards/xiao-esp32s3/README.md) int8 embed + float **lowered** · [P4](../boards/esp32-p4-function-ev/README.md) int8 embed + float **lowered** — [STATUS](STATUS.md); float embed bug [KI-001](KNOWN_ISSUES.md#ki-001--espressif-mcu-float32-interpreter-embed-mispredicts-on-device) |
 | RISC-V MCU (`mcu_risc`) | NMSIS-NN int8 production (Nuclei N300 / RV32*); float32 reference (NMSIS-NN has no float API); same C `nk_*` load/run as Arm MCU |
 
 ### AOT deployment
@@ -264,7 +264,7 @@ High-level combined handle (C convenience):
 | Interpreter (embed `.nk` + loader) | `netkit::aot::*::Model` or `*_aot_load` + `nk_model_load_memory` | `*_aot.h` + `nk_model_load_memory` |
 | Lowered (static `Kernels::` chain) | `netkit::aot::*::Model` in `*_aot.hpp` | C header + C++ body: `*_aot.h` / `*_aot_run_int8` wrap the lowered C++ `Model` (`--language c`); no pure-C lowered emitter |
 
-Lowered AOT keeps coef arrays in flash `.rodata` (no SRAM copy at load). NUCLEO int8 boards default to quant lowered; **XIAO ESP32C3 int8 peer boards default to interpreter embed** (TFLM-fair; see [STATUS.md](STATUS.md#mcu-seeed-xiao-esp32c3) — lowered was a hair slower under ESP-NN and needs investigation).
+Lowered AOT keeps coef arrays in flash `.rodata` (no SRAM copy at load). NUCLEO int8 boards default to quant lowered; Espressif **int8** peers default to **interpreter embed** (TFLM-fair; C3 lowered was a hair slower under ESP-NN — [KI-002](KNOWN_ISSUES.md#ki-002--xiao-esp32c3-quant-lowered-aot-slower-than-interpreter-embed)). Espressif **float32** peers use **lowered AOT** ([KI-001](KNOWN_ISSUES.md#ki-001--espressif-mcu-float32-interpreter-embed-mispredicts-on-device)).
 
 ### Intentional C++-only symbols
 

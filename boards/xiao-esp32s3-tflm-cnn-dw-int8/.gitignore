@@ -1,0 +1,10 @@
+.pio/
+sdkconfig
+sdkconfig.old
+sdkconfig.xiao_esp32s3
+sdkconfig.xiao_esp32s3_ref
+dependencies.lock
+managed_components/
+components/esp-tflite-micro
+components/esp-nn
+generated/

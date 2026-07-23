@@ -11,21 +11,36 @@ board READMEs in the same change.
 
 ## Bugs / correctness
 
-### KI-001 — ESP32-P4 float32 interpreter embed mispredicts on-device
+### KI-001 — Espressif MCU float32 interpreter embed mispredicts on-device
 
 | | |
 |--|--|
 | **Status** | Open — investigate later |
 | **Severity** | Correctness on MCU float embed path |
-| **Board** | ESP32-P4-Function-EV (`mcu_esp` / `ESP32P4`) |
-| **Symptom** | MNIST CNN float `--no-lower` (embedded `.nk` + `LoadCNNFromBuffer`) → ~**2/10** top-1; many images print **exact-zero** logits; wrong path ~**42 ms** vs ~**97 ms** for correct lowered |
-| **Works** | Same `.nk` / embed path **10/10 on host**; **lowered AOT** float **10/10 on the same P4**; **int8 embed** on the same P4 OK |
-| **Workaround** | Published float peers use **lowered AOT** (no `--no-lower`). Int8 peers stay on interpreter embed (dynamic `.nk` load) |
-| **Ruled out** | Arena size (256/320 KiB), main stack 64 KiB, `-O3` / TFLM-match flags, flash XIP (RAM copy of blob), PSRAM + `esp_cache_msync` |
-| **Next leads** | Float payload bind / `RepackConv2dWeights` (OIHW→HWIO, embed-only) vs lowered static `alignas(16)` weights; on-device weight CRCs vs host; force DRAM copy of float weights and/or disable HWIO repack. Softmax-omit for float CNN is a separate feature gap (see KI-006) and does not explain zeros (`Softmax(0)`→~0.1) |
-| **Refs** | [STATUS — P4](STATUS.md#mcu-espressif-esp32-p4-function-ev) · [boards/esp32-p4-function-ev/README.md](../boards/esp32-p4-function-ev/README.md) · [`esp32_p4_ev_float32_ab_results.txt`](../benchmark/mcu_ab_logs/esp32_p4_ev/esp32_p4_ev_float32_ab_results.txt) |
+| **Boards** | **ESP32-P4-Function-EV** and **XIAO ESP32-S3** (both confirmed) |
+| **Symptom** | MNIST CNN float `--no-lower` (embedded `.nk` + `LoadCNNFromBuffer`) → ~**2/10** top-1; many images print **exact-zero** logits (S3 also showed sparse non-zeros / wrong argmax) |
+| **Works** | Same `.nk` / embed path **10/10 on host**; **lowered AOT** float **10/10 on both boards**; **int8 embed** on both boards OK |
+| **Workaround** | Published float peers use **lowered AOT** (no `--no-lower`). Int8 peers stay on interpreter embed |
+| **Ruled out** | Arena size (256/272 KiB+), main stack 64 KiB, `-O3` / TFLM-match flags, flash XIP (RAM copy of blob), PSRAM + `esp_cache_msync` (P4) |
+| **Next leads** | Float payload bind / `RepackConv2dWeights` (OIHW→HWIO, embed-only) vs lowered static `alignas(16)` weights; on-device weight CRCs vs host; force DRAM copy of float weights and/or disable HWIO repack. Softmax-omit for float CNN is a separate feature gap (see KI-005) and does not explain zeros (`Softmax(0)`→~0.1) |
 
-**Note:** Interpreter embed remains the flexible path (reload `.nk` without re-lowering). BSS `ParsedModel` scratch does **not** remove that flexibility — only the float P4 peer workaround uses lowered AOT.
+#### Affected boards (side-by-side)
+
+| Board | Chip / clock | Float embed (`--no-lower`) | Float lowered AOT | Int8 embed |
+|-------|--------------|----------------------------|-------------------|------------|
+| [ESP32-P4-Function-EV](../boards/esp32-p4-function-ev/README.md) | ESP32-P4 @ 360 MHz (RISC-V FPU) | **Fail** ~2/10; many zero logits; path ~2× too fast vs correct | **10/10** | **10/10** |
+| [XIAO ESP32-S3](../boards/xiao-esp32s3/README.md) | ESP32-S3 @ 240 MHz (Xtensa FPU) | **Fail** 2/10; many zero logits (reproduced 2026-07-23) | **10/10** | **10/10** |
+
+Not yet tried on XIAO ESP32C3 (no FPU float peer A/B). Treat as an **Espressif `mcu_esp` float-embed** bug until proven otherwise.
+
+| Artifact | Board |
+|----------|-------|
+| [`esp32_p4_ev_float32_ab_results.txt`](../benchmark/mcu_ab_logs/esp32_p4_ev/esp32_p4_ev_float32_ab_results.txt) | P4 float peer (lowered) |
+| [`cnn_f32_netkit_embed.txt`](../benchmark/mcu_ab_logs/xiao_esp32s3/cnn_f32_netkit_embed.txt) | S3 float embed failure log |
+| [`esp32s3_all_ab_results.txt`](../benchmark/mcu_ab_logs/xiao_esp32s3/esp32s3_all_ab_results.txt) | S3 published peer summary |
+| [STATUS — P4](STATUS.md#mcu-espressif-esp32-p4-function-ev) · [STATUS — S3](STATUS.md#mcu-seeed-xiao-esp32s3) | Published numbers |
+
+**Note:** Interpreter embed remains the flexible path (reload `.nk` without re-lowering). BSS `ParsedModel` scratch does **not** remove that flexibility — only the float Espressif peer workaround uses lowered AOT.
 
 ---
 
@@ -86,7 +101,8 @@ board READMEs in the same change.
 |----|------|-------|
 | KI-D01 | Pi ImageNet int8 reference top-1 gap | netkit 7/10 vs TF Lite 8/10 under reference — retrain / recalibrate only; XNNPACK path already matches |
 | KI-D02 | Float32 MNIST CNN / DS-CNN on NUCLEO-F446RE | Models exceed 512 KiB flash; use int8 on-device peers |
-| KI-D03 | ESP32-S3 on-device peer A/B | C3 int8 + P4 int8/float32 CNN/DS-CNN done; S3 next |
+| KI-D03 | ESP32-S3 on-device peer A/B | **Done** 2026-07-23 — int8 + float32 CNN/DS-CNN; float stays lowered per KI-001 |
+| KI-D03b | ESP32-C6 on-device peer A/B | Board trees optional / not published |
 | KI-D04 | RISC-V MCU (`mcu_risc`) on-device peers | Runtime + host smoke done; Nuclei / RV32 vs TFLM / NMSIS-NN TBD |
 | KI-D05 | Broader int8 model coverage | Beyond MNIST + ImageNet MNv4 fixtures |
 | KI-D06 | float16 / int16 / int4 | Phase 2 — [DATATYPES.md](DATATYPES.md) |

@@ -1,0 +1,8 @@
+ESP32-S3 CNN int8 smoke (2026-07-23)
+Chip: ESP32-S3 rev0.2, 240 MHz, 16MB PSRAM, 32MB OPI flash
+
+netkit esp-nn S3 asm (workspace sized):   10/10  mean_us=34720   (34.720 ms)
+netkit esp-nn portable (earlier):         10/10  mean_us=139650  (139.650 ms)
+netkit reference:                         10/10  mean_us=112069  (112.069 ms)
+tflm esp-nn:                              10/10  mean_us=34851   (34.851 ms)
+tflm reference:                           10/10  mean_us=1113036 (1113.036 ms)

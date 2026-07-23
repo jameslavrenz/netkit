@@ -1,6 +1,6 @@
 # MCU A/B logs
 
-On-device peer captures for NUCLEO-F446RE, XIAO ESP32C3, and ESP32-P4-Function-EV.
+On-device peer captures for NUCLEO-F446RE, XIAO ESP32C3, XIAO ESP32-S3, and ESP32-P4-Function-EV.
 Published gallery: [README.md — Peer benchmarks](../../README.md#peer-benchmarks-mcu--mpu--cpu) ·
 [STATUS.md](../../docs/STATUS.md) · open issues: [KNOWN_ISSUES.md](../../docs/KNOWN_ISSUES.md).
 
@@ -100,3 +100,40 @@ Published summary: [docs/STATUS.md — MCU (Espressif ESP32-P4-Function-EV)](../
 | MNIST DS-CNN | **74.8 ms** | 102.6 ms | 1.37× |
 
 Board: ESP32-P4 @ 360 MHz. Matched `-O3` C++. Companion ESP32-C6 on kit is WiFi-only.
+Float embed bug also hits S3 — [KNOWN_ISSUES KI-001](../../docs/KNOWN_ISSUES.md#ki-001--espressif-mcu-float32-interpreter-embed-mispredicts-on-device).
+
+## Seeed XIAO ESP32-S3
+
+Canonical **netkit vs TFLM** for MNIST CNN and DS-CNN @ 240 MHz (FPU). Three published rounds:
+
+| Artifact | Contents |
+|----------|----------|
+| **[xiao_esp32s3/esp32s3_all_ab_results.txt](xiao_esp32s3/esp32s3_all_ab_results.txt)** | All three rounds side-by-side |
+| `xiao_esp32s3/smoke_*.log` / `cnn_*_f32_*.txt` | UART captures |
+| `xiao_esp32s3/cnn_f32_netkit_embed.txt` | KI-001 float embed failure (2/10) |
+
+Methodology: 10×10; discard first invoke. ImageNet skipped (flash).
+Published summary: [docs/STATUS.md — MCU (Seeed XIAO ESP32-S3)](../../docs/STATUS.md#mcu-seeed-xiao-esp32s3).
+
+**Round 1 — int8 ESP-NN S3 asm** (all 10/10)
+
+| Model | netkit | TFLM | Gain (TFLM÷netkit) |
+|-------|-------:|-----:|-------------------:|
+| MNIST CNN | **34.7 ms** | 34.9 ms | 1.00× |
+| MNIST DS-CNN | **31.4 ms** | 31.7 ms | 1.01× |
+
+**Round 2 — int8 ESP-NN OFF** (reference; all 10/10)
+
+| Model | netkit | TFLM | Gain (TFLM÷netkit) |
+|-------|-------:|-----:|-------------------:|
+| MNIST CNN | **112.1 ms** | 1113.0 ms | 9.93× |
+| MNIST DS-CNN | **64.3 ms** | 362.8 ms | 5.64× |
+
+**Round 3 — float32 reference** (ESP-NN N/A; netkit lowered AOT; all 10/10)
+
+| Model | netkit | TFLM | Gain (TFLM÷netkit) |
+|-------|-------:|-----:|-------------------:|
+| MNIST CNN | **308.2 ms** | 525.6 ms | 1.71× |
+| MNIST DS-CNN | **63.4 ms** | 166.4 ms | 2.62× |
+
+Board: ESP32-S3 @ 240 MHz. Matched `-O3` C++. Float embed fails like P4 — [KI-001](../../docs/KNOWN_ISSUES.md#ki-001--espressif-mcu-float32-interpreter-embed-mispredicts-on-device).

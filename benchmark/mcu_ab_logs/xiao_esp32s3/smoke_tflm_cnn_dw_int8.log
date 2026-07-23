@@ -1,0 +1,106 @@
+ESP-ROM:esp32s3-20210327
+Build:Mar 27 2021
+rst:0x15 (USB_UART_CHIP_RESET),boot:0x8 (SPI_FAST_FLASH_BOOT)
+Saved PC:0x420139ee
+SPIWP:0xee
+Octal Flash Mode Enabled
+For OPI Flash, Use Default Flash Boot Mode
+mode:SLOW_RD, clock div:1
+load:0x3fce2820,len:0x1564
+load:0x403c8700,len:0x4
+load:0x403c8704,len:0xc80
+load:0x403cb700,len:0x2ee0
+entry 0x403c890c
+I (33) boot: ESP-IDF 5.4.2 2nd stage bootloader
+I (33) boot: compile time Jul 23 2026 16:22:22
+I (33) boot: Multicore bootloader
+I (33) boot: chip revision: v0.2
+I (34) boot: efuse block revision: v1.4
+I (34) boot.esp32s3: Boot SPI Speed : 80MHz
+I (34) boot.esp32s3: SPI Mode       : SLOW READ
+I (34) boot.esp32s3: SPI Flash Size : 8MB
+I (34) boot: Enabling RNG early entropy source...
+I (35) boot: Partition Table:
+I (35) boot: ## Label            Usage          Type ST Offset   Length
+I (35) boot:  0 nvs              WiFi data        01 02 00009000 00006000
+I (35) boot:  1 phy_init         RF data          01 01 0000f000 00001000
+I (36) boot:  2 factory          factory app      00 00 00010000 00100000
+I (36) boot: End of partition table
+I (36) esp_image: segment 0: paddr=00010020 vaddr=3c030020 size=45648h (284232) map
+I (104) esp_image: segment 1: paddr=00055670 vaddr=3fc91000 size=027e0h ( 10208) load
+I (107) esp_image: segment 2: paddr=00057e58 vaddr=40374000 size=081c0h ( 33216) load
+I (116) esp_image: segment 3: paddr=00060020 vaddr=42000020 size=282f4h (164596) map
+I (155) esp_image: segment 4: paddr=0008831c vaddr=4037c1c0 size=04d5ch ( 19804) load
+I (161) esp_image: segment 5: paddr=0008d080 vaddr=600fe000 size=0001ch (    28) load
+I (166) boot: Loaded app from partition at offset 0x10000
+I (167) boot: Disabling RNG early entropy source...
+I (168) cpu_start: Multicore app
+I (177) cpu_start: Pro cpu start user code
+I (177) cpu_start: cpu freq: 240000000 Hz
+I (177) app_init: Application information:
+I (177) app_init: Project name:     mnist_cnn_dw_int8_tflm_xiao_esp
+I (177) app_init: App version:      v0.1-137-gf4dbcf3a6-dirty
+I (177) app_init: Compile time:     Jul 23 2026 16:22:03
+I (177) app_init: ELF file SHA256:  6e703f101...
+I (178) app_init: ESP-IDF:          5.4.2
+I (178) efuse_init: Min chip rev:     v0.0
+I (178) efuse_init: Max chip rev:     v0.99 
+I (178) efuse_init: Chip rev:         v0.2
+I (178) heap_init: Initializing. RAM available for dynamic allocation:
+I (178) heap_init: At 3FCAC098 len 0003D678 (245 KiB): RAM
+I (179) heap_init: At 3FCE9710 len 00005724 (21 KiB): RAM
+I (179) heap_init: At 3FCF0000 len 00008000 (32 KiB): DRAM
+I (179) heap_init: At 600FE01C len 00001FCC (7 KiB): RTCRAM
+W (179) spi_flash: Octal flash chip is using but dio mode is selected, will automatically switch to Octal mode
+I (180) spi_flash: detected chip: mxic (opi)
+I (180) spi_flash: flash io: opi_str
+W (180) spi_flash: Detected size(32768k) larger than the size in the binary image header(8192k). Using the size in the binary image header.
+I (180) sleep_gpio: Configure to isolate all GPIO pins in sleep state
+I (181) sleep_gpio: Enable automatic switching of GPIO sleep configuration
+I (181) main_task: Started on CPU0
+I (182) main_task: Calling app_main()
+
+TFLM XIAO ESP32S3 MNIST DS-CNN int8 benchmark
+  backend:     tflm esp-nn int8 (MCU ESP32S3)
+  model bytes: 222904
+  input type:  int8 (prequantized test vectors)
+  output type: int8
+  images:      10 per run
+  runs:        10 (discard first invoke each run)
+  arena bytes: 98304
+  sysclk:      240000000 Hz
+  probe:       label=0 pred=0 pred_i8=127 out_i8=127,-128,-128,-128,-128,-128,-128,-128,-128,-128
+
+  per-digit results (final run):
+    image  label  pred  pred_i8  ok
+        0      0     0      127  yes
+DIGIT_SUMMARY runtime=tflm model=cnn_dw_int8 image=0 label=0 pred=0 pred_i8=127 ok=1 out_i8=127,-128,-128,-128,-128,-128,-128,-128,-128,-128
+        1      1     1      127  yes
+DIGIT_SUMMARY runtime=tflm model=cnn_dw_int8 image=1 label=1 pred=1 pred_i8=127 ok=1 out_i8=-128,127,-128,-128,-128,-128,-128,-128,-128,-128
+        2      2     2      127  yes
+DIGIT_SUMMARY runtime=tflm model=cnn_dw_int8 image=2 label=2 pred=2 pred_i8=127 ok=1 out_i8=-128,-128,127,-128,-128,-128,-128,-128,-128,-128
+        3      3     3       77  yes
+DIGIT_SUMMARY runtime=tflm model=cnn_dw_int8 image=3 label=3 pred=3 pred_i8=77 ok=1 out_i8=-128,-128,-127,77,-128,-82,-128,-128,-125,-127
+        4      4     4      127  yes
+DIGIT_SUMMARY runtime=tflm model=cnn_dw_int8 image=4 label=4 pred=4 pred_i8=127 ok=1 out_i8=-128,-128,-128,-128,127,-128,-128,-128,-128,-128
+        5      5     5      127  yes
+DIGIT_SUMMARY runtime=tflm model=cnn_dw_int8 image=5 label=5 pred=5 pred_i8=127 ok=1 out_i8=-128,-128,-128,-128,-128,127,-128,-128,-128,-128
+        6      6     6      127  yes
+DIGIT_SUMMARY runtime=tflm model=cnn_dw_int8 image=6 label=6 pred=6 pred_i8=127 ok=1 out_i8=-128,-128,-128,-128,-128,-128,127,-128,-128,-128
+        7      7     7      127  yes
+DIGIT_SUMMARY runtime=tflm model=cnn_dw_int8 image=7 label=7 pred=7 pred_i8=127 ok=1 out_i8=-128,-128,-128,-128,-128,-128,-128,127,-128,-128
+        8      8     8      127  yes
+DIGIT_SUMMARY runtime=tflm model=cnn_dw_int8 image=8 label=8 pred=8 pred_i8=127 ok=1 out_i8=-128,-128,-128,-128,-128,-128,-128,-128,127,-128
+        9      9     9      127  yes
+DIGIT_SUMMARY runtime=tflm model=cnn_dw_int8 image=9 label=9 pred=9 pred_i8=127 ok=1 out_i8=-128,-128,-128,-128,-128,-128,-128,-128,-128,127
+  accuracy:    10/10 on final run
+
+TFLM MNIST cnn_dw int8 benchmark summary (esp-nn)
+  method:      10 runs x 10 images, discard first invoke each run
+  per-run avg: avg of images 1-9 (us)
+
+  mean:   31693 us (31.693 ms)
+BENCHMARK_SUMMARY runtime=tflm model=cnn_dw_int8 backend=esp-nn mean_us=31693 runs=10
+
+DONE
+I (3396) main_task: Returned from app_main()

@@ -19,7 +19,7 @@ Both APIs share:
 
 Core inference, loading, tensor/ops, MLP/CNN construction (including FeatureTap / PAFPN), regression, and CLI entry points have documented C equivalents — see [API_PARITY.md](API_PARITY.md). Some C++ helpers (block introspection, op trimming, timed forward) remain C++-only.
 
-**MCU peers:** NUCLEO-F446RE **int8** CNN/DS-CNN vs TFLM and microTVM (CMSIS-NN / reference); XIAO ESP32C3 **int8** CNN/DS-CNN vs TFLM (ESP-NN on + off; interpreter embed); ESP32-P4-Function-EV **int8** + **float32** CNN/DS-CNN vs TFLM (float peers: lowered AOT — [KNOWN_ISSUES KI-001](KNOWN_ISSUES.md#ki-001--esp32-p4-float32-interpreter-embed-mispredicts-on-device)). Gallery: [README.md](../README.md#peer-benchmarks-mcu--mpu--cpu).
+**MCU peers:** NUCLEO-F446RE **int8** CNN/DS-CNN vs TFLM and microTVM (CMSIS-NN / reference); XIAO ESP32C3 **int8** CNN/DS-CNN vs TFLM (ESP-NN on + off; interpreter embed); XIAO ESP32-S3 + ESP32-P4-Function-EV **int8** + **float32** CNN/DS-CNN vs TFLM (float peers: lowered AOT — [KNOWN_ISSUES KI-001](KNOWN_ISSUES.md#ki-001--espressif-mcu-float32-interpreter-embed-mispredicts-on-device) on **P4 and S3**). Gallery: [README.md](../README.md#peer-benchmarks-mcu--mpu--cpu).
 
 ## Documentation map
 

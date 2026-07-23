@@ -64,16 +64,17 @@ P4 has an FPU. Runner: [`scripts/run_esp_float32_ab.sh`](scripts/run_esp_float32
 
 **Deploy note:** float peers use **lowered AOT** (not interpreter embed).
 
-#### Known issue — float32 interpreter embed (investigate later)
+#### Known issue — float32 interpreter embed (P4 **and** S3)
 
 | | |
 |--|--|
-| **What** | `--no-lower` float embed on this MCU mispredicts (~**2/10**); many exact-zero logits; ~2× too fast vs correct path |
-| **Works** | Same embed **10/10 on host**; **lowered AOT** **10/10 on P4**; int8 embed on P4 OK |
+| **What** | `--no-lower` float embed mispredicts (~**2/10**); many exact-zero logits; on P4 path can be ~2× too fast vs correct |
+| **Also on** | [XIAO ESP32-S3](../xiao-esp32s3/README.md) — same failure class (reproduced 2026-07-23) |
+| **Works** | Same embed **10/10 on host**; **lowered AOT** **10/10 on P4 and S3**; int8 embed OK on both |
 | **Workaround** | Ship / bench float with lowered AOT (no `--no-lower`) |
 | **Ruled out** | Arena size, 64 KiB stack, `-O3`, flash XIP (RAM blob copy), PSRAM + `esp_cache_msync` |
 | **Next leads** | Float bind / `RepackConv2dWeights` vs lowered static weights; on-device weight CRCs; optional DRAM force-copy / repack-off |
-| **Tracker** | [KNOWN_ISSUES.md KI-001](../../docs/KNOWN_ISSUES.md#ki-001--esp32-p4-float32-interpreter-embed-mispredicts-on-device) |
+| **Tracker** | [KNOWN_ISSUES.md KI-001](../../docs/KNOWN_ISSUES.md#ki-001--espressif-mcu-float32-interpreter-embed-mispredicts-on-device) |
 
 | Model | netkit | TFLM | Gain (TFLM÷netkit) |
 |-------|-------:|-----:|-------------------:|

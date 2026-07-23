@@ -128,8 +128,82 @@ namespace
 namespace EspNnQuant
 {
 
-void FinalizeConv2DPlan(CmsisQuantPlan::Conv2DPlan& /*plan*/) {}
-void FinalizeDepthwiseConv2DPlan(CmsisQuantPlan::DepthwiseConv2DPlan& /*plan*/) {}
+void FinalizeConv2DPlan(CmsisQuantPlan::Conv2DPlan& plan)
+{
+    if (!plan.ready || plan.in_h <= 0 || plan.in_w <= 0 || plan.in_c <= 0 || plan.out_c <= 0 ||
+        plan.kernel_size <= 0)
+        return;
+
+    const data_dims_t input_dims = {
+        .width = plan.in_w, .height = plan.in_h, .channels = plan.in_c, .extra = 1};
+    const data_dims_t filter_dims = {
+        .width = plan.kernel_size,
+        .height = plan.kernel_size,
+        .channels = plan.in_c,
+        .extra = plan.out_c};
+    const data_dims_t output_dims = {
+        .width = plan.out_w, .height = plan.out_h, .channels = plan.out_c, .extra = 1};
+
+    int32_t act_min = -128;
+    int32_t act_max = 127;
+    ActivationClamp(plan.clamp, plan.output_scale, plan.output_offset, &act_min, &act_max);
+
+    const conv_params_t conv_params = {
+        .in_offset = plan.input_offset,
+        .out_offset = plan.output_offset,
+        .stride = {.width = plan.stride, .height = plan.stride},
+        .padding = {.width = plan.pad_w, .height = plan.pad_h},
+        .dilation = {.width = 1, .height = 1},
+        .activation = {.min = act_min, .max = act_max},
+    };
+
+    const int scratch = esp_nn_get_conv_scratch_size(&input_dims, &filter_dims, &output_dims,
+                                                     &conv_params);
+    if (scratch > plan.workspace_bytes)
+        plan.workspace_bytes = scratch;
+}
+
+void FinalizeDepthwiseConv2DPlan(CmsisQuantPlan::DepthwiseConv2DPlan& plan)
+{
+    if (!plan.ready || plan.in_h <= 0 || plan.in_w <= 0 || plan.channels <= 0 ||
+        plan.kernel_h <= 0 || plan.kernel_w <= 0)
+        return;
+
+    const data_dims_t input_dims = {
+        .width = plan.in_w, .height = plan.in_h, .channels = plan.channels, .extra = 1};
+    const data_dims_t filter_dims = {
+        .width = plan.kernel_w,
+        .height = plan.kernel_h,
+        .channels = plan.channels,
+        .extra = 1};
+    const data_dims_t output_dims = {
+        .width = plan.out_w, .height = plan.out_h, .channels = plan.channels, .extra = 1};
+
+    int32_t act_min = -128;
+    int32_t act_max = 127;
+    ActivationClamp(plan.clamp, plan.output_scale, plan.output_offset, &act_min, &act_max);
+
+    const dw_conv_params_t dw_params = {
+        .in_offset = plan.input_offset,
+        .out_offset = plan.output_offset,
+        .ch_mult = 1,
+        .stride = {.width = plan.stride, .height = plan.stride},
+        .padding = {.width = plan.pad_w, .height = plan.pad_h},
+        .dilation = {.width = 1, .height = 1},
+        .activation = {.min = act_min, .max = act_max},
+    };
+
+    int scratch = esp_nn_get_depthwise_conv_scratch_size(&input_dims, &filter_dims, &output_dims,
+                                                         &dw_params);
+    // Runtime path may still need CHW→HWC pack space when weights_hwc is unset.
+    if (!plan.weights_hwc)
+    {
+        scratch += plan.kernel_h * plan.kernel_w * plan.channels;
+    }
+    if (scratch > plan.workspace_bytes)
+        plan.workspace_bytes = scratch;
+}
+
 void FinalizePool2DPlan(CmsisQuantPlan::Pool2DPlan& /*plan*/) {}
 
 bool FinalizeFcPlan(CmsisQuantPlan::FcPlan& plan,
