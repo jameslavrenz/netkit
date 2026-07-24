@@ -91,13 +91,25 @@ def conv2d_input_channels(
     return int(tensor_channels)
 
 
-def _layer_weight_tensor_count(layer: dict[str, Any]) -> int:
+def _uib_subop_weight_tensor_count(layer: dict[str, Any]) -> int:
+    """Weight tensors for one UIB when BN is folded (int8 / folded float packs)."""
+    count = 2  # expand + project
+    if int(layer.get("start_dw_kernel", 0)):
+        count += 1
+    if int(layer.get("middle_dw_kernel", 0)):
+        count += 1
+    return count
+
+
+def _layer_weight_tensor_count(layer: dict[str, Any], *, bn_folded: bool = False) -> int:
     layer_type = layer.get("type")
     if layer_type in {"conv2d", "depthwise_conv2d", "dense", "batch_norm2d", "layernorm2d"}:
         return 1
     if layer_type == "convnextv2_block":
         return 5
     if layer_type == "mobilenetv4_uib":
+        if bn_folded:
+            return _uib_subop_weight_tensor_count(layer)
         count = 0
         if int(layer.get("start_dw_kernel", 0)):
             count += 2

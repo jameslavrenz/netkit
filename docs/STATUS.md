@@ -19,7 +19,7 @@ Snapshot of what works today, what was measured, and what is still open. Compani
 | **mpu_arm** | Arm Cortex-A / RTOS-class | XNNPACK (default); CMSIS-NN off | **Done** — float32 + int8 |
 | **mpu_risc** | RISC-V MPU | XNNPACK (default); CMSIS-NN **forbidden** | **Done** — float32 + int8; same XNNPACK LayerFast stack as other MPUs (XNNPACK has strong RISC-V MPU support) |
 | **mcu_risc** | Non-Espressif RISC-V MCU (Nuclei / RV32) | NMSIS-NN (int8 production); float32 via reference (NMSIS-NN has no float API); CMSIS + XNNPACK + ESP-NN **forbidden** | **Done** — float32 + int8 runtime (host smoke via `NETKIT_HOST_SMOKE=1`); on-device peer benches TBD |
-| **mcu_esp** | Espressif MCU — Xtensa **and** RISC-V (ESP32 / S3 / C3 / C6 / P4) | ESP-NN (int8 production); float32 via reference (ESP-NN has no float API); XNNPACK **forbidden** | **Done** — float32 + int8 runtime; on-device peers: [XIAO ESP32C3](../boards/xiao-esp32c3/README.md) int8 · [XIAO ESP32-S3](../boards/xiao-esp32s3/README.md) int8+float32 · [ESP32-P4-Function-EV](../boards/esp32-p4-function-ev/README.md) int8+float32 vs TFLM (matched `-O3`); ImageNet skipped (flash) — C3: [int8](../benchmark/mcu_ab_logs/xiao_esp32c3/esp32c3_int8_ab_results.txt) · S3: [all rounds](../benchmark/mcu_ab_logs/xiao_esp32s3/esp32s3_all_ab_results.txt) · P4: [all rounds](../benchmark/mcu_ab_logs/esp32_p4_ev/esp32_p4_ev_all_ab_results.txt) |
+| **mcu_esp** | Espressif MCU — Xtensa **and** RISC-V (ESP32 / S3 / C3 / C6 / P4) | ESP-NN (int8 production); float32 via reference (ESP-NN has no float API); XNNPACK **forbidden** | **Done** — float32 + int8 runtime; on-device peers: [XIAO ESP32C3](../boards/xiao-esp32c3/README.md) int8 · [XIAO ESP32-S3](../boards/xiao-esp32s3/README.md) int8+float32 · [ESP32-P4-Function-EV](../boards/esp32-p4-function-ev/README.md) int8+float32 vs TFLM (matched `-O3`); ImageNet skipped — C3: [int8](../benchmark/mcu_ab_logs/xiao_esp32c3/esp32c3_int8_ab_results.txt) · S3: [all rounds](../benchmark/mcu_ab_logs/xiao_esp32s3/esp32s3_all_ab_results.txt) · P4: [all rounds](../benchmark/mcu_ab_logs/esp32_p4_ev/esp32_p4_ev_all_ab_results.txt) |
 
 **Policy reminder:** XNNPACK is default on cpu and all MPUs, never on MCU. CMSIS-NN is Arm MCU only (production int8). ESP-NN is **all Espressif MCUs** (production int8) — including RISC-V C3/C6/P4; do not use `mcu_risc` for ESP32*. NMSIS-NN is **non-Espressif** RISC-V MCU only (production int8; same CMSIS-style Try* / plan wiring). Targets follow vendor + backend, not ISA alone — [PLATFORMS.md — Target ≠ CPU ISA](PLATFORMS.md#target--cpu-isa). **CMSIS-DSP is not used.** Float32 on MCU uses reference kernels (CMSIS float LayerFast exists on Arm; ESP-NN / NMSIS-NN float Try* always miss). `NETKIT_IM2COL` defaults to **0** on all targets (see [BUILD_TARGETS.md](BUILD_TARGETS.md#netkit_im2col-guidance)).
 
@@ -32,6 +32,19 @@ Snapshot of what works today, what was measured, and what is still open. Compani
 | **MCU** | **Forbidden** | Use `Load*FromBuffer` / flash; `NETKIT_MMAP=1` is forced off |
 
 Default **on** for cpu + any MPU; opt out with `NETKIT_MMAP=0` on RTOS / bare-metal MPU. See [ARENA.md](ARENA.md) and [BUILD_TARGETS.md](BUILD_TARGETS.md).
+
+## Peer highlights (wins)
+
+Fair A/B across **MCU · MPU · CPU**. Peers: **TFLM** (MCU), **microTVM** (NUCLEO), **TF Lite** (Pi Zero + host), **ONNX Runtime** (host). One-panel LinkedIn card: [`benchmark/linkedin/netkit_linkedin_wins.png`](../benchmark/linkedin/netkit_linkedin_wins.png) (regenerate: `benchmark/linkedin/render_wins_summary.py`).
+
+| Story | Result |
+|-------|--------|
+| **MCU int8 reference** (QuantOps vs TFLM ref) | Up to **9.9×** faster — ESP32-S3 MNIST CNN **112 ms** vs **1113 ms**. Also NUCLEO **7.7×**, P4 **6.3×**, C3 **5.3×** (CNN). |
+| **MCU vs microTVM** (NUCLEO CMSIS-NN) | Faster than microTVM AOT — DS-CNN **58.3 ms** vs **86.4 ms** (**1.5×**); CNN **95.3** vs **112.3 ms**. |
+| **MCU vendor NN** (CMSIS-NN / ESP-NN) | **Parity** with TFLM when both use the same accel (~**1.00–1.05×**). |
+| **MCU float32** (lowered AOT; ESP-NN has no float API) | S3 DS-CNN **2.6×**, S3/P4 CNN **1.7×** vs TFLM (all 10/10). ImageNet skipped on Espressif MCU (flash). |
+| **MPU Pi Zero 2 W vs TF Lite** | XNNPACK ≈ parity; int8 reference up to **2.7×** (CNN / DS-CNN / MobileNetV4-Small). |
+| **CPU Apple M4 vs TF Lite / ORT** | XNNPACK ON: ≈ TF Lite; beats ORT XNNPACK EP on all six (up to **4.9×** float / **2.5×** int8). Binary ~**9×** smaller than LiteRT (~1.3 vs ~12.4 MiB). |
 
 ## Host three-way suite (netkit vs TF Lite vs ONNX Runtime)
 
@@ -224,7 +237,7 @@ Boards: [`esp32-p4-function-ev/`](../boards/esp32-p4-function-ev/README.md) — 
 
 ### MCU (Seeed XIAO ESP32-S3)
 
-Canonical (all rounds): [`esp32s3_all_ab_results.txt`](../benchmark/mcu_ab_logs/xiao_esp32s3/esp32s3_all_ab_results.txt) · board index: [`xiao-esp32s3/README.md`](../boards/xiao-esp32s3/README.md). Chip: **ESP32-S3 @ 240 MHz** (Xtensa, **FPU**) · bring-up unit: **16 MB PSRAM** / **32 MB OPI flash**. `NETKIT_TARGET=mcu_esp` + `NETKIT_ARCH=ESP32S3`. Same 10×10 methodology as C3/P4/NUCLEO; matched `-O3` C++ via [`mcu_esp_tflm_match_compile.cmake`](../boards/xiao-esp32s3/mcu_esp_tflm_match_compile.cmake). Default int8 path uses **ESP-NN S3 asm** (`NETKIT_ESP_NN_USE_S3_ASM=1`; plan scratch from `esp_nn_get_*_scratch_size`). ImageNet skipped (flash). Flash via OpenOCD builtin JTAG (esptool hard-reset often lands in download mode).
+Canonical (all rounds): [`esp32s3_all_ab_results.txt`](../benchmark/mcu_ab_logs/xiao_esp32s3/esp32s3_all_ab_results.txt) · board index: [`xiao-esp32s3/README.md`](../boards/xiao-esp32s3/README.md). Chip: **ESP32-S3 @ 240 MHz** (Xtensa, **FPU**) · bring-up unit: **16 MB PSRAM** / **32 MB OPI flash**. `NETKIT_TARGET=mcu_esp` + `NETKIT_ARCH=ESP32S3`. Same 10×10 methodology as C3/P4/NUCLEO; matched `-O3` C++ via [`mcu_esp_tflm_match_compile.cmake`](../boards/xiao-esp32s3/mcu_esp_tflm_match_compile.cmake). Default int8 path uses **ESP-NN S3 asm** (`NETKIT_ESP_NN_USE_S3_ASM=1`; plan scratch from `esp_nn_get_*_scratch_size`). ImageNet skipped. Flash via OpenOCD builtin JTAG (esptool hard-reset often lands in download mode).
 
 **Round 1 — int8 ESP-NN S3 asm** (all 10/10; netkit = interpreter embed):
 
@@ -266,6 +279,17 @@ Boards: [`xiao-esp32s3/`](../boards/xiao-esp32s3/README.md) — int8: `-cnn-int8
 - **Espressif MCU (`mcu_esp`):** **fully functional** for float32 + int8 — ESP-NN for int8 (CMSIS-style), float32 on reference; host ANSI smoke via `NETKIT_HOST_SMOKE=1`. On-device peers: **XIAO ESP32C3** int8 + **XIAO ESP32-S3** + **ESP32-P4-Function-EV** CNN/DS-CNN int8 **and float32** vs TFLM done (see above).
 - **RISC MPU (`mpu_risc`):** **fully functional** for float32 + int8 via the same **XNNPACK** LayerFast stack as Arm MPU / cpu. XNNPACK has strong RISC-V coverage on MPU-class cores; CMSIS-NN is correctly unavailable.
 - **RISC MCU (`mcu_risc`):** **fully functional** for float32 + int8 — **NMSIS-NN** for int8 (CMSIS-NN analogue for Nuclei / RISC-V MCU), float32 on reference; host smoke via `NETKIT_HOST_SMOKE=1`. On-device peer benches TBD. Override with `NETKIT_NMSIS_NN=0` for generic-only.
+
+## Tests / CI summary
+
+Canonical detail: [TESTING.md](TESTING.md). C ↔ C++ core runtime: [API_PARITY.md](API_PARITY.md).
+
+| Suite | Command | Cases / scope | CI |
+|-------|---------|---------------|----|
+| C++ / C embedded regression | `make test` / `make test-cpp` / `make test-c` | **89** `.nk` TCAS cases (both languages) + fast Python | Yes (`CI` on push/PR) |
+| Full Python | `make test-full` / `make test-python-full` | ONNX parity **82** + timm backbone pack/runtime + AOT | Manual (`gh workflow run test-full.yml`) |
+| Embedded smoke matrix | `make test-embedded-smoke-matrix` | MCU/MPU host smoke (CMSIS / ESP-NN / NMSIS-NN) | Local only |
+| Peer A/B (on-device) | board runners under `boards/` | NUCLEO · C3 · S3 · P4 · Pi Zero · host ORT | Not in CI (hardware) |
 
 ## Open / next
 

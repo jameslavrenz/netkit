@@ -6,6 +6,10 @@ generated/mobilenetv4_imagenet_saved_model/
 generated/mobilenetv4_imagenet_f32.tflite
 generated/mobilenetv4_imagenet_int8.tflite
 generated/mobilenetv4_imagenet_int8_tflite_quant.json
+generated/mobilenetv4_imagenet_f32_model_data.cc
+generated/mobilenetv4_imagenet_f32_model_data.h
+generated/mobilenetv4_imagenet_int8_model_data.cc
+generated/mobilenetv4_imagenet_int8_model_data.h
 generated/imagenet_sample_cache/
 generated/imagenet_mnv4_test_images.cc
 generated/imagenet_mnv4_test_images.h

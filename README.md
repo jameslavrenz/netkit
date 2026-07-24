@@ -23,7 +23,11 @@ Use netkit as an **`NkOpsResolver` interpreter** (load `.nk`, dispatch layers at
 
 ## Peer benchmarks (MCU · MPU · CPU)
 
-Fair A/B across **MCU** (TFLM + microTVM), **MPU** (TF Lite on Pi Zero 2 W), and **CPU** (TF Lite + ONNX Runtime; XNNPACK ON/OFF). Full tables and methodology: [docs/STATUS.md](docs/STATUS.md). Suite infographics:
+Fair A/B across **MCU** (TFLM + microTVM), **MPU** (TF Lite on Pi Zero 2 W), and **CPU** (TF Lite + ONNX Runtime; XNNPACK ON/OFF). Full tables and methodology: [docs/STATUS.md](docs/STATUS.md). Wins summary (LinkedIn one-panel): [STATUS — Peer highlights](docs/STATUS.md#peer-highlights-wins).
+
+![netkit MCU · MPU · CPU wins vs TFLM / microTVM / TF Lite / ONNX Runtime](benchmark/linkedin/netkit_linkedin_wins.png)
+
+Suite infographics:
 
 | Int8 suite | Float32 suite |
 |------------|---------------|
@@ -201,7 +205,7 @@ Each board README covers toolchain, `make` / flash / UART (or SSH for the Pi), m
 | **[API Overview](docs/API.md)** | C vs C++ APIs, linking, memory model |
 | **[Build Targets](docs/BUILD_TARGETS.md)** | CPU / MCU / MPU flags and arena defaults |
 | **[Platforms](docs/PLATFORMS.md)** | Configure netkit for each supported device |
-| **[Boards](boards/README.md)** | On-device firmware index — NUCLEO, Pi Zero 2 W, peer baselines |
+| **[Boards](boards/README.md)** | On-device firmware index — NUCLEO, Espressif (C3·S3·P4), Pi Zero 2 W |
 | **[Generic kernels](docs/GENERIC_KERNELS.md)** | How reference kernels are optimized for 32-bit+ devices |
 | **[CLI Reference](docs/CLI.md)** | `test`, `run`, and `inspect` (CPU build) |
 | **[Arena Memory](docs/ARENA.md)** | Bump allocator — sizing, alignment, reset |
@@ -212,7 +216,7 @@ Each board README covers toolchain, `make` / flash / UART (or SSH for the Pi), m
 | **[Python packager](python/README.md)** | `python -m netkit convert` (ONNX → `.nk`), `aot` (embed `.nk` in C/C++) |
 | **[Testing](docs/TESTING.md)** | Regression suites, Make targets, CI on push/PR + manual full suite |
 | **[MNIST benchmarks](benchmark/README.md)** | Host invoke latency + per-op profiles: netkit vs TFLM |
-| **[Peer-suite infographics](benchmark/linkedin/)** | MCU / MPU / CPU float32 + int8 A/B images |
+| **[Peer-suite infographics](benchmark/linkedin/)** | Wins card + MCU / MPU / CPU float32 + int8 A/B images |
 | **[C API Reference](docs/c-api.md)** | `netkit.h` (C23) |
 | **[C++ API Reference](docs/cpp-api.md)** | Headers in `include/` (C++26) |
 | **[API Parity Policy](docs/API_PARITY.md)** | C ↔ C++ symbol map and contribution rules |
@@ -237,8 +241,8 @@ Application code is C++26. C23 is limited to the C header, the `extern "C"` brid
 
 - **Multi-modal (image / vision first)** — classification and detection fixtures today; voice planned (embedded-first for MCU, MPU, NPU)
 - **Six deployment targets** — `cpu`, `mcu_arm`, `mpu_arm`, `mcu_esp`, `mcu_risc`, `mpu_risc` with per-device cookbooks ([PLATFORMS.md](docs/PLATFORMS.md))
-- **Board firmware** — NUCLEO-F446RE (CMSIS-NN peers) + Pi Zero 2 W (XNNPACK MPU); setup index ([boards/README.md](boards/README.md))
-- **Peer-benched inference** — float32 + int8 A/B on Arm MCU, Arm MPU, and CPU vs TFLM / TF Lite / ORT ([STATUS.md](docs/STATUS.md)); gallery above
+- **Board firmware** — NUCLEO-F446RE (CMSIS-NN) · XIAO ESP32C3 / ESP32-S3 / ESP32-P4 (ESP-NN) · Pi Zero 2 W (XNNPACK MPU); setup index ([boards/README.md](boards/README.md))
+- **Peer-benched inference** — float32 + int8 A/B on Arm MCU, Espressif MCU (C3/S3/P4), Arm MPU, and CPU vs TFLM / microTVM / TF Lite / ORT ([STATUS.md](docs/STATUS.md)); gallery above
 - **Interpreter or compiled** — `NkOpsResolver` + `.nk` load for flexibility; AOT embed + packager optimizations + trimmed ops for production speed ([PHILOSOPHY.md](docs/PHILOSOPHY.md#deployment-modes-interpreter-or-compiled))
 - **Dual API** — C23 (`netkit.h`) and C++26 headers; same load/run path on every backend ([API_PARITY.md](docs/API_PARITY.md))
 - **CLI** — `test`, `run`, and `inspect` commands for desktop development
@@ -299,7 +303,7 @@ netkit/
 ├── python/netkit/          # ONNX → .nk packager + AOT
 ├── examples/               # C23 + C++26 infer demos
 ├── tests/                  # C API regression + embedded_smoke
-├── boards/                 # NUCLEO / Pi Zero 2 W peer firmware
+├── boards/                 # NUCLEO / Espressif (C3·S3·P4) / Pi Zero 2 W peer firmware
 ├── models/                 # bundled .nk + .onnx fixtures
 ├── tools/                  # export, fetch_*, sync_third_party_licenses, smoke
 ├── third_party/            # CMSIS / ESP-NN / NMSIS / XNNPACK (fetch or submodule)
@@ -434,7 +438,7 @@ MNIST MLP: [MNIST.md](docs/MNIST.md). MNIST CNN: [MNIST_CNN.md](docs/MNIST_CNN.m
 See [PHILOSOPHY.md](docs/PHILOSOPHY.md) for the full narrative — including [interpreter vs compiled deployment](docs/PHILOSOPHY.md#deployment-modes-interpreter-or-compiled). In brief:
 
 - **Interpreter or compiled** — `NkOpsResolver` + `.nk` load for flexibility; AOT embed + packager optimizations + trimmed ops for production speed
-- **Phase 1 (today)** — Float32 and int8 complete on six targets; Arm MCU/MPU/CPU peer benches done; CMSIS-NN / ESP-NN / NMSIS-NN / XNNPACK; ONNX → `.nk` + AOT; YOLOX path in (accuracy training open)
+- **Phase 1 (today)** — Float32 and int8 complete on six targets; Arm MCU + Espressif MCU (C3/S3/P4) + Arm MPU + CPU peer benches done; CMSIS-NN / ESP-NN / NMSIS-NN / XNNPACK; ONNX → `.nk` + AOT; YOLOX path in (accuracy training open); `mcu_risc` on-device peers next
 - **Phase 2 (planned)** — Broader quantization (float16, int16, int4), fusion, layout, NPU offload; `mcu_risc` on-device peers; YOLOX accuracy / voice fixtures
 - **Open-source stack** — MIT engine; optional OSS backends only (no proprietary SDKs). Reference kernels always available
 - **Memory-conscious** — Arena bump allocator; target-specific defaults (MCU 64 KiB / MPU·CPU 64 MiB; overridable)
@@ -474,4 +478,4 @@ ONNX Runtime, TF Lite / LiteRT, TFLM, microTVM, …) retain their own licenses.
 - C sources and `netkit.h`: C23
 - All tests must pass (`make test`; run `make test-full` before release)
 - Update docs when changing public API
-- **New C++ public API requires a matching C entry in `netkit.h`** — see [API_PARITY.md](docs/API_PARITY.md)
+- **New C++ public API requires a matching C entry in `netkit.h`**, unless listed under [Intentional C++-only](docs/API_PARITY.md#intentional-c-only-symbols) in [API_PARITY.md](docs/API_PARITY.md)

@@ -5,7 +5,7 @@ Configuration: [`include/netkit_config.h`](../include/netkit_config.h)
 
 The C23 API mirrors the C++26 engine for **embedded firmware** — load `.nk` via the interpreter path (`nk_model_load`, `nk_model_load_memory`) or generated **AOT** wrappers. Compile user code with `-std=c23`. Link against `libnetkit.a` using a C++ linker driver.
 
-Every function listed here mirrors a C++26 entry point. See [`API_PARITY.md`](API_PARITY.md) for the full symbol map and contribution policy.
+Most functions listed here map to a C++26 entry point. Exceptions: the high-level `nk_model_t` / `nk_model_run*` handle is a **C convenience** over typed `Load*` + `forward` / `forward_quantized`. See [`API_PARITY.md`](API_PARITY.md) for the full symbol map, intentional C++-only APIs, and contribution policy.
 
 Overview for new users: [GETTING_STARTED.md](GETTING_STARTED.md). Philosophy and deployment modes: [PHILOSOPHY.md](PHILOSOPHY.md).
 
@@ -146,9 +146,9 @@ Used when building CNN pipelines manually. File-loaded models (`nk_cnn_load`) co
 
 Mirror C++ `Tensor`, `Conv2D`, and `DepthwiseConv2D`. Safe to pass by pointer to `nk_tensor_*` / `nk_ops_*` / standalone conv forwards.
 
-`nk_conv2d_t` mirrors C++ `Conv2D`: `pad_h`/`pad_w` are start padding; `pad_h_end`/`pad_w_end` are end padding. Pass `NK_PAD_MIRROR` (`-1`) for end padding to mirror the start (symmetric). Set all four explicitly for asymmetric padding.
+`nk_conv2d_t` is the **float standalone subset** of C++ `Conv2D` (no `weights_hwio` / quant pointers): `pad_h`/`pad_w` are start padding; `pad_h_end`/`pad_w_end` are end padding. Pass `NK_PAD_MIRROR` (`-1`) for end padding to mirror the start (symmetric). Set all four explicitly for asymmetric padding.
 
-`nk_depthwise_conv2d_t` mirrors C++ `DepthwiseConv2D`: `kernel_h`/`kernel_w`, same pad fields, `channels`, weights `[ch][kh][kw]`. Forward: `nk_depthwise_conv2d_forward`.
+`nk_depthwise_conv2d_t` is the **float standalone subset** of C++ `DepthwiseConv2D`: `kernel_h`/`kernel_w`, same pad fields, `channels`, weights `[ch][kh][kw]`. Forward: `nk_depthwise_conv2d_forward`.
 
 ### `nk_mlp_t`, `nk_cnn_t`
 
@@ -479,7 +479,7 @@ For **embedded** models (AOT firmware), pass the static `.nk` byte array to `nk_
 | C function | C++ equivalent | Notes |
 |------------|----------------|-------|
 | `nk_parse_architecture` | `NkLoader::ParseFile` + `FillArchInfo` | Populates `nk_arch_info_t` |
-| `nk_recommended_arena_bytes` | `ArenaUtil::CapacityForModel` + inspect probe | Load + forward peak sizing (CPU heap builds) |
+| `nk_recommended_arena_bytes` | `ArenaUtil::CapacityForModel` (+ inspect probe on CPU heap) | `0` on failure; CPU heap builds may probe load+forward peaks; MCU returns `CapacityForModel` estimate |
 | `nk_parse_architecture_memory` | `NkLoader::ParseBuffer` + `FillArchInfo` | Parse embedded blob without a file |
 | `nk_arch_print` | `NkLoader::PrintNetworkSummary` | Boxed summary to stdout |
 | `nk_mlp_load` | `NkLoader::LoadMLP` | |
@@ -493,7 +493,7 @@ For **embedded** models (AOT firmware), pass the static `.nk` byte array to `nk_
 ```c
 nk_status_t nk_parse_architecture(const char* nk_path, nk_arch_info_t* info);
 nk_status_t nk_parse_architecture_memory(const uint8_t* data, size_t size, nk_arch_info_t* info);
-size_t nk_recommended_arena_bytes(const char* nk_path);  /* 0 on failure / non-CPU */
+size_t nk_recommended_arena_bytes(const char* nk_path);  /* 0 on failure; MCU = CapacityForModel estimate */
 nk_status_t nk_arch_print(const char* nk_path);
 nk_status_t nk_mlp_load(const char* nk_path, nk_arena_t* arena, nk_mlp_t* mlp, nk_arch_info_t* info);
 nk_status_t nk_mlp_load_memory(const uint8_t* data, size_t size, nk_arena_t* arena, nk_mlp_t* mlp, nk_arch_info_t* info);

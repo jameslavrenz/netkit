@@ -71,7 +71,7 @@ With train extras installed (`pip install -e "python[train]"`), Python tests pac
 | `python/tests/test_torch_backbone_pack.py` | Packed weights vs NumPy reference vs timm (ResNet-18, ConvNeXt V2-Atto, MobileNetV4 Small) |
 | `python/tests/test_torch_backbone_runtime_parity.py` | Same pack path, then **C++ runtime** (`tools/nk_infer`) vs timm and NumPy reference on random inputs |
 
-Requires **`make tools/nk_infer`** (model-sized heap arena via `nk_recommended_arena_bytes`). Not part of the 59 embedded cases — uses ephemeral `.nk` files in a temp directory. Skipped in default `make test`; run `make test-full`.
+Requires **`make tools/nk_infer`** (model-sized heap arena via `nk_recommended_arena_bytes`). Not part of the **89** embedded cases — uses ephemeral `.nk` files in a temp directory. Skipped in default `make test`; run `make test-full`.
 
 ## AOT compile tests
 

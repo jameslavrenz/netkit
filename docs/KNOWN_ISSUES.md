@@ -113,5 +113,5 @@ Not yet tried on XIAO ESP32C3 (no FPU float peer A/B). Treat as an **Espressif `
 ## Notes (not bugs)
 
 - **MCU `ParsedModel` BSS scratch** — ~27 KiB catalog lives in static storage (not stack, not arena) so embed load does not smash FreeRTOS stacks. Still clears/reloads per `.nk`; does not force lowered AOT.
-- **ImageNet on Espressif MCU peers** — skipped (weights exceed factory app partition).
+- **ImageNet on Espressif MCU peers** — skipped (weights / flash / arena budget vs MNIST peers).
 - **C ↔ C++ API** — core runtime symbols in `netkit.h` have C++ counterparts; intentional C++-only helpers listed in [API_PARITY.md](API_PARITY.md#intentional-c-only-symbols). Keep docs in sync when adding APIs. Float CNN omit is a shared gap ([KI-005](#ki-005--float-cnn-has-no-omit_final_softmax-c-and-c)), not a missing C mirror.

@@ -43,7 +43,7 @@ You get:
 Verify:
 
 ```bash
-make test         # default: C++/C (88) + fast Python (AOT, unit tests)
+make test         # default: C++/C (89) + fast Python (AOT, unit tests)
 ```
 
 ---

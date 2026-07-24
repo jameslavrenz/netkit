@@ -162,6 +162,7 @@ namespace TensorFactory {
     Tensor CreateND(Arena& arena, uint32_t rank, std::span<const uint32_t> shape);
     Tensor View2D(float* data, uint32_t rows, uint32_t cols);
     Tensor View2DInt8(int8_t* data, uint32_t rows, uint32_t cols);
+    // NHWC: pass (H, W, C) as (depth, rows, cols) — same layout as nk_tensor_view_3d_int8(h,w,c)
     Tensor View3DInt8(int8_t* data, uint32_t depth, uint32_t rows, uint32_t cols);
     Tensor View1DInt32(int32_t* data, uint32_t length);
     Tensor ViewND(float* data, uint32_t rank, std::span<const uint32_t> shape);
@@ -435,6 +436,8 @@ public:
 ```
 
 Spatial tensors stay NHWC until flatten; dense head output is `[1, units]`. Returns null `data` on arena overflow. For quantized CNNs, omit final Softmax via the quant runtime (`SetQuantRuntime` / `Runtime::omit_final_softmax`, honored under CMSIS / ESP / NMSIS / XNNPACK qs8 / QuantOps); C exposes that as `nk_cnn_set_omit_final_softmax`. **Float CNN has no omit API** — Softmax always runs (KNOWN_ISSUES KI-005); the C setter is a no-op on float.
+
+**Quantized construction (C++-only):** after `CNNNetwork` construction, use `InitQuantizedActivationBuffers`, `InitQuantizedConvLayer`, `InitQuantizedDepthwiseConvLayer`, `InitQuantizedDenseLayer`, `InitQuantizedMobilenetV4UibLayer`, then `SetQuantRuntime` / `forward_quantized` (or `forward`, which dispatches when `IsQuantized()`). Prefer loading a v4 `.nk` for firmware; C callers use `nk_model_run_int8`. Full list: [API_PARITY.md — Intentional C++-only](API_PARITY.md#intentional-c-only-symbols).
 
 `NkLoader::LoadCNN` builds full pipelines from `.nk` files (including `models/mnist_cnn.nk`).
 

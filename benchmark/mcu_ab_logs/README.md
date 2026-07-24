@@ -112,7 +112,7 @@ Canonical **netkit vs TFLM** for MNIST CNN and DS-CNN @ 240 MHz (FPU). Three pub
 | `xiao_esp32s3/smoke_*.log` / `cnn_*_f32_*.txt` | UART captures |
 | `xiao_esp32s3/cnn_f32_netkit_embed.txt` | KI-001 float embed failure (2/10) |
 
-Methodology: 10×10; discard first invoke. ImageNet skipped (flash).
+Methodology: 10×10; discard first invoke. ImageNet skipped.
 Published summary: [docs/STATUS.md — MCU (Seeed XIAO ESP32-S3)](../../docs/STATUS.md#mcu-seeed-xiao-esp32s3).
 
 **Round 1 — int8 ESP-NN S3 asm** (all 10/10)

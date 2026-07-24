@@ -29,7 +29,7 @@ When adding a feature, update this file and both [c-api.md](c-api.md) and [cpp-a
 | Arena | `nk_arena_init` / `nk_arena_init_heap` | `Arena::init` / `init_heap` | MCU: static only |
 | Load float/int8 `.nk` | `nk_model_load` / `nk_model_load_memory` | `NkLoader::Load*` / `Load*FromBuffer` | MCU: buffer/flash |
 | Run float32 | `nk_model_run` | `forward` | |
-| Run int8 | `nk_model_run_int8` | `forward_quantized` / `nk_model_run_int8` | Prequantize in Python |
+| Run int8 | `nk_model_run_int8` | `forward` (dispatches when quantized), `forward_quantized`, or `nk_model_run_int8` / `CmsisQuantPlan::ForwardInt8ToBuffer` | Prequantize in Python; preferred C path is `nk_model_run_int8` |
 | Argmax | `nk_argmax_i8` / `nk_argmax_f32` | `NetkitUtil::ArgMaxInt8` / `ArgMaxF32` | Classify logits |
 | Query quantized | `nk_*_is_quantized` | `IsQuantized()` | |
 | Omit final Softmax | `nk_*_set_omit_final_softmax` | MLP: `SetOmitFinalSoftmax`; quant CNN: `Runtime::omit_final_softmax` | Classification logits (no-op on float CNN) |
@@ -273,8 +273,9 @@ Lowered AOT keeps coef arrays in flash `.rodata` (no SRAM copy at load). NUCLEO 
 | `NkOpsResolver`, `NkOpList`, `CNNNetwork::SetOpsResolver` / `GetOpsResolver` | Firmware op trimming — compile-time `NkOpList<Ops...>::View()` in C++ only; file load uses default resolver internally |
 | `ArenaUtil`, `BeginRegressionArena`, `EndRegressionArena` | CLI/regression sizing helpers |
 | `TensorFactory::ViewND` | ND tensor views — use `nk_tensor_view_2d` or load from `.nk` |
-| `MLPNetwork::GetLayer`, `CNNNetwork::GetBlock`, `CNNNetwork::GetOutput`, `CNNNetwork::layer_count` | In-memory network introspection after manual construction (feature taps: use `nk_cnn_get_feature_tap_*`) |
-| `MLPNetwork::InitQuantizedLayer`, `CNNNetwork::InitQuantized*` (`InitQuantizedConvLayer`, `InitQuantizedDenseLayer`, `InitQuantizedActivationBuffers`), `SetQuantized`, `Set`/`GetQuantOutputFormat` (Int8 only; float↔int8 is Python-side), `CNNNetwork::SetQuantRuntime` / `forward_quantized` | Quantized manual construction + low-level runtime — C callers load `.nk` and use `nk_model_run_int8` (or typed `nk_mlp_*` / `nk_cnn_*` forward after load); query with `nk_*_is_quantized` |
+| `MLPNetwork::GetLayer`, `MLPNetwork::layer_count`, `CNNNetwork::GetBlock`, `CNNNetwork::GetOutput`, `CNNNetwork::layer_count` | In-memory network introspection after manual construction (feature taps: use `nk_cnn_get_feature_tap_*`) |
+| `MLPNetwork::InitQuantizedLayer`, `CNNNetwork::InitQuantized*` (`InitQuantizedConvLayer`, `InitQuantizedDepthwiseConvLayer`, `InitQuantizedDenseLayer`, `InitQuantizedMobilenetV4UibLayer`, `InitQuantizedActivationBuffers`), `SetQuantized`, `Set`/`GetQuantOutputFormat` (Int8 only; float↔int8 is Python-side), `CNNNetwork::SetQuantRuntime` / `forward_quantized` | Quantized manual construction + low-level runtime — C callers load `.nk` and use `nk_model_run_int8` (or typed `nk_mlp_*` / `nk_cnn_*` forward after load; typed int8 CNN output uses the network cache, while `nk_model_run_int8` writes caller buffers via `CmsisQuantPlan::ForwardInt8ToBuffer`); query with `nk_*_is_quantized` |
+| `Conv2D::{weights_hwio,weights_q,bias_q}`, `DepthwiseConv2D` quant / HWIO pointer fields | C standalone conv structs are the float subset (`nk_conv2d_t` / `nk_depthwise_conv2d_t`) |
 | `CNNNetwork::forward_timed`, `MLPNetwork::forward_timed` | Benchmark-only profilers |
 | `CmsisQuantPlan::Runtime` other fields | C exposes `omit_final_softmax` via `nk_cnn_*` / `nk_model_*`; remaining plan fields stay C++ |
 | `CmsisNnKernel` / `CmsisNnQuant`, `EspNnKernel` / `EspNnQuant`, `NmsisNnKernel` / `NmsisNnQuant`, `XnnpackKernel` / `XnnpackQuant` | Compile-time backends selected by `NETKIT_TARGET` + `NETKIT_*` flags; C callers share the same path via `nk_model_run` / `nk_model_run_int8` — no C backend API |

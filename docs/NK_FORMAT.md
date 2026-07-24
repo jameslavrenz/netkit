@@ -1,6 +1,6 @@
 # netkit Binary Model Format (`.nk`)
 
-Version **3** — single-file inference bundle for embedded runtimes. Produced by the Python package in [`python/`](../python/); consumed by the C++ loader (`NkLoader`) and `./netkit run` / `./netkit inspect`. Load at runtime (interpreter) or embed with `python -m netkit aot` (compiled path) — [PHILOSOPHY.md](PHILOSOPHY.md#deployment-modes-interpreter-or-compiled).
+Versions **3** (float) and **4** (quantized) — single-file inference bundle for embedded runtimes. Produced by the Python package in [`python/`](../python/) (`VERSION=3`, `VERSION_QUANT=4`); consumed by the C++ loader (`NkLoader`; accepts **3–4**, `NkFormat::kVersion = 4`) and `./netkit run` / `./netkit inspect`. Load at runtime (interpreter) or embed with `python -m netkit aot` (compiled path) — [PHILOSOPHY.md](PHILOSOPHY.md#deployment-modes-interpreter-or-compiled).
 
 **Canonical byte-level specification:** [NK_FILE_SPECIFICATION.md](NK_FILE_SPECIFICATION.md) (header offsets, layer record sizes, payload alignment, TCAS layout, `xxd` / CLI inspection).
 
@@ -18,7 +18,7 @@ Weights and biases are **split into separate sections** within the `.nk` file (w
 
 Optional **embedded regression tests** (flag `kFlagHasTests`) append a `TCAS` section after the bias payload so a single `.nk` file carries model weights and test cases.
 
-## Format limits (v3)
+## Format limits (v3 / v4)
 
 | Constant | Value | Notes |
 |----------|------:|-------|
@@ -54,7 +54,7 @@ Python mirror: `python/netkit/format.py` (`MAX_LAYERS`, `MAX_TENSOR_CATALOG`, `M
 | Offset | Type | Field |
 |--------|------|-------|
 | 0 | `char[4]` | Magic `"NKIT"` |
-| 4 | `uint32` | Format version (`3`) |
+| 4 | `uint32` | Format version (`3` float, `4` quant) |
 | 8 | `uint8` | Network kind (`1`=MLP, `2`=CNN) |
 | 9 | `uint8` | Input rank (1–4) |
 | 10 | `uint16` | Flags (`0x0001` = embedded tests) |

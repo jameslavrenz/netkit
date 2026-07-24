@@ -1,6 +1,6 @@
 # netkit `.nk` File Specification
 
-**Format version:** 3  
+**Format version:** 3 (float) / 4 (quantized); loader accepts 3–4  
 **Magic:** `NKIT` (ASCII)  
 **Byte order:** little-endian for all multi-byte integers and IEEE-754 float32 payloads  
 **Reference implementations:** `include/nk_format.hpp`, `src/nk_loader.cpp`, `python/netkit/format.py`
@@ -50,7 +50,7 @@ All offsets are from the start of the file.
 | Offset | Size | Type | Field | Description |
 |-------:|-----:|------|-------|-------------|
 | 0 | 4 | `char[4]` | `magic` | Must be `N`, `K`, `I`, `T` (`0x4E 0x4B 0x49 0x54`) |
-| 4 | 4 | `uint32` | `version` | Format version; must be **3** |
+| 4 | 4 | `uint32` | `version` | Format version; **3** (float) or **4** (quant); loader accepts 3–4 |
 | 8 | 1 | `uint8` | `network_kind` | `1` = MLP, `2` = CNN |
 | 9 | 1 | `uint8` | `input_rank` | 1–4 |
 | 10 | 2 | `uint16` | `flags` | Bit `0x0001` = embedded test section (`TCAS`) follows payload |
@@ -351,7 +351,7 @@ Runtime forward pass **does not read** this section. Desktop regression uses `Nk
 
 ---
 
-## 9. Format limits (version 3)
+## 9. Format limits (version 3 / 4)
 
 | Constant | Value |
 |----------|------:|
@@ -539,9 +539,10 @@ See [GETTING_STARTED.md](GETTING_STARTED.md) and [python/README.md](../python/RE
 
 | Version | Notes |
 |--------:|-------|
-| 3 | Current: depthwise conv, fused blocks (ConvNeXt, UIB, ResNet, YOLOX head), asymmetric padding, optional `TCAS` tests, up to 100 layers |
+| 3 | Float packs: depthwise conv, fused blocks (ConvNeXt, UIB, ResNet, YOLOX head), asymmetric padding, optional `TCAS` tests, up to 100 layers |
+| 4 | Quantized packs (`FLAG_HAS_QUANT`); int8 weights / int32 biases; same layer catalog |
 
-Older versions are rejected by the loader (`UnsupportedVersion`).
+Versions outside **3–4** are rejected by the loader (`UnsupportedVersion`).
 
 ---
 

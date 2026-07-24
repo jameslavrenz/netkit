@@ -146,12 +146,9 @@ def _plan_output_shape(layer: dict[str, Any], h: int, w: int, c: int) -> tuple[i
 
 
 def _uib_subop_count(layer: dict[str, Any]) -> int:
-    count = 2  # expand + project
-    if int(layer.get("start_dw_kernel", 0)):
-        count += 1
-    if int(layer.get("middle_dw_kernel", 0)):
-        count += 1
-    return count
+    from .cnn_layers import _uib_subop_weight_tensor_count
+
+    return _uib_subop_weight_tensor_count(layer)
 
 
 def _format_quant_desc(name: str, quant: Any) -> str:

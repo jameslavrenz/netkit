@@ -264,6 +264,10 @@ def _read_nk_stream(stream: io.BytesIO) -> tuple[dict, np.ndarray]:
     )
 
     arch = _layers_to_arch(network, input_shape, layers)
+    # Float packs keep separate BN gamma tensors in UIBs; int8 / folded packs do not.
+    bn_folded = bool(header.get("flags", 0) & FLAG_HAS_QUANT) or any(
+        getattr(arr, "dtype", None) == np.int8 for arr in weight_arrays
+    )
     weight_index = 0
     for layer_index, layer in enumerate(arch["layers"]):
         if layer["type"] == "conv2d":
@@ -297,7 +301,7 @@ def _read_nk_stream(stream: io.BytesIO) -> tuple[dict, np.ndarray]:
                 layer["pad_w_end"] = right
             elif "pad_w_end" in layer:
                 del layer["pad_w_end"]
-        weight_index += _layer_weight_tensor_count(layer)
+        weight_index += _layer_weight_tensor_count(layer, bn_folded=bn_folded)
     return arch, flat_weights
 
 
